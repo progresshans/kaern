@@ -26,8 +26,13 @@ final class AppModel {
     @ObservationIgnored private var preloadTask: Task<Void, Never>?
     @ObservationIgnored var isTerminating = false
     /// Closed tabs per window, for Reopen Closed Tab (⇧⌘T).
-    @ObservationIgnored private var closedTabs: [UUID: [(path: String, group: TabGroup?)]] = [:]
+    @ObservationIgnored private var closedTabs: [UUID: [ClosedTab]] = [:]
     @ObservationIgnored private static let log = Logger(subsystem: "com.progresshans.kaern", category: "app")
+
+    struct ClosedTab {
+        var path: String
+        var group: TabGroup?
+    }
 
     // MARK: Launch and quit
 
@@ -45,6 +50,14 @@ final class AppModel {
             addWindow(model)
         }
         updateVisibility()
+        // Repositories open in the session belong in the recent list too.
+        for controller in windows {
+            for tab in controller.model.tabs where !recent.contains(where: { $0.path == tab.path }) {
+                let group = tab.group.flatMap { controller.model.group($0) }
+                recent.append(Session.RecentRepository(path: tab.path, name: tab.name, groupName: group?.name,
+                                                       groupColor: group?.color, lastOpened: .now))
+            }
+        }
 
         Task {
             let userPath = UserDefaults.standard.string(forKey: GitLocator.userPathKey)
@@ -75,6 +88,7 @@ final class AppModel {
 
     func scheduleSave() {
         guard !isTerminating else { return }
+        refreshRecentGroups()
         saveTask?.cancel()
         saveTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
@@ -213,7 +227,7 @@ final class AppModel {
             if !paths.isEmpty {
                 for path in paths { _ = repository(for: path) }
                 window.open(paths: paths)
-                noteRecent(window)
+                for path in paths.reversed() { noteRecent(path: path, in: window) }
                 releaseUnusedRepositories()
                 updateVisibility()
             }
@@ -259,7 +273,7 @@ final class AppModel {
         var stack = closedTabs[window.id] ?? []
         for id in tabIDs {
             guard let tab = window.tab(id) else { continue }
-            stack.append((tab.path, tab.group.flatMap { window.group($0) }))
+            stack.append(ClosedTab(path: tab.path, group: tab.group.flatMap { window.group($0) }))
         }
         closedTabs[window.id] = Array(stack.suffix(30))
         window.close(tabIDs)
@@ -312,12 +326,33 @@ final class AppModel {
 
     private func noteRecent(_ window: WindowModel) {
         guard let tab = window.activeTab else { return }
+        noteRecent(path: tab.path, in: window)
+    }
+
+    private func noteRecent(path: String, in window: WindowModel) {
+        guard let tab = window.tabs.first(where: { $0.path == path }) else { return }
         let group = tab.group.flatMap { window.group($0) }
         recent.removeAll { $0.path == tab.path }
         recent.insert(Session.RecentRepository(path: tab.path, name: tab.name, groupName: group?.name,
                                                groupColor: group?.color, lastOpened: .now), at: 0)
         if recent.count > 30 { recent.removeLast(recent.count - 30) }
         scheduleSave()
+    }
+
+    /// Keeps each recent repository's folder group current (the empty window groups the list
+    /// by it).
+    private func refreshRecentGroups() {
+        for controller in windows {
+            let model = controller.model
+            for tab in model.tabs {
+                guard let index = recent.firstIndex(where: { $0.path == tab.path }) else { continue }
+                let group = tab.group.flatMap { model.group($0) }
+                if recent[index].groupName != group?.name || recent[index].groupColor != group?.color {
+                    recent[index].groupName = group?.name
+                    recent[index].groupColor = group?.color
+                }
+            }
+        }
     }
 
     /// Recent repositories that aren't open in `window`.

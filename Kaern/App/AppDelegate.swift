@@ -1,29 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Kaern's windows are created by the app itself from its session file (see `AppModel`), so
-/// the SwiftUI scene list only holds Settings; the menus come from `KaernCommands`.
-@main
-struct KaernApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var app = AppModel.shared
-
-    var body: some Scene {
-        Settings {
-            SettingsPlaceholder()
-                .environment(app)
-        }
-        .commands {
-            KaernCommands(app: app)
-        }
-    }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var settingsWindow: NSWindow?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Kaern restores its own session; never reopen windows through macOS state restoration.
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
         NSWindow.allowsAutomaticWindowTabbing = false
+        NSApp.setActivationPolicy(.regular)
+        NSApp.mainMenu = MainMenu.build(showSettings: { [weak self] in self?.showSettings() })
         #if DEBUG
         // `-KaernAppearance dark|light` checks both appearances without touching System Settings.
         switch UserDefaults.standard.string(forKey: "KaernAppearance") {
@@ -60,9 +46,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    /// Settings arrives in phase 4; for now the window shows which git Kaern uses.
+    private func showSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 200),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Settings"
+            window.isReleasedWhenClosed = false
+            window.isRestorable = false
+            window.contentView = NSHostingView(rootView: SettingsPlaceholder().environment(AppModel.shared))
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
 }
 
-/// Settings arrives in phase 4; for now it shows which git Kaern uses.
 private struct SettingsPlaceholder: View {
     @Environment(AppModel.self) private var app
 
@@ -77,7 +81,7 @@ private struct SettingsPlaceholder: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .padding()
+        .frame(width: 480)
+        .fixedSize()
     }
 }

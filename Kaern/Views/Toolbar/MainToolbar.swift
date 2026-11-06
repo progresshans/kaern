@@ -79,6 +79,8 @@ struct MainToolbar: View {
                 K.win
                 K.sep.frame(height: 1)
             }
+            // The bar is window chrome: its empty space moves the window, like a title bar.
+            .windowDragArea()
         }
         .onReceive(NotificationCenter.default.publisher(for: .kaernNewBranch)) { note in
             if (note.object as? UUID) == window.id { askNewBranch() }
@@ -210,8 +212,12 @@ private struct BranchButton: View {
 
     private var title: String {
         switch repository.status.head {
-        case .branch(let name), .unborn(let name): name
-        case .detached(let id): id.isEmpty ? "No commits" : "Detached at \(id.prefix(7))"
+        case .branch(let name), .unborn(let name):
+            return name
+        case .detached(let id):
+            // A rebase detaches HEAD; show the branch being rebased.
+            if repository.operation?.kind == .rebase, let branch = repository.operation?.branch { return branch }
+            return id.isEmpty ? "No commits" : "Detached at \(id.prefix(7))"
         }
     }
 }

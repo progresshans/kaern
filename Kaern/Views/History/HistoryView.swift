@@ -6,8 +6,8 @@ import SwiftUI
 /// with photos, search dimming) is phase 2.
 struct HistoryView: View {
     @Bindable var repository: RepositoryModel
+    @State private var width: CGFloat = 0
 
-    static let refColumn: CGFloat = 176
     static let dateColumn: CGFloat = 104
     static let shaColumn: CGFloat = 72
 
@@ -18,13 +18,14 @@ struct HistoryView: View {
 
     var body: some View {
         let graphWidth = graphWidth
+        let columns = HistoryColumns(width: width)
         VStack(spacing: 0) {
-            header(graphWidth: graphWidth)
+            header(graphWidth: graphWidth, columns: columns)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if repository.showsWorkingCopy, let row = repository.graph.first {
-                            WorkingCopyRow(repository: repository, graph: row, graphWidth: graphWidth,
+                            WorkingCopyRow(repository: repository, graph: row, graphWidth: graphWidth, columns: columns,
                                            isSelected: repository.selection == .workingCopy)
                                 .onTapGesture { repository.selection = .workingCopy }
                                 .id("wip")
@@ -40,7 +41,8 @@ struct HistoryView: View {
                                 headBranch: repository.status.branch,
                                 isAlternate: index % 2 == 1,
                                 isSelected: repository.selection == .commit(commit.id),
-                                graphWidth: graphWidth
+                                graphWidth: graphWidth,
+                                columns: columns
                             )
                             .onTapGesture { repository.selection = .commit(commit.id) }
                             .onAppear {
@@ -64,15 +66,22 @@ struct HistoryView: View {
             }
         }
         .background(K.content)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
-    private func header(graphWidth: CGFloat) -> some View {
+    private func header(graphWidth: CGFloat, columns: HistoryColumns) -> some View {
         HStack(spacing: 0) {
-            Text("Branch / Tag").padding(.leading, 10).frame(width: Self.refColumn, alignment: .leading)
+            Text("Branch / Tag").padding(.leading, 10).frame(width: columns.ref, alignment: .leading)
             Text("Graph").frame(width: graphWidth, alignment: .leading)
             Text("Commit Message").padding(.leading, 12).frame(maxWidth: .infinity, alignment: .leading)
-            Text("Date").frame(width: Self.dateColumn, alignment: .leading)
-            Text("Commit").frame(width: Self.shaColumn, alignment: .leading)
+            if columns.showsDate {
+                Text("Date").frame(width: Self.dateColumn, alignment: .leading)
+            }
+            if columns.showsSHA {
+                // The board sets this header in the hash column's monospaced face.
+                Text("Commit").font(.system(size: 11.5, design: .monospaced)).fontWeight(.regular)
+                    .frame(width: Self.shaColumn, alignment: .leading)
+            }
         }
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(K.label2)
@@ -80,6 +89,21 @@ struct HistoryView: View {
         .frame(height: 26)
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
+    }
+}
+
+/// Which columns fit: the hash goes first, then the date, then the label column narrows
+/// (the Narrow board folds the window in that order).
+struct HistoryColumns: Equatable {
+    var ref: CGFloat = 176
+    var showsDate = true
+    var showsSHA = true
+
+    init(width: CGFloat) {
+        guard width > 0 else { return }
+        showsSHA = width >= 734
+        showsDate = width >= 560
+        ref = width >= 520 ? 176 : 124
     }
 }
 
@@ -143,11 +167,12 @@ private struct WorkingCopyRow: View {
     let repository: RepositoryModel
     let graph: GraphRow
     let graphWidth: CGFloat
+    let columns: HistoryColumns
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: HistoryView.refColumn)
+            Color.clear.frame(width: columns.ref)
             ZStack(alignment: .topLeading) {
                 GraphLines(row: graph, height: KMetric.wipRow, selected: isSelected)
                 Circle()
@@ -159,16 +184,21 @@ private struct WorkingCopyRow: View {
             .frame(width: graphWidth, height: KMetric.wipRow, alignment: .topLeading)
             HStack(spacing: 6) {
                 Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
+                    .layoutPriority(-1)
                 chip(Formatters.count(repository.changeCount, "file", "files"))
                 if repository.statusIsFull { chip("\(repository.stagedCount) staged") }
             }
             .padding(.leading, 12)
             .padding(.trailing, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text("Now")
-                .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                .frame(width: HistoryView.dateColumn, alignment: .leading)
-            Color.clear.frame(width: HistoryView.shaColumn)
+            if columns.showsDate {
+                Text("Now")
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                    .frame(width: HistoryView.dateColumn, alignment: .leading)
+            }
+            if columns.showsSHA {
+                Color.clear.frame(width: HistoryView.shaColumn)
+            }
         }
         .font(.system(size: 13))
         .foregroundStyle(isSelected ? .white : K.label)
@@ -186,6 +216,7 @@ private struct WorkingCopyRow: View {
             .padding(.horizontal, 7)
             .frame(height: 18)
             .background(Capsule().fill(isSelected ? Color.white.opacity(0.22) : K.hover))
+            .fixedSize()
     }
 }
 
@@ -199,6 +230,7 @@ private struct CommitRow: View {
     let isAlternate: Bool
     let isSelected: Bool
     let graphWidth: CGFloat
+    let columns: HistoryColumns
 
     private var lane: Int { graph?.lane ?? 0 }
     private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
@@ -209,7 +241,7 @@ private struct CommitRow: View {
         HStack(spacing: 0) {
             // A fixed-width slot (an empty `if` would collapse the column).
             Color.clear
-                .frame(width: HistoryView.refColumn, height: KMetric.graphRow)
+                .frame(width: columns.ref, height: KMetric.graphRow)
                 .overlay(alignment: .leading) { refColumn }
             ZStack(alignment: .topLeading) {
                 if let graph { GraphLines(row: graph, previousLane: previousLane, height: KMetric.graphRow, selected: isSelected) }
@@ -236,13 +268,17 @@ private struct CommitRow: View {
                     .frame(width: 2.5)
                     .padding(.vertical, 5)
             }
-            Text(Formatters.historyDate(commit.author.date))
-                .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                .frame(width: HistoryView.dateColumn, alignment: .leading)
-            Text(commit.shortID)
-                .font(KFont.hash)
-                .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                .frame(width: HistoryView.shaColumn, alignment: .leading)
+            if columns.showsDate {
+                Text(Formatters.historyDate(commit.author.date))
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                    .frame(width: HistoryView.dateColumn, alignment: .leading)
+            }
+            if columns.showsSHA {
+                Text(commit.shortID)
+                    .font(KFont.hash)
+                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                    .frame(width: HistoryView.shaColumn, alignment: .leading)
+            }
         }
         .font(.system(size: 13))
         .foregroundStyle(isSelected ? .white : K.label)

@@ -2,15 +2,17 @@
 # Kill, build and launch Kaern.
 #
 #   ./script/build_and_run.sh                      build + launch
-#   ./script/build_and_run.sh run -KaernOpen ~/src/repo   launch with a repository open
 #   ./script/build_and_run.sh --verify             launch and check the process is running
 #   ./script/build_and_run.sh --logs               launch and stream the app's logs
 #   ./script/build_and_run.sh --telemetry          launch and stream the app's subsystem logs
 #   ./script/build_and_run.sh --debug              run under lldb
 #   ./script/build_and_run.sh --test               run the KaernKit tests (swift test)
 #
-# Debug builds also accept -KaernSelectCommit <sha prefix>, -KaernSelectFile <path> and
-# -KaernAppearance dark|light, e.g. `run -KaernOpen ~/src/repo -KaernAppearance dark`.
+# Debug builds also accept -KaernSessionFile <path> (use a test session instead of
+# ~/Library/Application Support/Kaern/Session.json) and -KaernAppearance dark|light, e.g.
+# `run -KaernSessionFile /tmp/test-session.json -KaernAppearance dark`. They also listen for
+# debug commands (see Kaern/App/DebugDriver.swift), posted as the distributed notification
+# com.progresshans.kaern.debug, e.g. `snapshot /tmp/window.png` renders the window to a PNG.
 set -euo pipefail
 
 MODE="${1:-run}"

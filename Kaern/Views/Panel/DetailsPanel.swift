@@ -31,10 +31,12 @@ private struct WorkingCopyPanel: View {
         let unstaged = entries.filter(\.hasUnstagedChanges)
         let staged = entries.filter(\.hasStagedChanges)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Text(entries.isEmpty ? "No changes" : Formatters.count(entries.count, "change", "changes"))
+            let branch = repository.currentBranch ?? (repository.operation?.kind == .rebase ? repository.operation?.branch : nil)
+            FlowLayout(spacing: 5) {
+                Text((entries.isEmpty ? "No changes" : Formatters.count(entries.count, "file change", "file changes")) + (branch == nil ? "" : " on"))
                     .font(.system(size: 12.5, weight: .semibold))
-                if let branch = repository.currentBranch {
+                    .frame(height: 20)
+                if let branch {
                     Text(branch)
                         .font(.system(size: 11.5, weight: .semibold))
                         .foregroundStyle(K.accentText)
@@ -45,6 +47,7 @@ private struct WorkingCopyPanel: View {
                         .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.lt1))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(EdgeInsets(top: 12, leading: 14, bottom: 8, trailing: 14))
             if entries.isEmpty {
                 VStack(spacing: 6) {

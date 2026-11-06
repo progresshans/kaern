@@ -58,7 +58,9 @@ struct RepositoryScreen: View {
                         .transition(.move(edge: .leading))
                 }
                 center
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .layoutPriority(-1)
                 if window.showsDetails, repository.isReady {
                     DetailsPanel(repository: repository)
                         .transition(.move(edge: .trailing))

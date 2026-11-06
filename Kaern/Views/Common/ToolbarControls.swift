@@ -103,12 +103,28 @@ struct ToolbarTooltip: View {
     }
 }
 
+#if DEBUG
+/// The debug driver can pin one tooltip open (`tooltip Fetch`) to check how it looks.
+@MainActor @Observable
+final class DebugTooltip {
+    static let shared = DebugTooltip()
+    var pinned: String?
+}
+#endif
+
 private struct TooltipModifier: ViewModifier {
     let name: String
     let shortcut: String?
     let placement: TipPlacement
     @Binding var hovering: Bool
-    @State private var shows = false
+    @State private var hoverShows = false
+
+    private var shows: Bool {
+        #if DEBUG
+        if DebugTooltip.shared.pinned == name { return true }
+        #endif
+        return hoverShows
+    }
     @State private var task: Task<Void, Never>?
     @Environment(\.isEnabled) private var isEnabled
 
@@ -121,20 +137,21 @@ private struct TooltipModifier: ViewModifier {
                     task = Task {
                         try? await Task.sleep(for: .milliseconds(350))
                         guard !Task.isCancelled else { return }
-                        withAnimation(.easeOut(duration: 0.1)) { shows = true }
+                        withAnimation(.easeOut(duration: 0.1)) { hoverShows = true }
                     }
                 } else {
-                    shows = false
+                    hoverShows = false
                 }
             }
             .simultaneousGesture(TapGesture().onEnded {
                 task?.cancel()
-                shows = false
+                hoverShows = false
             })
             .overlay(alignment: placement.alignment) {
                 if shows {
+                    // 8 pt below the 30 pt button, like the board's `.tip` (top: 100% + 8px).
                     ToolbarTooltip(name: name, shortcut: shortcut)
-                        .alignmentGuide(.top) { $0[.top] - 38 }
+                        .offset(y: 38)
                         .transition(.opacity.combined(with: .offset(y: -3)))
                         .zIndex(100)
                 }
