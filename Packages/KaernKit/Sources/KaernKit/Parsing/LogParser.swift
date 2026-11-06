@@ -2,8 +2,9 @@ import Foundation
 
 /// Parses `git log -z --format=<LogParser.format>`.
 public enum LogParser {
-    /// Hash, parents, author name, author email, author date, subject.
-    public static let format = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s"
+    /// Hash, parents, author name, author email, author date, subject, body. The body is last, so
+    /// anything in it (even a unit separator) stays in that field.
+    public static let format = "%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b"
 
     public static func parse(_ data: Data) -> [Commit] {
         Records.splitNUL(data).compactMap(parseRecord)
@@ -12,13 +13,15 @@ public enum LogParser {
     static func parseRecord(_ record: String) -> Commit? {
         // `git log -z` may leave a newline in front of a record.
         let trimmed = record.drop(while: { $0 == "\n" })
-        let fields = Records.fields(trimmed, maxSplits: 5)
-        guard fields.count == 6, fields[0].count >= 7 else { return nil }
+        let fields = Records.fields(trimmed, maxSplits: 6)
+        // Six fields: output of the old format without a body.
+        guard fields.count >= 6, fields[0].count >= 7 else { return nil }
         return Commit(
             id: fields[0],
             parents: fields[1].split(separator: " ").map(String.init),
             author: Signature(name: fields[2], email: fields[3], date: Records.date(fromUnix: fields[4])),
-            subject: fields[5]
+            subject: fields[5],
+            bodyPreview: fields.count > 6 ? Commit.preview(ofBody: fields[6]) : ""
         )
     }
 }

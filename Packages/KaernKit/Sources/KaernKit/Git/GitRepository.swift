@@ -125,6 +125,21 @@ public struct GitRepository: Sendable, Hashable {
         return result
     }
 
+    /// Added/removed lines per changed path, staged (HEAD → index) and unstaged (index → work
+    /// tree, untracked files included) kept apart, so a partially staged file shows each part.
+    public func stagedAndUnstagedLineStats(untracked: [String]) async -> WorkingLineStats {
+        async let unstaged = try? git(["diff", "--numstat", "-z", "--no-ext-diff"])
+        async let staged = try? git(["diff", "--cached", "--numstat", "-z", "--no-ext-diff"])
+        var result = WorkingLineStats(
+            staged: ChangeListParser.parseNumstat(await staged?.stdout ?? Data()),
+            unstaged: ChangeListParser.parseNumstat(await unstaged?.stdout ?? Data())
+        )
+        for path in untracked.prefix(500) {
+            result.unstaged[path] = Self.lineStat(ofUntrackedFile: root.appending(path: path))
+        }
+        return result
+    }
+
     static func lineStat(ofUntrackedFile url: URL) -> LineStat {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)),
               let size = attributes[.size] as? Int, size <= 1_000_000,

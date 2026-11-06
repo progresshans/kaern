@@ -21,19 +21,52 @@ public struct Signature: Sendable, Hashable {
     }
 }
 
-/// A commit as shown in the history list. Loaded in pages, so it only carries the subject line.
+/// A commit as shown in the history list. Loaded in pages, so it carries the subject line and
+/// only a one-line preview of the body.
 public struct Commit: Sendable, Hashable, Identifiable {
     /// Full object name.
     public var id: String
     public var parents: [String]
     public var author: Signature
     public var subject: String
+    /// The message body on one line (white space collapsed), cut at ``bodyPreviewLength``
+    /// characters: the gray description after the subject in the history.
+    public var bodyPreview: String
 
-    public init(id: String, parents: [String], author: Signature, subject: String) {
+    /// Longer than any history row is wide.
+    public static let bodyPreviewLength = 300
+
+    public init(id: String, parents: [String], author: Signature, subject: String, bodyPreview: String = "") {
         self.id = id
         self.parents = parents
         self.author = author
         self.subject = subject
+        self.bodyPreview = bodyPreview
+    }
+
+    /// `body` with every run of white space (line breaks included) as one space, cut at
+    /// ``bodyPreviewLength`` characters with an ellipsis.
+    public static func preview(ofBody body: some StringProtocol) -> String {
+        var result = ""
+        var pendingSpace = false
+        var count = 0
+        for character in body {
+            if character.isWhitespace {
+                pendingSpace = !result.isEmpty
+                continue
+            }
+            if pendingSpace {
+                result.append(" ")
+                count += 1
+                pendingSpace = false
+            }
+            if count >= bodyPreviewLength {
+                return result.trimmingCharacters(in: .whitespaces) + "…"
+            }
+            result.append(character)
+            count += 1
+        }
+        return result
     }
 
     public var shortID: String { String(id.prefix(7)) }

@@ -3,17 +3,48 @@ import Foundation
 /// Parses unified diffs produced by `git diff` / `git show` (not combined `--cc` diffs).
 public enum DiffParser {
     public static func parse(_ data: Data) -> [FileDiff] {
-        let isLossy = String(data: data, encoding: .utf8) == nil
-        let text = String(decoding: data, as: UTF8.self)
-        var builder = Builder(isLossy: isLossy)
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            builder.consume(String(line))
+        var builder = Builder(isLossy: false)
+        // Each file is checked for UTF-8 on its own, so one file in another encoding doesn't stop
+        // partial staging in the others.
+        for segment in fileSegments(data) {
+            builder.isLossy = String(data: segment, encoding: .utf8) == nil
+            let text = String(decoding: segment, as: UTF8.self)
+            for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                builder.consume(String(line))
+            }
         }
         return builder.finish()
     }
 
+    /// Splits multi-file output in front of each `diff --git ` line.
+    static func fileSegments(_ data: Data) -> [Data] {
+        let marker = Array("diff --git ".utf8)
+        let bytes = [UInt8](data)
+        var starts: [Int] = []
+        var index = 0
+        // Line by line: only a line that starts with the marker begins a file (hunk lines start
+        // with a space, `+`, `-` or `\`).
+        while index < bytes.count {
+            if bytes.count - index >= marker.count, bytes[index ..< index + marker.count].elementsEqual(marker) {
+                starts.append(index)
+            }
+            guard let newline = bytes[index...].firstIndex(of: 0x0A) else { break }
+            index = newline + 1
+        }
+        guard !starts.isEmpty else { return [data] }
+        var segments: [Data] = []
+        if starts[0] > 0 { segments.append(Data(bytes[0 ..< starts[0]])) }
+        for (position, start) in starts.enumerated() {
+            let end = position + 1 < starts.count ? starts[position + 1] : bytes.count
+            // Drop the newline that ends the segment: the next one starts on its own line.
+            let trimmedEnd = end > start && end < bytes.count && bytes[end - 1] == 0x0A ? end - 1 : end
+            segments.append(Data(bytes[start ..< trimmedEnd]))
+        }
+        return segments
+    }
+
     private struct Builder {
-        let isLossy: Bool
+        var isLossy: Bool
         var files: [FileDiff] = []
         var file: FileDiff?
         var hunk: DiffHunk?

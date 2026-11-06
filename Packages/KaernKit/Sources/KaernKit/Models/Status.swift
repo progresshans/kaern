@@ -214,6 +214,19 @@ public struct LineStat: Sendable, Hashable {
     }
 }
 
+/// Line counts of the working copy's changes, staged and unstaged apart.
+public struct WorkingLineStats: Sendable, Hashable {
+    public var staged: [String: LineStat]
+    public var unstaged: [String: LineStat]
+
+    public init(staged: [String: LineStat] = [:], unstaged: [String: LineStat] = [:]) {
+        self.staged = staged
+        self.unstaged = unstaged
+    }
+
+    public static let empty = WorkingLineStats()
+}
+
 /// A file touched by a commit.
 public struct FileChange: Sendable, Hashable, Identifiable {
     public var path: String

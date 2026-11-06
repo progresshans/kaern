@@ -17,6 +17,26 @@ public struct GraphEdge: Sendable, Hashable {
         self.lane = lane
         self.dashed = dashed
     }
+
+    /// Where an edge that changes lanes makes its turn. Fork and merge lines meet a commit node,
+    /// never the line between two commits (GitKraken style).
+    public enum Turn: Sendable, Hashable {
+        /// Stays in its lane.
+        case straight
+        /// Leaves the side of the upper row's node and turns down into `to` (a merge's second
+        /// parent): the elbow is drawn in the upper row, below the node's center.
+        case leavesNode
+        /// Comes down lane `from` and turns into the side of the lower row's node (a branch
+        /// meeting the commit it grew from): the elbow is drawn in the lower row, above its center.
+        case joinsNode
+    }
+
+    public var turn: Turn {
+        if from == to { return .straight }
+        // A merge edge takes its new lane right below the merge (`lane == to`); a lane that ends
+        // keeps its own lane until it reaches the node it joins (`lane == from`).
+        return lane == to ? .leavesNode : .joinsNode
+    }
 }
 
 /// Everything needed to draw the graph cell of one row.
@@ -50,8 +70,9 @@ public struct GraphRow: Sendable, Hashable {
 /// Assigns lanes to commits in display order (children before parents, as `git log --date-order`
 /// produces) and builds the edges between rows.
 ///
-/// Lanes keep their position until they end, so lines stay straight: a merge curves out right
-/// below the merge commit, and a branch curves back in right above its fork point.
+/// Lanes keep their position until they end, so lines stay straight: a merge's line leaves the
+/// side of the merge commit, and a branch comes down its own lane into the side of the commit it
+/// grew from (see ``GraphEdge/turn``).
 public struct CommitGraphBuilder: Sendable {
     private struct Slot: Sendable {
         var target: String
