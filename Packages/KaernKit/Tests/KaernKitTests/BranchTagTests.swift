@@ -43,6 +43,43 @@ struct BranchTagTests {
         #expect(after.tags.map(\.name) == ["v1.0.1"])
     }
 
+    @Test func listsTagsNewestFirstWithDates() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("a\n", to: "a.txt")
+        let first = try await repository.commitAll("first")
+        try await repository.git(["tag", "v1.0"], input: nil)
+        try repository.write("b\n", to: "a.txt")
+        let second = try await repository.commitAll("second")
+        // An annotated tag made "later" than the lightweight one, on the newer commit.
+        try await repository.git(["-c", "user.name=T", "-c", "user.email=t@kaern.invalid", "tag", "-a", "v2.0", "-m", "Two"])
+        try await repository.git(["update-ref", "refs/tags/v0.9", first])
+
+        let tags = try await repository.tags()
+        #expect(Set(tags.map(\.name)) == ["v0.9", "v1.0", "v2.0"])
+        #expect(tags.first { $0.name == "v2.0" }?.target == second)
+        #expect(tags.first { $0.name == "v1.0" }?.target == first)
+        #expect(tags.allSatisfy { $0.date != nil })
+        // Sorted by date, newest first.
+        let dates = tags.compactMap(\.date)
+        #expect(dates == dates.sorted(by: >))
+    }
+
+    @Test func lightStatusFoldsUntrackedFolders() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("a\n", to: "a.txt")
+        try await repository.commitAll("base")
+        try repository.write("x\n", to: "new/one.txt")
+        try repository.write("y\n", to: "new/two.txt")
+
+        let full = try await repository.status()
+        let light = try await repository.status(untrackedFiles: .normal)
+        #expect(full.entries.map(\.path).sorted() == ["new/one.txt", "new/two.txt"])
+        #expect(light.entries.map(\.path) == ["new/"])
+        #expect(!light.isClean)
+    }
+
     @Test func suggestsTheNextVersionTag() {
         #expect(TagNaming.suggestion(after: []) == nil)
         #expect(TagNaming.suggestion(after: ["nightly", "latest"]) == nil)

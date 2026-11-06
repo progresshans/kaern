@@ -58,3 +58,37 @@ extension GitRepository {
         return names
     }
 }
+
+/// A tag with the date it was made, for lists that show tags newest first.
+public struct TagInfo: Sendable, Hashable, Identifiable {
+    public var name: String
+    /// The commit the tag points at (annotated tags are peeled).
+    public var target: String
+    /// When the tag was made (annotated tags), or when its commit was (lightweight tags).
+    public var date: Date?
+
+    public init(name: String, target: String, date: Date?) {
+        self.name = name
+        self.target = target
+        self.date = date
+    }
+
+    public var id: String { name }
+}
+
+extension GitRepository {
+    /// Tags, newest first (`--sort=-creatordate`).
+    public func tags() async throws -> [TagInfo] {
+        let output = try await git([
+            "for-each-ref", "--sort=-creatordate",
+            "--format=%(refname:strip=2)%1f%(objectname)%1f%(*objectname)%1f%(creatordate:unix)",
+            "refs/tags",
+        ])
+        return output.text.split(separator: "\n").compactMap { line in
+            let fields = Records.fields(line)
+            guard fields.count >= 4, !fields[0].isEmpty else { return nil }
+            let date = Double(fields[3]).map { Date(timeIntervalSince1970: $0) }
+            return TagInfo(name: fields[0], target: fields[2].isEmpty ? fields[1] : fields[2], date: date)
+        }
+    }
+}

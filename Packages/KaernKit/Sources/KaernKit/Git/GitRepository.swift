@@ -94,9 +94,18 @@ public struct GitRepository: Sendable, Hashable {
 
     // MARK: - Reading
 
-    public func status() async throws -> WorkingTreeStatus {
+    /// Which untracked files `git status` lists.
+    public enum UntrackedFiles: String, Sendable {
+        /// Every untracked file, inside untracked folders too (the file list needs these).
+        case all
+        /// Untracked folders as one entry, without looking inside them. Cheaper, and enough to
+        /// tell whether a repository has changes (the tab bar's change dot).
+        case normal
+    }
+
+    public func status(untrackedFiles: UntrackedFiles = .all) async throws -> WorkingTreeStatus {
         let output = try await git([
-            "status", "--porcelain=v2", "--branch", "--show-stash", "-z", "--untracked-files=all",
+            "status", "--porcelain=v2", "--branch", "--show-stash", "-z", "--untracked-files=\(untrackedFiles.rawValue)",
         ])
         return StatusParser.parse(output.stdout)
     }
