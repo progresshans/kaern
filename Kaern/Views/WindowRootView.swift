@@ -53,7 +53,7 @@ struct RepositoryScreen: View {
             MainToolbar(window: window, repository: repository)
                 .zIndex(2)
             HStack(spacing: 0) {
-                if window.showsSidebar {
+                if window.showsSidebar, repository.hasContent {
                     SidebarView(repository: repository)
                         .transition(.move(edge: .leading))
                 }

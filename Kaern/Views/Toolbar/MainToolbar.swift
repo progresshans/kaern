@@ -211,6 +211,7 @@ private struct BranchButton: View {
     }
 
     private var title: String {
+        guard repository.hasContent else { return repository.name }
         switch repository.status.head {
         case .branch(let name), .unborn(let name):
             return name

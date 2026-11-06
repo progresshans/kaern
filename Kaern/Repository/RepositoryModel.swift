@@ -171,6 +171,8 @@ final class RepositoryModel: Identifiable {
     }
 
     var currentBranch: String? { status.branch }
+    /// Whether there's a repository to show (not a missing folder or an unreadable one).
+    var hasContent: Bool { !isFailedOrMissing }
     var isReady: Bool { phase == .ready }
     var changeCount: Int { status.entries.count }
     var stagedCount: Int { status.stagedCount }

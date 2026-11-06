@@ -39,9 +39,11 @@ enum TabStripLayout {
         ceil(min(textWidth(label), readableCharacters * 6.5) + tabChrome + 2)
     }
 
+    /// The width that shows the whole label (2 pt of slack, as in the minimum, so rounding in
+    /// text layout never truncates a label that fits).
     @MainActor
     static func naturalWidth(label: String, member: Bool) -> CGFloat {
-        min(textWidth(label) + tabChrome, member ? memberMax : tabMax)
+        min(textWidth(label) + tabChrome + 2, member ? memberMax : tabMax)
     }
 
     struct Item {
