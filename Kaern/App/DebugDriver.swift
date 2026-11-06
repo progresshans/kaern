@@ -3,8 +3,9 @@ import AppKit
 import KaernKit
 import OSLog
 
-/// Debug builds only: lets scripts drive Kaern and render its windows to PNG files, so the
-/// frame can be checked without controlling the screen.
+/// Debug builds launched with `-KaernSessionFile <path>` only: lets scripts drive Kaern and render
+/// its windows to PNG files, so the frame can be checked without controlling the screen. An
+/// instance on the real session never listens (`AppDelegate`), so commands can't reach your repos.
 ///
 /// Post a distributed notification named `com.progresshans.kaern.debug` whose object is a
 /// command line, e.g. `snapshot /tmp/a.png`, `activate 3`, `toggleGroup godj`,

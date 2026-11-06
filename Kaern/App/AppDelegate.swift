@@ -22,7 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        DebugDriver.shared.start()
+        // Debug commands (stage, commit, discard…) are broadcast to every running Kaern. Only an
+        // instance on a test session listens, so a Debug build open on your own repositories never
+        // acts on commands a test run sends to its sample repositories.
+        if SessionStore.testSessionPath != nil { DebugDriver.shared.start() }
         #endif
         AppModel.shared.launch()
     }

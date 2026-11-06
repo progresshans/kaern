@@ -10,9 +10,10 @@
 #
 # Debug builds also accept -KaernSessionFile <path> (use a test session instead of
 # ~/Library/Application Support/Kaern/Session.json) and -KaernAppearance dark|light, e.g.
-# `run -KaernSessionFile /tmp/test-session.json -KaernAppearance dark`. They also listen for
-# debug commands (see Kaern/App/DebugDriver.swift), posted as the distributed notification
-# com.progresshans.kaern.debug, e.g. `snapshot /tmp/window.png` renders the window to a PNG.
+# `run -KaernSessionFile /tmp/test-session.json -KaernAppearance dark`. Launched with a test
+# session (and only then), they listen for debug commands (see Kaern/App/DebugDriver.swift),
+# posted as the distributed notification com.progresshans.kaern.debug, e.g.
+# `snapshot /tmp/window.png` renders the window to a PNG.
 set -euo pipefail
 
 MODE="${1:-run}"

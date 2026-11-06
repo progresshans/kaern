@@ -66,10 +66,19 @@ struct SessionStore {
     let url: URL
     private static let log = Logger(subsystem: "com.progresshans.kaern", category: "session")
 
+    #if DEBUG
+    /// The `-KaernSessionFile <path>` launch argument: a test session in place of the real one.
+    /// Only an instance on a test session takes debug commands (see `AppDelegate`).
+    static var testSessionPath: String? {
+        guard let custom = UserDefaults.standard.string(forKey: "KaernSessionFile"), !custom.isEmpty else { return nil }
+        return custom
+    }
+    #endif
+
     static var defaultURL: URL {
         #if DEBUG
         // `-KaernSessionFile <path>` keeps test sessions away from the real one.
-        if let custom = UserDefaults.standard.string(forKey: "KaernSessionFile"), !custom.isEmpty {
+        if let custom = testSessionPath {
             return URL(filePath: (custom as NSString).expandingTildeInPath)
         }
         #endif
