@@ -8,6 +8,8 @@ enum Icons {
     // MARK: Tabs
 
     static let close = SVGIcon(10, [.path("M2.5 2.5l5 5M7.5 2.5l-5 5", width: 1.5, cap: .round)])
+    /// The drawer's close button (`.xb`).
+    static let closeLarge = SVGIcon(12, [.path("M3 3l6 6M9 3l-6 6", width: 1.6, cap: .round)])
     static let plus = SVGIcon(14, [.path("M7 2.5v9M2.5 7h9", width: 1.5, cap: .round)])
     static let arrowLeft = SVGIcon(12, [.path("M7.5 2.5L4 6l3.5 3.5", width: 1.6, cap: .round, join: .round)])
     static let arrowRight = SVGIcon(12, [.path("M4.5 2.5L8 6 4.5 9.5", width: 1.6, cap: .round, join: .round)])

@@ -1,50 +1,60 @@
 import KaernKit
 import SwiftUI
 
-/// The commit list for phase 1: Branch / Tag · Graph · Commit Message · Date · Commit, with
-/// the working copy on top. The full graph (label connectors, curves tuned per lane, avatars
-/// with photos, search dimming) is phase 2.
+/// The commit graph: Branch / Tag · Graph · Commit Message · Date · Commit, with the working copy
+/// on top. Columns can be resized in the header; Search dims the commits that don't match.
 struct HistoryView: View {
     @Bindable var repository: RepositoryModel
+    /// Focus mode: the working-copy row becomes an inline commit row.
+    var isFocused = false
+    /// A row was picked (Focus opens its drawer).
+    var onPick: () -> Void = {}
+
     @State private var width: CGFloat = 0
+    @FocusState private var listFocused: Bool
+    @AppStorage("KaernColumnRef") private var storedRef: Double = ColumnWidths.defaultRef
+    @AppStorage("KaernColumnGraph") private var storedGraph: Double = 0
+    @AppStorage("KaernColumnDate") private var storedDate: Double = ColumnWidths.defaultDate
+    @AppStorage("KaernColumnSHA") private var storedSHA: Double = ColumnWidths.defaultSHA
 
-    static let dateColumn: CGFloat = 104
-    static let shaColumn: CGFloat = 72
-
-    private var graphWidth: CGFloat {
-        let lanes = repository.graph.prefix(300).map(\.width).max() ?? 1
-        return min(max(84, GraphMetrics.x(lane: lanes - 1) + 14), 220)
+    private var columns: HistoryColumns {
+        HistoryColumns(
+            width: width,
+            stored: ColumnWidths(ref: storedRef, graph: storedGraph, date: storedDate, sha: storedSHA),
+            automaticGraph: GraphMetrics.automaticWidth(for: repository.graph.prefix(300))
+        )
     }
 
     var body: some View {
-        let graphWidth = graphWidth
-        let columns = HistoryColumns(width: width)
+        let columns = columns
         VStack(spacing: 0) {
-            header(graphWidth: graphWidth, columns: columns)
+            HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if repository.showsWorkingCopy, let row = repository.graph.first {
-                            WorkingCopyRow(repository: repository, graph: row, graphWidth: graphWidth, columns: columns,
-                                           isSelected: repository.selection == .workingCopy)
-                                .onTapGesture { repository.selection = .workingCopy }
-                                .id("wip")
+                            WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
+                                           isSelected: repository.selection == .workingCopy,
+                                           isDimmed: repository.search.isFiltering) {
+                                pick(.workingCopy)
+                            }
+                            .id("wip")
                         }
                         let offset = repository.showsWorkingCopy ? 1 : 0
+                        let headBranch = repository.status.branch
                         ForEach(Array(repository.commits.enumerated()), id: \.element.id) { index, commit in
                             let graphIndex = index + offset
                             CommitRow(
                                 commit: commit,
                                 graph: repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil,
-                                previousLane: graphIndex > 0 && repository.graph.indices.contains(graphIndex - 1) ? repository.graph[graphIndex - 1].lane : nil,
-                                refs: repository.refs.refs(at: commit.id),
-                                headBranch: repository.status.branch,
+                                labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
                                 isAlternate: index % 2 == 1,
                                 isSelected: repository.selection == .commit(commit.id),
-                                graphWidth: graphWidth,
+                                isDimmed: repository.search.isDimmed(commit.id),
                                 columns: columns
                             )
-                            .onTapGesture { repository.selection = .commit(commit.id) }
+                            .contentShape(Rectangle())
+                            .onTapGesture { pick(.commit(commit.id)) }
                             .onAppear {
                                 if index >= repository.commits.count - 40 { repository.loadMoreHistory() }
                             }
@@ -57,11 +67,26 @@ struct HistoryView: View {
                     .scrollTargetLayout()
                 }
                 .background(K.content)
+                .focusable()
+                .focusEffectDisabled()
+                .focused($listFocused)
+                .onKeyPress(.upArrow) { move(-1, proxy: proxy) }
+                .onKeyPress(.downArrow) { move(1, proxy: proxy) }
+                .onKeyPress(.return) {
+                    // Return opens the selection in Review (Keyboard Shortcuts › In the Graph).
+                    guard repository.canReview else { return .ignored }
+                    repository.review = ReviewState(showsAllFiles: true)
+                    return .handled
+                }
                 .onAppear {
                     if let anchor = repository.historyScrollAnchor { proxy.scrollTo(anchor, anchor: .top) }
                 }
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.5) { visible in
                     if let first = visible.first { repository.historyScrollAnchor = first }
+                }
+                .onChange(of: repository.scrollRequest) { _, request in
+                    guard let request else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(request.id, anchor: .center) }
                 }
             }
         }
@@ -69,18 +94,91 @@ struct HistoryView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
-    private func header(graphWidth: CGFloat, columns: HistoryColumns) -> some View {
+    private func pick(_ selection: HistorySelection) {
+        repository.selection = selection
+        listFocused = true
+        onPick()
+    }
+
+    /// ↑ / ↓ move the selection through the working copy and the commits.
+    private func move(_ step: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        var ids: [HistorySelection] = repository.showsWorkingCopy ? [.workingCopy] : []
+        ids += repository.commits.map { .commit($0.id) }
+        guard !ids.isEmpty else { return .ignored }
+        let current = ids.firstIndex(of: repository.selection) ?? (step > 0 ? -1 : ids.count)
+        let next = min(max(current + step, 0), ids.count - 1)
+        let selection = ids[next]
+        repository.selection = selection
+        switch selection {
+        case .workingCopy: proxy.scrollTo("wip")
+        case .commit(let id): proxy.scrollTo(id)
+        }
+        onPick()
+        return .handled
+    }
+}
+
+// MARK: - Columns
+
+/// The widths the user dragged the columns to (0 for the graph: fit the lanes).
+struct ColumnWidths: Equatable {
+    var ref: Double
+    var graph: Double
+    var date: Double
+    var sha: Double
+
+    static let defaultRef: Double = 176
+    static let defaultDate: Double = 104
+    static let defaultSHA: Double = 72
+    static let refRange: ClosedRange<Double> = 60...420
+    static let graphRange: ClosedRange<Double> = 40...600
+    static let dateRange: ClosedRange<Double> = 60...240
+    static let shaRange: ClosedRange<Double> = 50...160
+}
+
+/// Which columns fit and how wide they are: the hash goes first, then the date, then the label
+/// column narrows (the Narrow board folds the window in that order).
+struct HistoryColumns: Equatable {
+    var ref: CGFloat
+    var graph: CGFloat
+    var date: CGFloat
+    var sha: CGFloat
+    var showsDate = true
+    var showsSHA = true
+
+    init(width: CGFloat, stored: ColumnWidths, automaticGraph: CGFloat) {
+        ref = stored.ref
+        graph = stored.graph > 0 ? stored.graph : automaticGraph
+        date = stored.date
+        sha = stored.sha
+        guard width > 0 else { return }
+        showsSHA = width >= 734
+        showsDate = width >= 560
+        if width < 520 { ref = min(ref, 124) }
+    }
+}
+
+/// The column titles, with a resize handle on each border that's draggable.
+private struct HistoryHeader: View {
+    let columns: HistoryColumns
+    let width: CGFloat
+    @Binding var ref: Double
+    @Binding var graph: Double
+    @Binding var date: Double
+    @Binding var sha: Double
+
+    var body: some View {
         HStack(spacing: 0) {
             Text("Branch / Tag").padding(.leading, 10).frame(width: columns.ref, alignment: .leading)
-            Text("Graph").frame(width: graphWidth, alignment: .leading)
+            Text("Graph").frame(width: columns.graph, alignment: .leading)
             Text("Commit Message").padding(.leading, 12).frame(maxWidth: .infinity, alignment: .leading)
             if columns.showsDate {
-                Text("Date").frame(width: Self.dateColumn, alignment: .leading)
+                Text("Date").frame(width: columns.date, alignment: .leading)
             }
             if columns.showsSHA {
                 // The board sets this header in the hash column's monospaced face.
                 Text("Commit").font(.system(size: 11.5, design: .monospaced)).fontWeight(.regular)
-                    .frame(width: Self.shaColumn, alignment: .leading)
+                    .frame(width: columns.sha, alignment: .leading)
             }
         }
         .font(.system(size: 11, weight: .semibold))
@@ -88,116 +186,116 @@ struct HistoryView: View {
         .lineLimit(1)
         .frame(height: 26)
         .background(K.content)
+        .overlay(alignment: .topLeading) { handles }
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
-}
 
-/// Which columns fit: the hash goes first, then the date, then the label column narrows
-/// (the Narrow board folds the window in that order).
-struct HistoryColumns: Equatable {
-    var ref: CGFloat = 176
-    var showsDate = true
-    var showsSHA = true
-
-    init(width: CGFloat) {
-        guard width > 0 else { return }
-        showsSHA = width >= 734
-        showsDate = width >= 560
-        ref = width >= 520 ? 176 : 124
-    }
-}
-
-nonisolated enum GraphMetrics {
-    static func x(lane: Int) -> CGFloat { 16 + 22 * CGFloat(lane) }
-}
-
-/// Lines of one row: edges from the row above to this node (upper half) and from this node
-/// to the row below (lower half).
-///
-/// An edge that changes lanes bends within half a row, like the board: right below a node
-/// that it leaves (a merge's second parent, a branch's last commit), otherwise right above the
-/// node it joins (a branch curving back into its fork point).
-struct GraphLines: View {
-    let row: GraphRow
-    /// Lane of the row above's node (`nil` for the first row).
-    var previousLane: Int?
-    let height: CGFloat
-    var selected = false
-
-    var body: some View {
-        Canvas { context, size in
-            let mid = height / 2
-            func stroke(_ edge: GraphEdge, from y0: CGFloat, to y1: CGFloat, bends: Bool, atStart: Bool) {
-                let xFrom = GraphMetrics.x(lane: edge.from)
-                let xTo = GraphMetrics.x(lane: edge.to)
-                var path = Path()
-                if xFrom == xTo || !bends {
-                    // Straight: before the bend (upper row) or after it (lower row).
-                    let x = atStart ? xFrom : xTo
-                    path.move(to: CGPoint(x: x, y: y0))
-                    path.addLine(to: CGPoint(x: x, y: y1))
-                } else {
-                    let span = y1 - y0
-                    path.move(to: CGPoint(x: xFrom, y: y0))
-                    path.addCurve(to: CGPoint(x: xTo, y: y1),
-                                  control1: CGPoint(x: xFrom, y: y0 + span * 0.57),
-                                  control2: CGPoint(x: xTo, y: y0 + span * 0.43))
-                }
-                let color: Color = edge.dashed ? K.wip : K.lane(edge.lane)
-                let style = edge.dashed
-                    ? StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [2.4, 3])
-                    : StrokeStyle(lineWidth: 2.2, lineCap: .round)
-                context.stroke(path, with: .color(selected && !edge.dashed ? .white.opacity(0.85) : color), style: style)
+    @ViewBuilder
+    private var handles: some View {
+        ZStack(alignment: .topLeading) {
+            ColumnResizeHandle(edge: columns.ref, value: $ref, range: ColumnWidths.refRange, grows: .right,
+                               reset: ColumnWidths.defaultRef)
+            ColumnResizeHandle(edge: columns.ref + columns.graph, value: Binding(
+                get: { graph > 0 ? graph : Double(columns.graph) }, set: { graph = $0 }
+            ), range: ColumnWidths.graphRange, grows: .right, reset: 0)
+            if columns.showsDate {
+                ColumnResizeHandle(edge: width - (columns.showsSHA ? columns.sha : 0) - columns.date, value: $date,
+                                   range: ColumnWidths.dateRange, grows: .left, reset: ColumnWidths.defaultDate)
             }
-            for edge in row.up {
-                // Bent in the row above when it left that row's node.
-                let bentAbove = edge.from == previousLane
-                stroke(edge, from: 0, to: mid, bends: !bentAbove, atStart: false)
-            }
-            for edge in row.down {
-                stroke(edge, from: mid, to: size.height, bends: edge.from == row.lane, atStart: true)
+            if columns.showsSHA {
+                ColumnResizeHandle(edge: width - columns.sha, value: $sha, range: ColumnWidths.shaRange, grows: .left,
+                                   reset: ColumnWidths.defaultSHA)
             }
         }
-        .frame(height: height)
+        .frame(height: 26)
     }
 }
 
-/// The working-copy row (34 pt): dashed node, "Uncommitted changes", file and staged counts.
+/// A 9 pt grip over a column border: drag to resize, double-click to go back to the default.
+private struct ColumnResizeHandle: View {
+    enum Growth { case left, right }
+
+    let edge: CGFloat
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    /// Which way dragging makes the column wider.
+    let grows: Growth
+    let reset: Double
+
+    @State private var start: Double?
+    @State private var hovering = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 9, height: 26)
+            .overlay {
+                if hovering || start != nil {
+                    K.sepStrong.frame(width: 1, height: 14)
+                }
+            }
+            .contentShape(Rectangle())
+            .pointerStyle(.columnResize)
+            .onHover { hovering = $0 }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let base = start ?? value
+                        if start == nil { start = value }
+                        let delta = Double(drag.translation.width) * (grows == .right ? 1 : -1)
+                        value = min(max(base + delta, range.lowerBound), range.upperBound)
+                    }
+                    .onEnded { _ in start = nil }
+            )
+            .onTapGesture(count: 2) { value = reset }
+            .offset(x: edge - 4.5)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Rows
+
+/// The working-copy row (34 pt): a dashed node and "Uncommitted changes" with file and staged
+/// counts. In Focus it's an inline commit row: the change count, a summary field and Commit.
 private struct WorkingCopyRow: View {
-    let repository: RepositoryModel
+    @Bindable var repository: RepositoryModel
     let graph: GraphRow
-    let graphWidth: CGFloat
     let columns: HistoryColumns
+    let inline: Bool
     let isSelected: Bool
+    let isDimmed: Bool
+    let pick: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: columns.ref)
             ZStack(alignment: .topLeading) {
-                GraphLines(row: graph, height: KMetric.wipRow, selected: isSelected)
-                Circle()
-                    .strokeBorder(isSelected ? Color.white : K.wip, style: StrokeStyle(lineWidth: 1.8, dash: [2.6, 2.2]))
-                    .background(Circle().fill(isSelected ? K.sel : K.content))
-                    .frame(width: 18, height: 18)
+                GraphLines(row: graph, height: KMetric.wipRow, dashColor: isSelected ? .white.opacity(0.8) : K.wip)
+                WorkingCopyNode(selected: isSelected)
                     .offset(x: GraphMetrics.x(lane: graph.lane) - 9, y: KMetric.wipRow / 2 - 9)
             }
-            .frame(width: graphWidth, height: KMetric.wipRow, alignment: .topLeading)
-            HStack(spacing: 6) {
-                Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
-                    .layoutPriority(-1)
-                chip(Formatters.count(repository.changeCount, "file", "files"))
-                if repository.statusIsFull { chip("\(repository.stagedCount) staged") }
-            }
-            .padding(.leading, 12)
-            .padding(.trailing, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if columns.showsDate {
-                Text("Now")
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    .frame(width: HistoryView.dateColumn, alignment: .leading)
-            }
-            if columns.showsSHA {
-                Color.clear.frame(width: HistoryView.shaColumn)
+            .frame(width: columns.graph, height: KMetric.wipRow, alignment: .topLeading)
+            .clipped()
+            if inline {
+                inlineForm
+            } else {
+                HStack(spacing: 6) {
+                    Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
+                        .layoutPriority(-1)
+                    WorkingChip(text: Formatters.count(repository.changeCount, "file", "files"), selected: isSelected)
+                    if repository.statusIsFull { WorkingChip(text: "\(repository.stagedCount) staged", selected: isSelected) }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if columns.showsDate {
+                    Text("Now")
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                        .frame(width: columns.date, alignment: .leading)
+                }
+                if columns.showsSHA {
+                    Color.clear.frame(width: columns.sha)
+                }
             }
         }
         .font(.system(size: 13))
@@ -207,15 +305,81 @@ private struct WorkingCopyRow: View {
         .background(isSelected ? K.sel : K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
         .contentShape(Rectangle())
+        .onTapGesture(perform: pick)
+        .opacity(isDimmed ? 0.3 : 1)
     }
 
-    private func chip(_ text: String) -> some View {
+    /// `.wsel` + `.wipform`: "13 changes [3 staged]", the summary with its counter, Commit.
+    private var inlineForm: some View {
+        HStack(spacing: 0) {
+            Button(action: pick) {
+                HStack(spacing: 6) {
+                    Text(Formatters.count(repository.changeCount, "change", "changes"))
+                        .font(.system(size: 13, weight: .semibold))
+                    WorkingChip(text: "\(repository.stagedCount) staged", selected: isSelected)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverPlateStyle(radius: 7, selected: isSelected))
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    TextField("Commit summary", text: $repository.composer.summary)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(K.label)
+                        .onSubmit { repository.commit() }
+                    SummaryCounter(count: repository.composer.summary.count)
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                Button { repository.commit() } label: {
+                    Text(repository.status.stagedCount == 0 && !repository.composer.amend ? "Commit" : repository.commitButtonTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.accent))
+                }
+                .buttonStyle(.plain)
+                .disabled(!repository.canCommit)
+                .opacity(repository.canCommit ? 1 : 0.45)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.leading, 4)
+    }
+}
+
+/// `.wchip`: a small count pill in the working-copy row.
+private struct WorkingChip: View {
+    let text: String
+    let selected: Bool
+
+    var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(isSelected ? .white : K.label2)
+            .foregroundStyle(selected ? .white : K.label2)
             .padding(.horizontal, 7)
             .frame(height: 18)
-            .background(Capsule().fill(isSelected ? Color.white.opacity(0.22) : K.hover))
+            .background(Capsule().fill(selected ? Color.white.opacity(0.22) : K.hover))
+            .fixedSize()
+    }
+}
+
+/// "38/72": the summary's length against the 72 characters a summary should stay under.
+struct SummaryCounter: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)/\(CommitDraft.summaryLimit)")
+            .font(.system(size: 11))
+            .monospacedDigit()
+            .foregroundStyle(count > CommitDraft.summaryLimit ? K.warn : K.label2)
             .fixedSize()
     }
 }
@@ -224,13 +388,13 @@ private struct WorkingCopyRow: View {
 private struct CommitRow: View {
     let commit: Commit
     let graph: GraphRow?
-    let previousLane: Int?
-    let refs: [Ref]
-    let headBranch: String?
+    let labels: [RefLabelItem]
     let isAlternate: Bool
     let isSelected: Bool
-    let graphWidth: CGFloat
+    let isDimmed: Bool
     let columns: HistoryColumns
+
+    @State private var hovering = false
 
     private var lane: Int { graph?.lane ?? 0 }
     private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
@@ -244,21 +408,30 @@ private struct CommitRow: View {
                 .frame(width: columns.ref, height: KMetric.graphRow)
                 .overlay(alignment: .leading) { refColumn }
             ZStack(alignment: .topLeading) {
-                if let graph { GraphLines(row: graph, previousLane: previousLane, height: KMetric.graphRow, selected: isSelected) }
-                if !refs.isEmpty {
+                if !labels.isEmpty {
+                    // The connector carries on from the label column to the node's edge, under
+                    // the lanes it crosses (the board draws it first).
                     Rectangle()
-                        .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
-                        .frame(width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: 1.5)
-                        .offset(y: KMetric.graphRow / 2 - 0.75)
+                        .fill(K.lane(lane))
+                        .frame(width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.lineWidth)
+                        .offset(y: KMetric.graphRow / 2 - GraphMetrics.lineWidth / 2)
                 }
+                if let graph { GraphLines(row: graph, height: KMetric.graphRow) }
                 CommitNode(commit: commit, isMerge: isMerge, lane: lane, gap: background)
                     .offset(x: nodeX - 9, y: KMetric.graphRow / 2 - 9)
             }
-            .frame(width: graphWidth, height: KMetric.graphRow, alignment: .topLeading)
+            .frame(width: columns.graph, height: KMetric.graphRow, alignment: .topLeading)
+            .clipped()
             HStack(spacing: 6) {
                 Text(commit.subject)
-                    .truncationMode(.tail)
+                    .layoutPriority(1)
+                if !commit.bodyPreview.isEmpty {
+                    Text(commit.bodyPreview)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .truncationMode(.tail)
             .padding(.leading, 12)
             .padding(.trailing, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,35 +444,41 @@ private struct CommitRow: View {
             if columns.showsDate {
                 Text(Formatters.historyDate(commit.author.date))
                     .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    .frame(width: HistoryView.dateColumn, alignment: .leading)
+                    .frame(width: columns.date, alignment: .leading)
             }
             if columns.showsSHA {
                 Text(commit.shortID)
                     .font(KFont.hash)
                     .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    .frame(width: HistoryView.shaColumn, alignment: .leading)
+                    .frame(width: columns.sha, alignment: .leading)
             }
         }
         .font(.system(size: 13))
         .foregroundStyle(isSelected ? .white : K.label)
         .lineLimit(1)
         .frame(height: KMetric.graphRow)
-        .background(background)
-        .contentShape(Rectangle())
+        .background {
+            // `.row:hover`: the hover tint on the list's background.
+            if hovering, !isSelected { ZStack { K.content; K.hover } } else { background }
+        }
+        .onHover { hovering = $0 }
+        .opacity(isDimmed ? 0.3 : 1)
         .help("\(commit.subject)\n\(commit.author.name) · \(commit.shortID)")
     }
 
     @ViewBuilder
     private var refColumn: some View {
-        if let first = sortedRefs.first {
-            HStack(spacing: 4) {
-                RefLabel(ref: first, isHead: first.kind == .localBranch && first.name == headBranch, lane: lane, selected: isSelected)
-                if sortedRefs.count > 1 {
-                    Text("+\(sortedRefs.count - 1)")
+        if let first = labels.first {
+            HStack(spacing: 0) {
+                RefLabel(label: first, lane: lane, selected: isSelected)
+                    .layoutPriority(1)
+                if labels.count > 1 {
+                    Text("+\(labels.count - 1)")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                        .padding(.horizontal, 4)
                         .fixedSize()
-                        .help(sortedRefs.dropFirst().map(\.name).joined(separator: "\n"))
+                        .help(labels.dropFirst().flatMap(\.names).joined(separator: "\n"))
                 }
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
@@ -309,82 +488,30 @@ private struct CommitRow: View {
             .padding(.leading, 10)
         }
     }
-
-    /// HEAD's branch first, then local branches, remote branches and tags.
-    private var sortedRefs: [Ref] {
-        refs.sorted { rank($0) < rank($1) }
-    }
-
-    private func rank(_ ref: Ref) -> Int {
-        if ref.kind == .localBranch, ref.name == headBranch { return 0 }
-        switch ref.kind {
-        case .localBranch: return 1
-        case .remoteBranch: return 2
-        case .tag: return 3
-        }
-    }
 }
 
-/// A branch or tag label (`.lab`): lane tint, HEAD solid, kind icon.
-private struct RefLabel: View {
-    let ref: Ref
-    let isHead: Bool
-    let lane: Int
-    let selected: Bool
+/// A plain button with the board's hover plate (`.wsel:hover`).
+struct HoverPlateStyle: ButtonStyle {
+    var radius: CGFloat = 7
+    var selected = false
 
-    var body: some View {
-        HStack(spacing: 4) {
-            if isHead {
-                Icon(Icons.labelHead, size: 10).foregroundStyle(.white)
-            }
-            Text(ref.name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            switch ref.kind {
-            case .localBranch:
-                if !isHead { Icon(Icons.labelLocal, size: 12).foregroundStyle(selected ? .white : K.label2) }
-            case .remoteBranch:
-                Icon(Icons.labelRemote, size: 12).foregroundStyle(selected || isHead ? .white : K.label2)
-            case .tag:
-                Icon(Icons.labelTag, size: 11).foregroundStyle(selected ? .white : K.label2)
-            }
-        }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(isHead || selected ? .white : K.label)
-        .padding(.horizontal, 6)
-        .frame(height: 20)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(selected ? Color.white.opacity(0.22) : (isHead ? K.lane1 : K.laneTint(lane)))
-        )
-        .layoutPriority(1)
+    func makeBody(configuration: Configuration) -> some View {
+        HoverPlate(configuration: configuration, radius: radius, selected: selected)
     }
-}
 
-/// The commit node: the author's initials ringed in the lane color; merges are small dots.
-private struct CommitNode: View {
-    let commit: Commit
-    let isMerge: Bool
-    let lane: Int
-    let gap: Color
+    private struct HoverPlate: View {
+        let configuration: ButtonStyleConfiguration
+        let radius: CGFloat
+        let selected: Bool
+        @State private var hovering = false
 
-    var body: some View {
-        ZStack {
-            if isMerge {
-                Circle().fill(gap).frame(width: 14, height: 14)
-                Circle().fill(K.lane(lane)).frame(width: 10, height: 10)
-            } else {
-                Circle().fill(K.lane(lane)).frame(width: 25, height: 25)
-                Circle().fill(gap).frame(width: 21, height: 21)
-                Circle().fill(AvatarPalette.color(for: commit.author.email.isEmpty ? commit.author.name : commit.author.email))
-                    .frame(width: 18, height: 18)
-                Text(commit.author.initials)
-                    .font(.system(size: 7.5, weight: .bold))
-                    .tracking(0.2)
-                    .foregroundStyle(.white)
-            }
+        var body: some View {
+            configuration.label
+                .background(
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(hovering || configuration.isPressed ? (selected ? Color.white.opacity(0.15) : K.hover) : .clear)
+                )
+                .onHover { hovering = $0 }
         }
-        .frame(width: 18, height: 18)
-        .accessibilityHidden(true)
     }
 }

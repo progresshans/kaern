@@ -49,6 +49,37 @@ final class WindowModel: Identifiable {
     var showsDetails = true { didSet { if showsDetails != oldValue { changed() } } }
     /// The + popover (recent repositories and Open Repository…). Not saved.
     var showsNewTab = false
+    /// Focus mode: both side panels hidden, the commit row inline, the drawer below the graph.
+    /// Not saved.
+    var isFocused = false
+    /// Focus mode's bottom drawer (closed with its ×, opened again by picking a row).
+    var showsDrawer = true
+
+    /// Sidebar on the toolbar or ⌃⌘S. In Focus it leaves Focus and shows the sidebar.
+    func toggleSidebar() {
+        if isFocused {
+            isFocused = false
+            showsSidebar = true
+        } else {
+            showsSidebar.toggle()
+        }
+    }
+
+    /// Details on the toolbar or ⌥⌘I. In Focus it leaves Focus and shows the panel.
+    func toggleDetails() {
+        if isFocused {
+            isFocused = false
+            showsDetails = true
+        } else {
+            showsDetails.toggle()
+        }
+    }
+
+    /// Focus on the toolbar or ⌥⌘G (opens the drawer again).
+    func toggleFocus() {
+        isFocused.toggle()
+        if isFocused { showsDrawer = true }
+    }
 
     /// Called after every change that should reach the session file.
     @ObservationIgnored var onChange: (() -> Void)?

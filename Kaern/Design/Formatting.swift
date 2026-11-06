@@ -72,6 +72,15 @@ enum Formatters {
         return String(localized: "\(shortDate(date, now: now)) at \(clock)")
     }
 
+    /// Commit details: "today at 2:05 PM", "yesterday at 6:40 PM", "on Sep 27, 2026".
+    static func authoredAt(_ date: Date, now: Date = .now) -> String {
+        let calendar = Calendar.current
+        let clock = time.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "today at \(clock)") }
+        if calendar.isDateInYesterday(date) { return String(localized: "yesterday at \(clock)") }
+        return String(localized: "on \(monthDayYear.string(from: date))")
+    }
+
     /// "~/Developer/powerlens"
     static func abbreviatedPath(_ path: String) -> String {
         var path = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path

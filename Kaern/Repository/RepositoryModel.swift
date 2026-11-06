@@ -27,6 +27,8 @@ enum RepositoryActivity: Equatable {
     case popping
     case switching(String)
     case creatingBranch(String)
+    case committing
+    case amending
 
     var statusText: String {
         switch self {
@@ -37,6 +39,8 @@ enum RepositoryActivity: Equatable {
         case .popping: "Popping the latest stash…"
         case .switching(let name): "Switching to \(name)…"
         case .creatingBranch(let name): "Creating \(name)…"
+        case .committing: "Committing…"
+        case .amending: "Amending the last commit…"
         }
     }
 
@@ -115,7 +119,8 @@ final class RepositoryModel: Identifiable {
     private(set) var remotes: [RemoteInfo] = []
     private(set) var operation: OperationState?
     private(set) var lastFetch: Date?
-    private(set) var lineStats: [String: LineStat] = [:]
+    /// Line counts of the working copy's changes, staged and unstaged apart.
+    private(set) var lineStats = WorkingLineStats.empty
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
@@ -124,11 +129,46 @@ final class RepositoryModel: Identifiable {
 
     // UI state that survives tab switches.
     var selection: HistorySelection = .workingCopy {
-        didSet { if selection != oldValue { loadSelectionDetails() } }
+        didSet {
+            guard selection != oldValue else { return }
+            loadSelectionDetails()
+            drawerPath = nil
+            if review != nil { review?.path = nil }
+            diffsAreStale = true
+            refreshDiffsIfNeeded()
+        }
     }
     var sidebar = SidebarState()
     /// The first visible history row when the tab was last shown (scroll restore).
     var historyScrollAnchor: String?
+    /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
+    var review: ReviewState?
+    /// The Search find bar over the graph.
+    var search = HistorySearch()
+    /// The commit composer's text and Amend switch (kept per repository).
+    var composer = CommitDraft()
+    /// The file the Focus drawer shows (`nil`: the first one).
+    var drawerPath: String?
+    /// Asks the history to scroll a row into view (search steps, selecting from elsewhere).
+    var scrollRequest: ScrollRequest?
+
+    // Diffs for Review and the Focus drawer, loaded while one of them is on screen.
+    /// The working copy's diffs by path, staged and unstaged apart.
+    var workingDiffs: [String: WorkingFileDiff] = [:]
+    var workingDiffsLoaded = false
+    /// The selected commit's diffs (`id` is the commit).
+    var commitDiffs: (id: String, diffs: [FileDiff])?
+    @ObservationIgnored var commitDiffsIgnoreWhitespace = false
+    @ObservationIgnored var workingDiffsIgnoreWhitespace = false
+    /// Counts views that show diffs, so diffs are only kept current while someone looks.
+    @ObservationIgnored var diffViewers = 0 {
+        didSet { if diffViewers > oldValue { refreshDiffsIfNeeded() } }
+    }
+    @ObservationIgnored var diffTask: Task<Void, Never>?
+    @ObservationIgnored var diffsAreStale = true
+    /// Index changes (stage, unstage, commit) run one after another: git locks the index.
+    @ObservationIgnored var indexTask: Task<Void, Never>?
+    @ObservationIgnored var searchTask: Task<Void, Never>?
 
     /// Shown in a window as its selected tab. Set by the app.
     var isVisible = false {
@@ -157,6 +197,10 @@ final class RepositoryModel: Identifiable {
     }
 
     // MARK: Derived state
+
+    /// Staging or unstaging waiting or running (they run one after another).
+    var pendingIndexChanges = 0
+    var isChangingIndex: Bool { pendingIndexChanges > 0 }
 
     var tabMark: TabMark {
         switch phase {
@@ -250,6 +294,8 @@ final class RepositoryModel: Identifiable {
         pendingScope = []
         await refreshLineStats()
         loadSelectionDetails()
+        diffsAreStale = true
+        refreshDiffsIfNeeded()
     }
 
     // MARK: Refreshing
@@ -290,6 +336,19 @@ final class RepositoryModel: Identifiable {
         default:
             break
         }
+    }
+
+    /// Re-reads the status right away (after staging): the file event would come 0.3 s later.
+    func refreshStatusNow() async {
+        guard let repository else { return }
+        if let status = try? await repository.status() {
+            self.status = status
+            statusIsFull = true
+        }
+        rebuildGraph()
+        await refreshLineStats()
+        diffsAreStale = true
+        refreshDiffsIfNeeded()
     }
 
     /// Runs the refreshes that file events asked for, one at a time, until none are left.
@@ -340,6 +399,8 @@ final class RepositoryModel: Identifiable {
         operation = repository.operationState()
         rebuildGraph()
         await refreshLineStats()
+        diffsAreStale = true
+        refreshDiffsIfNeeded()
         Self.log.debug("Refreshed \(self.name, privacy: .public) \(scope.rawValue) in \(ContinuousClock.now - start, privacy: .public)")
     }
 
@@ -369,10 +430,10 @@ final class RepositoryModel: Identifiable {
         operation = repository.operationState()
     }
 
-    private func refreshLineStats() async {
+    func refreshLineStats() async {
         guard let repository, isVisible else { return }
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
-        lineStats = await repository.workingTreeLineStats(untracked: untracked)
+        lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
     }
 
     func loadMoreHistory() {
@@ -399,6 +460,7 @@ final class RepositoryModel: Identifiable {
         if case .commit(let id) = selection, !commits.contains(where: { $0.id == id }) {
             selection = .workingCopy
         }
+        search.refreshLocalMatches(in: commits)
     }
 
     // MARK: Selection details
@@ -429,12 +491,17 @@ final class RepositoryModel: Identifiable {
     // MARK: Actions
 
     /// Runs a git action with its activity shown in the tab and status bar, then refreshes.
-    private func perform(_ activity: RepositoryActivity, _ work: @escaping (GitRepository) async throws -> Void) {
+    func perform(_ activity: RepositoryActivity, _ work: @escaping (GitRepository) async throws -> Void,
+                 onSuccess: (() -> Void)? = nil) {
         guard let repository, self.activity == nil else { return }
         self.activity = activity
+        let previousIndexChange = indexTask
         Task {
+            // Wait for staging that's still running (git locks the index).
+            await previousIndexChange?.value
             do {
                 try await work(repository)
+                onSuccess?()
             } catch {
                 alert = RepositoryAlert(title: "Couldn't finish: \(activity.statusText.replacingOccurrences(of: "…", with: ""))",
                                         message: error.localizedDescription)
@@ -503,6 +570,8 @@ final class RepositoryModel: Identifiable {
         refreshTask?.cancel()
         lightTask?.cancel()
         detailsTask?.cancel()
+        diffTask?.cancel()
+        searchTask?.cancel()
     }
 }
 

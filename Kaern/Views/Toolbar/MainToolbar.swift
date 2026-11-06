@@ -21,7 +21,7 @@ struct MainToolbar: View {
             ToolbarCap {
                 ToolbarButton(icon: Icons.sidebar, iconSize: 17, name: "Sidebar", shortcut: "⌃⌘S", tip: .leading,
                               accessibilityLabel: "Show or hide the sidebar") {
-                    window.showsSidebar.toggle()
+                    window.toggleSidebar()
                 }
             }
             ToolbarCap {
@@ -57,17 +57,24 @@ struct MainToolbar: View {
             }
             Spacer(minLength: 6)
             ToolbarCap {
-                ToolbarButton(icon: Icons.review, name: "Review", shortcut: "⌥⌘R") {}
-                    .disabled(true)
-                ToolbarButton(icon: Icons.focus, name: "Focus", shortcut: "⌥⌘G") {}
-                    .disabled(true)
+                ToolbarButton(icon: Icons.review, name: "Review", shortcut: "⌥⌘R", isOn: repository.review != nil) {
+                    repository.toggleReview()
+                }
+                .disabled(!ready || !repository.canReview)
+                ToolbarButton(icon: Icons.focus, name: "Focus", shortcut: "⌥⌘G", isOn: window.isFocused) {
+                    window.toggleFocus()
+                    repository.review = nil
+                }
+                .disabled(!ready)
             }
             ToolbarCap {
-                ToolbarButton(icon: Icons.search(1.3), name: "Search", shortcut: "⌘F", tip: .trailing) {}
-                    .disabled(true)
+                ToolbarButton(icon: Icons.search(1.3), name: "Search", shortcut: "⌘F", tip: .trailing, isOn: repository.search.isOpen) {
+                    if repository.search.isOpen { repository.closeSearch() } else { repository.openSearch() }
+                }
+                .disabled(!ready)
                 ToolbarButton(icon: Icons.details, iconSize: 17, name: "Details", shortcut: "⌥⌘I", tip: .trailing,
                               isOn: false, accessibilityLabel: "Show or hide the details panel") {
-                    window.showsDetails.toggle()
+                    window.toggleDetails()
                 }
             }
         }

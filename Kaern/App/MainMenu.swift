@@ -24,6 +24,7 @@ enum MainMenu {
         main.addItem(submenu(viewMenu()))
         main.addItem(submenu(repositoryMenu()))
         main.addItem(submenu(branchMenu()))
+        main.addItem(submenu(commitMenu()))
         let window = windowMenu()
         main.addItem(submenu(window))
         NSApp.windowsMenu = window
@@ -101,19 +102,68 @@ enum MainMenu {
         menu.addItem(system("Copy", #selector(NSText.copy(_:)), key: "c"))
         menu.addItem(system("Paste", #selector(NSText.paste(_:)), key: "v"))
         menu.addItem(system("Select All", #selector(NSText.selectAll(_:)), key: "a"))
+        menu.addItem(.separator())
+        let find = NSMenu(title: "Find")
+        find.addItem(MenuAction.item("Find…", key: "f", enabled: { repository?.isReady == true }) {
+            guard let repository else { return }
+            repository.openSearch()
+            NotificationCenter.default.post(name: .kaernFocusSearch, object: repository.id)
+        })
+        find.addItem(MenuAction.item("Find Next", key: "g", enabled: { repository?.search.matches.isEmpty == false }) {
+            repository?.stepSearch(1)
+        })
+        find.addItem(MenuAction.item("Find Previous", key: "g", modifiers: [.shift, .command],
+                                    enabled: { repository?.search.matches.isEmpty == false }) {
+            repository?.stepSearch(-1)
+        })
+        let findItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        findItem.submenu = find
+        menu.addItem(findItem)
         return menu
     }
 
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
         menu.addItem(MenuAction.item("Show Sidebar", key: "s", modifiers: [.control, .command],
-                                    enabled: { window?.activeTab != nil }, checked: { window?.showsSidebar == true }) {
-            window?.showsSidebar.toggle()
+                                    enabled: { window?.activeTab != nil },
+                                    checked: { window?.showsSidebar == true && window?.isFocused == false }) {
+            window?.toggleSidebar()
         })
         menu.addItem(MenuAction.item("Show Details", key: "i", modifiers: [.option, .command],
-                                    enabled: { window?.activeTab != nil }, checked: { window?.showsDetails == true }) {
-            window?.showsDetails.toggle()
+                                    enabled: { window?.activeTab != nil },
+                                    checked: { window?.showsDetails == true && window?.isFocused == false }) {
+            window?.toggleDetails()
         })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Graph", enabled: { repository?.isReady == true },
+                                    checked: { repository?.isReady == true && repository?.review == nil }) {
+            repository?.review = nil
+        })
+        menu.addItem(MenuAction.item("Review", key: "r", modifiers: [.option, .command],
+                                    enabled: { repository?.isReady == true && (repository?.canReview == true || repository?.review != nil) },
+                                    checked: { repository?.review != nil }) {
+            repository?.toggleReview()
+        })
+        menu.addItem(MenuAction.item("Focus", key: "g", modifiers: [.option, .command],
+                                    enabled: { repository?.isReady == true }, checked: { window?.isFocused == true }) {
+            window?.toggleFocus()
+            repository?.review = nil
+        })
+        menu.addItem(.separator())
+        let diff = NSMenu(title: "Diff Layout")
+        diff.addItem(MenuAction.item("Split", checked: { diffLayout == .split }) { diffLayout = .split })
+        diff.addItem(MenuAction.item("Unified", checked: { diffLayout == .unified }) { diffLayout = .unified })
+        diff.addItem(.separator())
+        diff.addItem(MenuAction.item("Toggle Layout", key: "d", modifiers: [.option, .command]) {
+            diffLayout = diffLayout == .split ? .unified : .split
+        })
+        diff.addItem(MenuAction.item("Ignore Whitespace", checked: { DiffPreferences.ignoresWhitespace }) {
+            UserDefaults.standard.set(!DiffPreferences.ignoresWhitespace, forKey: DiffPreferences.ignoreWhitespaceKey)
+            repository?.reloadDiffs()
+        })
+        let diffItem = NSMenuItem(title: "Diff Layout", action: nil, keyEquivalent: "")
+        diffItem.submenu = diff
+        menu.addItem(diffItem)
         menu.addItem(.separator())
         menu.addItem(system("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.control, .command]))
         return menu
@@ -146,6 +196,40 @@ enum MainMenu {
             if let window { NotificationCenter.default.post(name: .kaernNewBranch, object: window.id) }
         })
         return menu
+    }
+
+    private static func commitMenu() -> NSMenu {
+        let menu = NSMenu(title: "Commit")
+        menu.addItem(MenuAction.item("Commit", key: "\r", enabled: { repository?.canCommit == true }) {
+            repository?.commit()
+        })
+        menu.addItem(MenuAction.item("Amend Last Commit", key: "\r", modifiers: [.option, .command],
+                                    enabled: { isIdle && repository?.status.headID != nil }) {
+            guard let repository else { return }
+            if repository.composer.amend {
+                repository.commit()
+            } else {
+                // Turns Amend on in the composer: the last message fills in to edit first.
+                repository.selection = .workingCopy
+                repository.setAmend(true)
+            }
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Stage All", key: "a", modifiers: [.shift, .command],
+                                    enabled: { isIdle && repository?.status.entries.contains(where: \.hasUnstagedChanges) == true }) {
+            repository?.stageAll()
+        })
+        menu.addItem(MenuAction.item("Unstage All", key: "a", modifiers: [.option, .shift, .command],
+                                    enabled: { isIdle && (repository?.status.stagedCount ?? 0) > 0 }) {
+            repository?.unstageAll()
+        })
+        return menu
+    }
+
+    /// Split or Unified for every diff (View › Diff Layout).
+    private static var diffLayout: DiffLayout {
+        get { DiffLayout(rawValue: UserDefaults.standard.string(forKey: DiffPreferences.layoutKey) ?? "") ?? .split }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: DiffPreferences.layoutKey) }
     }
 
     private static func windowMenu() -> NSMenu {

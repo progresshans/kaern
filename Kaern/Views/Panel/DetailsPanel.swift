@@ -1,9 +1,9 @@
 import KaernKit
 import SwiftUI
 
-/// The right panel, phase 1: what's selected in the history. The working copy lists its
-/// unstaged and staged files; a commit shows its details and files. Staging, the composer
-/// and Review come in phase 2.
+/// The right panel: what's selected in the history. The working copy shows its Unstaged and
+/// Staged files with checkboxes (a partially staged file shows in both) and the commit
+/// composer; a commit shows its details and files. Clicking a file opens it in Review.
 struct DetailsPanel: View {
     let repository: RepositoryModel
 
@@ -23,17 +23,49 @@ struct DetailsPanel: View {
     }
 }
 
+// MARK: - Working copy
+
 private struct WorkingCopyPanel: View {
-    let repository: RepositoryModel
+    @Bindable var repository: RepositoryModel
+    @AppStorage(DiffPreferences.treeKey) private var tree = false
 
     var body: some View {
         let entries = repository.status.entries
         let unstaged = entries.filter(\.hasUnstagedChanges)
         let staged = entries.filter(\.hasStagedChanges)
         VStack(alignment: .leading, spacing: 0) {
+            header(count: entries.count)
+            if entries.isEmpty {
+                VStack(spacing: 6) {
+                    Text("Working tree clean").font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label2)
+                    Text("Changes you make in this folder show up here.")
+                        .font(.system(size: 12)).foregroundStyle(K.label2).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
+                            .disabled(unstaged.isEmpty || !repository.canChangeIndex)
+                        FileList(repository: repository, entries: unstaged, staged: false, tree: tree)
+                        SectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
+                            .disabled(staged.isEmpty || !repository.canChangeIndex)
+                        FileList(repository: repository, entries: staged, staged: true, tree: tree)
+                    }
+                    .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+                }
+            }
+            Composer(repository: repository)
+        }
+    }
+
+    /// `.ph`: "13 file changes on [branch]", then Path / Tree and Review All.
+    private func header(count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
             let branch = repository.currentBranch ?? (repository.operation?.kind == .rebase ? repository.operation?.branch : nil)
             FlowLayout(spacing: 5) {
-                Text((entries.isEmpty ? "No changes" : Formatters.count(entries.count, "file change", "file changes")) + (branch == nil ? "" : " on"))
+                Text((count == 0 ? "No changes" : Formatters.count(count, "file change", "file changes")) + (branch == nil ? "" : " on"))
                     .font(.system(size: 12.5, weight: .semibold))
                     .frame(height: 20)
                 if let branch {
@@ -48,65 +80,288 @@ private struct WorkingCopyPanel: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(EdgeInsets(top: 12, leading: 14, bottom: 8, trailing: 14))
-            if entries.isEmpty {
-                VStack(spacing: 6) {
-                    Text("Working tree clean").font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label2)
-                    Text("Changes you make in this folder show up here.")
-                        .font(.system(size: 12)).foregroundStyle(K.label2).multilineTextAlignment(.center)
+            HStack(spacing: 6) {
+                SegmentedChoice(options: [(false, "Path"), (true, "Tree")], selection: $tree, label: "File list style")
+                Spacer(minLength: 0)
+                GhostButton(title: "Review All") { repository.review = ReviewState(showsAllFiles: true) }
+                    .disabled(count == 0)
+            }
+        }
+        .padding(EdgeInsets(top: 12, leading: 14, bottom: 8, trailing: 14))
+    }
+}
+
+/// `.psec`: "Unstaged Files (10)" with Stage All on the right.
+private struct SectionHeader: View {
+    let title: String
+    let action: String
+    let run: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(K.label2)
+            Spacer(minLength: 0)
+            Button(action: run) {
+                Text(action)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(K.accentText)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(hovering && isEnabled ? K.accentSoft : .clear))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(isEnabled ? 1 : 0.4)
+            .onHover { hovering = $0 }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 28)
+        .padding(.top, 4)
+    }
+}
+
+/// The files of one list, as paths or as a tree (folder rows, files indented under them).
+private struct FileList: View {
+    let repository: RepositoryModel
+    let entries: [StatusEntry]
+    let staged: Bool
+    let tree: Bool
+
+    var body: some View {
+        ForEach(rows) { row in
+            switch row.kind {
+            case .folder(let label):
+                HStack(spacing: 6) {
+                    Icon(Icons.folder, size: 13)
+                    Text(label).lineLimit(1).truncationMode(.middle)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(20)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        sectionHeader("Unstaged Files (\(unstaged.count))")
-                        ForEach(unstaged) { entry in
-                            FileRow(path: entry.path, letter: entry.isUntracked ? "A" : entry.kind.letter,
-                                    stat: repository.lineStats[entry.path], partial: entry.stageState == .partial)
-                        }
-                        sectionHeader("Staged Files (\(staged.count))")
-                        ForEach(staged) { entry in
-                            FileRow(path: entry.path, letter: entry.kind.letter, stat: nil, partial: entry.stageState == .partial)
-                        }
-                    }
-                    .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
-                }
+                .font(.system(size: 12))
+                .foregroundStyle(K.label2)
+                .padding(.horizontal, 6)
+                .frame(height: 24)
+            case .file(let entry):
+                PanelFileRow(repository: repository, entry: entry, staged: staged, showsDirectory: !tree)
+                    .padding(.leading, tree ? 14 : 0)
             }
         }
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11.5, weight: .semibold))
-            .foregroundStyle(K.label2)
-            .padding(.horizontal, 6)
-            .frame(height: 28, alignment: .leading)
-            .padding(.top, 4)
+    private struct Row: Identifiable {
+        enum Kind { case folder(String), file(StatusEntry) }
+        let id: String
+        let kind: Kind
+    }
+
+    private var rows: [Row] {
+        guard tree else { return entries.map { Row(id: $0.path, kind: .file($0)) } }
+        // Folders first (by path), then the files at the top level, like the board.
+        func folder(_ path: String) -> String {
+            let directory = (path as NSString).deletingLastPathComponent
+            return directory.isEmpty ? "" : directory + "/"
+        }
+        let sorted = entries.sorted { lhs, rhs in
+            let left = folder(lhs.path), right = folder(rhs.path)
+            let leftKey = (left.isEmpty ? "1" : "0" + left) + "\u{0}" + lhs.path
+            let rightKey = (right.isEmpty ? "1" : "0" + right) + "\u{0}" + rhs.path
+            return leftKey.localizedStandardCompare(rightKey) == .orderedAscending
+        }
+        var result: [Row] = []
+        var last: String?
+        for entry in sorted {
+            let directory = folder(entry.path)
+            if directory != last {
+                last = directory
+                result.append(Row(id: "dir:" + directory, kind: .folder(directory.isEmpty ? "\(repository.name) (root)" : directory)))
+            }
+            result.append(Row(id: entry.path, kind: .file(entry)))
+        }
+        return result
     }
 }
+
+/// `.frow`: a checkbox (on in the Staged list) and the file (`.file`): status tile, path,
+/// "partial" when the file is in both lists, line counts. Clicking the file opens it in Review.
+private struct PanelFileRow: View {
+    let repository: RepositoryModel
+    let entry: StatusEntry
+    let staged: Bool
+    let showsDirectory: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        let isReviewed = repository.review.map { !$0.showsAllFiles && $0.path == entry.path } ?? false
+        let stat = staged ? repository.lineStats.staged[entry.path] : repository.lineStats.unstaged[entry.path]
+        HStack(spacing: 2) {
+            StageCheckbox(isOn: staged, label: (staged ? "Unstage " : "Stage ") + entry.path) {
+                if staged { repository.unstage([entry.path]) } else { repository.stage([entry.path]) }
+            }
+            .disabled(!repository.canChangeIndex)
+            Button {
+                repository.review = ReviewState(showsAllFiles: false, path: entry.path)
+            } label: {
+                HStack(spacing: 7) {
+                    StatusTile(letter: letter, selected: isReviewed)
+                    FilePathText(path: entry.path, showsDirectory: showsDirectory, selected: isReviewed)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if entry.stageState == .partial {
+                        Text("partial")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(isReviewed ? .white.opacity(0.85) : K.accentText)
+                    }
+                    LineCounts(additions: stat?.additions, deletions: stat?.deletions, selected: isReviewed)
+                }
+                .padding(.horizontal, 6)
+                .frame(height: KMetric.fileRow)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isReviewed ? K.sel : (hovering ? K.hover : .clear))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(entry.path)
+        }
+    }
+
+    /// The staged list shows what's in the index, the unstaged list what's in the work tree.
+    private var letter: String {
+        if entry.isConflicted { return "!" }
+        if entry.isUntracked { return "A" }
+        let status = staged ? entry.indexStatus : entry.worktreeStatus
+        return ChangeKind(statusLetter: status)?.letter ?? entry.kind.letter
+    }
+}
+
+/// `.composer`: Amend, the summary with its counter, the description, Commit N Files ▾.
+private struct Composer: View {
+    @Bindable var repository: RepositoryModel
+    @FocusState private var descriptionFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Toggle(isOn: Binding(get: { repository.composer.amend }, set: { repository.setAmend($0) })) {
+                Text("Amend previous commit")
+                    .font(.system(size: 12))
+                    .foregroundStyle(K.label2)
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            .disabled(repository.status.headID == nil)
+            HStack(spacing: 6) {
+                TextField("Commit summary", text: $repository.composer.summary)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .onSubmit { descriptionFocused = true }
+                SummaryCounter(count: repository.composer.summary.count)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(FieldBackground())
+            TextEditor(text: $repository.composer.body)
+                .font(.system(size: 12))
+                .lineSpacing(3)
+                .scrollContentBackground(.hidden)
+                .focused($descriptionFocused)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 5)
+                .frame(height: 64)
+                .background(FieldBackground())
+                .overlay(alignment: .topLeading) {
+                    if repository.composer.body.isEmpty {
+                        Text("Description")
+                            .font(.system(size: 12))
+                            .foregroundStyle(K.label2)
+                            .padding(.leading, 9)
+                            .padding(.top, 7)
+                            .allowsHitTesting(false)
+                    }
+                }
+            HStack(spacing: 0) {
+                Button { repository.commit() } label: {
+                    Text(repository.commitButtonTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!repository.canCommit)
+                .opacity(repository.canCommit ? 1 : 0.45)
+                Menu {
+                    Button("Commit Without Running Hooks") { repository.commit(runHooks: false) }
+                        .disabled(!repository.canCommit)
+                    Divider()
+                    Toggle("Amend Previous Commit", isOn: Binding(get: { repository.composer.amend }, set: { repository.setAmend($0) }))
+                        .disabled(repository.status.headID == nil)
+                } label: {
+                    Icon(Icons.chevronDown, size: 11)
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .overlay(alignment: .leading) { Color.white.opacity(0.3).frame(width: 1) }
+                .accessibilityLabel("Commit options")
+            }
+            .frame(height: 32)
+            .background(K.accent)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .padding(EdgeInsets(top: 10, leading: 12, bottom: 12, trailing: 12))
+        .overlay(alignment: .top) { K.sep.frame(height: 1) }
+    }
+}
+
+/// `--field` with the 0.5 pt `--sepStrong` ring and 7 pt corners.
+private struct FieldBackground: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(K.field)
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+    }
+}
+
+// MARK: - Commit details
 
 private struct CommitPanel: View {
     let repository: RepositoryModel
 
     var body: some View {
         if let details = repository.selectedDetails {
+            let files = repository.selectedFiles
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         Text("commit").foregroundStyle(K.label2)
                         Text(details.commit.shortID).font(KFont.hash).foregroundStyle(K.label)
+                            .textSelection(.enabled)
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(details.commit.id, forType: .string)
                         } label: {
-                            Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18)
+                            Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18).contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(HoverPlateStyle(radius: 5))
                         .help("Copy the full commit hash")
-                        if let parent = details.commit.parents.first {
+                        ForEach(details.commit.parents, id: \.self) { parent in
                             Text("parent").foregroundStyle(K.label2)
-                            Text(parent.prefix(7)).font(KFont.hash).foregroundStyle(K.accentText)
+                            Button {
+                                if repository.commits.contains(where: { $0.id == parent }) {
+                                    repository.selection = .commit(parent)
+                                    repository.scrollRequest = ScrollRequest(id: parent)
+                                }
+                            } label: {
+                                Text(parent.prefix(7)).font(KFont.hash).foregroundStyle(K.accentText)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .font(.system(size: 11.5))
@@ -115,16 +370,18 @@ private struct CommitPanel: View {
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(AvatarPalette.color(for: details.commit.author.email)))
+                            .background(Circle().fill(AvatarPalette.color(for: details.commit.author.email.isEmpty
+                                ? details.commit.author.name : details.commit.author.email)))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(details.commit.author.name).font(.system(size: 13, weight: .semibold))
-                            Text("authored \(Formatters.historyDate(details.commit.author.date))")
+                            Text("authored \(Formatters.authoredAt(details.commit.author.date))")
                                 .font(.system(size: 11.5)).foregroundStyle(K.label2)
                         }
                     }
                     .padding(.top, 12)
                     Text(details.commit.subject)
                         .font(.system(size: 14, weight: .semibold))
+                        .lineSpacing(2)
                         .padding(.top, 12)
                         .textSelection(.enabled)
                     if !details.body.isEmpty {
@@ -135,13 +392,20 @@ private struct CommitPanel: View {
                             .padding(.top, 5)
                             .textSelection(.enabled)
                     }
-                    Text(Formatters.count(repository.selectedFiles.count, "file", "files"))
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(K.label2)
-                        .padding(.top, 16)
-                        .padding(.bottom, 4)
-                    ForEach(repository.selectedFiles) { file in
-                        FileRow(path: file.path, letter: file.kind.letter, stat: file.stat, partial: false)
+                    HStack(spacing: 6) {
+                        Text(files.count == 1 ? "1 file changed" : "\(files.count.formatted()) files changed")
+                        LineCounts(additions: files.reduce(0) { $0 + ($1.stat?.additions ?? 0) },
+                                   deletions: files.reduce(0) { $0 + ($1.stat?.deletions ?? 0) })
+                        Spacer(minLength: 0)
+                        GhostButton(title: "Review All") { repository.review = ReviewState(showsAllFiles: true) }
+                            .disabled(files.isEmpty)
+                    }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(K.label2)
+                    .padding(.top, 16)
+                    .padding(.bottom, 4)
+                    ForEach(files) { file in
+                        CommitFileRow(repository: repository, file: file)
                     }
                 }
                 .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
@@ -153,64 +417,33 @@ private struct CommitPanel: View {
     }
 }
 
-/// A file row (`.file`): status letter tile, folder in secondary text, name, line counts.
-struct FileRow: View {
-    let path: String
-    let letter: String
-    let stat: LineStat?
-    let partial: Bool
-
+/// A file of the selected commit; clicking it opens it in Review.
+private struct CommitFileRow: View {
+    let repository: RepositoryModel
+    let file: FileChange
     @State private var hovering = false
 
     var body: some View {
-        let directory = (path as NSString).deletingLastPathComponent
-        let name = (path as NSString).lastPathComponent
-        HStack(spacing: 7) {
-            Text(letter)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(letterColor)
-                .frame(width: 16, height: 16)
-                .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(letterFill))
-            HStack(spacing: 0) {
-                if !directory.isEmpty {
-                    Text(directory + "/").foregroundStyle(K.label2).truncationMode(.head)
-                }
-                Text(name).layoutPriority(1)
+        let isReviewed = repository.review.map { !$0.showsAllFiles && $0.path == file.path } ?? false
+        Button {
+            repository.review = ReviewState(showsAllFiles: false, path: file.path)
+        } label: {
+            HStack(spacing: 7) {
+                StatusTile(letter: file.kind.letter, selected: isReviewed)
+                FilePathText(path: file.path, selected: isReviewed)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                LineCounts(additions: file.stat?.additions, deletions: file.stat?.deletions, selected: isReviewed)
             }
-            .font(.system(size: 12.5))
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if partial {
-                Text("partial").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(K.accentText)
-            }
-            if let stat, let additions = stat.additions, let deletions = stat.deletions {
-                HStack(spacing: 5) {
-                    if additions > 0 { Text("+\(additions)").foregroundStyle(K.add) }
-                    if deletions > 0 { Text("−\(deletions)").foregroundStyle(K.del) }
-                }
-                .font(.system(size: 11, design: .monospaced))
-            }
+            .padding(.horizontal, 6)
+            .frame(height: KMetric.fileRow)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isReviewed ? K.sel : (hovering ? K.hover : .clear))
+            )
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 6)
-        .frame(height: KMetric.fileRow)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(path)
-    }
-
-    private var letterColor: Color {
-        switch letter {
-        case "A", "U": K.add
-        case "D": K.del
-        default: K.mod
-        }
-    }
-
-    private var letterFill: Color {
-        switch letter {
-        case "A", "U": K.addBg
-        case "D": K.delBg
-        default: K.modBg
-        }
+        .help(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
     }
 }

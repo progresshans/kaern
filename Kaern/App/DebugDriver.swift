@@ -80,11 +80,20 @@ final class DebugDriver {
         case "open":
             if let path = args.first, let window { app.open([URL(filePath: path, directoryHint: .isDirectory)], in: window) }
         case "select":
-            // select <commit index>
-            if let index = args.first.flatMap(Int.init), let tab = window?.activeTab {
+            // select <commit index> | select wip
+            if let tab = window?.activeTab {
                 let repository = app.repository(for: tab.path)
-                if repository.commits.indices.contains(index) { repository.selection = .commit(repository.commits[index].id) }
+                if args.first == "wip" {
+                    repository.selection = .workingCopy
+                } else if let index = args.first.flatMap(Int.init), repository.commits.indices.contains(index) {
+                    repository.selection = .commit(repository.commits[index].id)
+                }
+                if window?.isFocused == true { window?.showsDrawer = true }
             }
+        case "review", "focus", "drawer", "drawerFile", "search", "searchScope", "searchStep", "diff", "whitespace", "tree",
+             "stage", "unstage", "stageAll", "unstageAll", "stageHunk", "unstageHunk", "summary", "body", "amend", "commit",
+             "column", "scroll":
+            phase2(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -147,10 +156,91 @@ final class DebugDriver {
             if args.count == 4, let values = Optional(args.compactMap(Double.init)), values.count == 4 {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
+        case "press":
+            // press up|down|return|escape — a key down through the window, to the focused view.
+            press(args.first ?? "")
+        case "front":
+            // Makes the window key, so snapshots show the active-window look (traffic lights, checkboxes).
+            NSApp.activate()
+            controller?.window?.makeKeyAndOrderFront(nil)
         case "quit":
             NSApp.terminate(nil)
         default:
             Self.log.error("unknown debug command \(command, privacy: .public)")
+        }
+    }
+
+    /// Review, Focus, Search, staging and the composer.
+    private func phase2(_ command: String, _ args: [String]) {
+        guard let window, let tab = window.activeTab else { return }
+        let repository = app.repository(for: tab.path)
+        let rest = args.joined(separator: " ")
+        switch command {
+        case "review":
+            // review all | review one [path] | review off
+            switch args.first {
+            case "off": repository.review = nil
+            case "one": repository.review = ReviewState(showsAllFiles: false, path: args.count > 1 ? args[1] : nil)
+            default: repository.review = ReviewState(showsAllFiles: true)
+            }
+        case "focus":
+            window.isFocused = args.first != "off"
+            if window.isFocused { window.showsDrawer = true; repository.review = nil }
+        case "drawer":
+            window.showsDrawer = args.first != "off"
+        case "drawerFile":
+            repository.drawerPath = args.first
+        case "search":
+            // search off | search <query…>
+            if args.first == "off" {
+                repository.closeSearch()
+            } else {
+                repository.openSearch()
+                repository.setSearchQuery(rest)
+            }
+        case "searchScope":
+            if let scope = CommitSearchScope(rawValue: args.first ?? "") { repository.setSearchScope(scope) }
+        case "searchStep":
+            repository.stepSearch(Int(args.first ?? "1") ?? 1)
+        case "diff":
+            UserDefaults.standard.set(args.first == "unified" ? "unified" : "split", forKey: DiffPreferences.layoutKey)
+        case "whitespace":
+            UserDefaults.standard.set(args.first == "on", forKey: DiffPreferences.ignoreWhitespaceKey)
+            repository.reloadDiffs()
+        case "tree":
+            UserDefaults.standard.set(args.first == "on", forKey: DiffPreferences.treeKey)
+        case "stage":
+            repository.stage([rest])
+        case "unstage":
+            repository.unstage([rest])
+        case "stageAll":
+            repository.stageAll()
+        case "unstageAll":
+            repository.unstageAll()
+        case "stageHunk", "unstageHunk":
+            // stageHunk <hunk id> <path>
+            guard args.count >= 2, let hunk = Int(args[0]) else { return }
+            let path = args.dropFirst().joined(separator: " ")
+            if command == "stageHunk" { repository.stageHunk(path: path, hunk: hunk) } else { repository.unstageHunk(path: path, hunk: hunk) }
+        case "summary":
+            repository.composer.summary = rest
+        case "body":
+            repository.composer.body = rest.replacingOccurrences(of: "\\n", with: "\n")
+        case "amend":
+            repository.setAmend(args.first != "off")
+        case "commit":
+            repository.commit()
+        case "column":
+            // column ref|graph|date|sha <width>
+            let keys = ["ref": "KaernColumnRef", "graph": "KaernColumnGraph", "date": "KaernColumnDate", "sha": "KaernColumnSHA"]
+            if args.count == 2, let key = keys[args[0]], let value = Double(args[1]) { UserDefaults.standard.set(value, forKey: key) }
+        case "scroll":
+            // scroll <commit index>
+            if let index = args.first.flatMap(Int.init), repository.commits.indices.contains(index) {
+                repository.scrollRequest = ScrollRequest(id: repository.commits[index].id)
+            }
+        default:
+            break
         }
     }
 
@@ -193,6 +283,24 @@ final class DebugDriver {
     }
 
     // MARK: Synthesized input (in-process, through NSWindow.sendEvent)
+
+    private func press(_ name: String) {
+        guard let nsWindow = controller?.window else { return }
+        let keys: [String: (UInt16, Int)] = [
+            "up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey),
+            "return": (36, 0x0D), "escape": (53, 0x1B),
+        ]
+        guard let (code, scalar) = keys[name], let unicode = UnicodeScalar(scalar) else { return }
+        let characters = String(Character(unicode))
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: nsWindow.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+            ) else { continue }
+            nsWindow.sendEvent(event)
+        }
+    }
 
     private func mouse(_ type: NSEvent.EventType, at point: CGPoint, count: Int = 1) {
         guard let nsWindow = controller?.window else { return }
@@ -299,7 +407,41 @@ final class DebugDriver {
                 "groups": model.groups.map { ["name": $0.name, "color": $0.color.rawValue, "collapsed": $0.collapsed] },
             ])
         }
+        var active: [String: Any] = [:]
+        if let window, let tab = window.activeTab {
+            let repository = app.repository(for: tab.path)
+            let selection: String
+            switch repository.selection {
+            case .workingCopy: selection = "wip"
+            case .commit(let id): selection = repository.commits.firstIndex { $0.id == id }.map { "commit \($0) \(id.prefix(7))" } ?? id
+            }
+            active = [
+                "name": repository.name,
+                "selection": selection,
+                "focused": window.isFocused,
+                "drawer": window.showsDrawer,
+                "review": repository.review.map { ["all": $0.showsAllFiles, "path": $0.path ?? ""] as [String: Any] } ?? NSNull(),
+                "search": ["open": repository.search.isOpen, "query": repository.search.query, "scope": repository.search.scope.rawValue,
+                           "matches": repository.search.matches.compactMap { id in repository.commits.firstIndex { $0.id == id } }],
+                "composer": ["summary": repository.composer.summary, "body": repository.composer.body, "amend": repository.composer.amend,
+                             "button": repository.commitButtonTitle, "canCommit": repository.canCommit],
+                "staged": repository.status.entries.filter(\.hasStagedChanges).map(\.path),
+                "unstaged": repository.status.entries.filter(\.hasUnstagedChanges).map(\.path),
+                "reviewFiles": (repository.reviewFiles ?? []).map { file -> [String: Any] in
+                    ["path": file.path, "letter": file.letter, "hunks": file.hunks.map { "\($0.stage):\($0.hunk.id)" },
+                     "add": file.additions, "del": file.deletions, "part": file.partText ?? ""]
+                },
+                "lanes": repository.graph.map(\.lane),
+                "turns": repository.graph.enumerated().flatMap { index, row in
+                    row.down.filter { $0.turn != .straight }.map { "\(index):\($0.from)->\($0.to) \($0.turn)" }
+                },
+                "descriptions": repository.commits.prefix(12).map(\.bodyPreview),
+                "activity": repository.activity?.statusText ?? "",
+                "head": repository.status.headID.map { String($0.prefix(7)) } ?? "",
+            ]
+        }
         let state: [String: Any] = [
+            "active": active,
             "git": app.git?.url.path(percentEncoded: false) ?? "",
             "gitSource": app.git?.source.rawValue ?? "",
             "gitVersion": app.git?.version ?? "",

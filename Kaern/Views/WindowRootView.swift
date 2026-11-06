@@ -49,19 +49,32 @@ struct RepositoryScreen: View {
     @Bindable var repository: RepositoryModel
 
     var body: some View {
+        // Focus hides both side panels without changing what Sidebar and Details are set to.
+        let showsSidebar = window.showsSidebar && !window.isFocused && repository.hasContent
+        let showsDetails = window.showsDetails && !window.isFocused && repository.isReady
         VStack(spacing: 0) {
             MainToolbar(window: window, repository: repository)
                 .zIndex(2)
+            if repository.search.isOpen, repository.isReady {
+                FindBar(repository: repository)
+                    .zIndex(1)
+            }
             HStack(spacing: 0) {
-                if window.showsSidebar, repository.hasContent {
+                if showsSidebar {
                     SidebarView(repository: repository)
                         .transition(.move(edge: .leading))
                 }
-                center
-                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .layoutPriority(-1)
-                if window.showsDetails, repository.isReady {
+                VStack(spacing: 0) {
+                    center
+                        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                    if window.isFocused, window.showsDrawer, repository.isReady, repository.review == nil {
+                        FocusDrawer(repository: repository) { window.showsDrawer = false }
+                            .transition(.move(edge: .bottom))
+                    }
+                }
+                .layoutPriority(-1)
+                if showsDetails {
                     DetailsPanel(repository: repository)
                         .transition(.move(edge: .trailing))
                 }
@@ -71,8 +84,9 @@ struct RepositoryScreen: View {
             .clipped()
             StatusBarView(repository: repository)
         }
-        .animation(.easeOut(duration: 0.18), value: window.showsSidebar)
-        .animation(.easeOut(duration: 0.18), value: window.showsDetails)
+        .animation(.easeOut(duration: 0.18), value: showsSidebar)
+        .animation(.easeOut(duration: 0.18), value: showsDetails)
+        .animation(.easeOut(duration: 0.18), value: window.isFocused && window.showsDrawer)
         .alert(item: $repository.alert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message))
         }
@@ -82,7 +96,13 @@ struct RepositoryScreen: View {
     private var center: some View {
         switch repository.phase {
         case .ready:
-            HistoryView(repository: repository)
+            if repository.review != nil {
+                ReviewView(repository: repository)
+            } else {
+                HistoryView(repository: repository, isFocused: window.isFocused) {
+                    if window.isFocused { window.showsDrawer = true }
+                }
+            }
         case .waiting, .opening, .light, .loading:
             VStack(spacing: 10) {
                 ProgressView().controlSize(.regular)
