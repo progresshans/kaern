@@ -87,9 +87,10 @@ public struct GitRepository: Sendable, Hashable {
         _ arguments: [String],
         input: Data? = nil,
         accepted: Set<Int32> = [0],
+        environment: [String: String] = [:],
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> GitOutput {
-        try await runner.run(arguments, in: root, input: input, acceptedStatus: accepted, onProgress: onProgress)
+        try await runner.run(arguments, in: root, input: input, acceptedStatus: accepted, environment: environment, onProgress: onProgress)
     }
 
     // MARK: - Reading

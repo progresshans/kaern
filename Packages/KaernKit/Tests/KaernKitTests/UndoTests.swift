@@ -35,6 +35,43 @@ struct UndoTests {
         #expect(Set(files.split(separator: "\n").map(String.init)) == ["a.txt", "[draft].md"])
     }
 
+    /// A file with staged changes while other files are staged too: the copy must leave
+    /// everything as it was (`git stash push -- <path>` and `apply --index` didn't).
+    @Test func snapshotStashWithOtherStagedFilesChangesNothing() async throws {
+        let repository = try await makeRepository()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\ntwo\nthree\nfour\n", to: "a.txt")
+        try await repository.stage(["a.txt"])
+        try repository.write("ONE\ntwo\nthree\nfour\n", to: "a.txt")      // partially staged
+        try repository.write("y\n", to: "b.txt")
+        try await repository.stage(["b.txt"])                              // another staged file
+        try repository.write("new\n", to: "c.txt")
+        try await repository.stage(["c.txt"])                              // a staged new file
+        try repository.write("loose\n", to: "d.txt")                       // untracked
+        let before = try await repository.status()
+        let indexBefore = await repository.writeIndexTree()
+
+        let object = try #require(try await repository.snapshotStash(paths: ["a.txt", "d.txt"], message: "Before discarding", includeUntracked: true))
+        let after = try await repository.status()
+        #expect(after.entries == before.entries)
+        #expect(await repository.writeIndexTree() == indexBefore)
+        #expect(repository.read("a.txt") == "ONE\ntwo\nthree\nfour\n")
+        // The entry holds a.txt (staged and unstaged parts) and d.txt, nothing else.
+        let stashes = try await repository.stashes()
+        #expect(stashes.first?.id == object)
+        #expect(stashes.first?.message.hasSuffix("Before discarding") == true)
+        let files = try await repository.git(["stash", "show", "--include-untracked", "--name-only", "stash@{0}"]).text
+        #expect(Set(files.split(separator: "\n").map(String.init)) == ["a.txt", "d.txt"])
+        // Popping it on a clean tree gives the file back with its staged part.
+        try await repository.git(["reset", "-q", "--hard"])
+        try FileManager.default.removeItem(at: repository.root.appending(path: "d.txt"))
+        try await repository.popStash(object: object)
+        #expect(repository.read("a.txt") == "ONE\ntwo\nthree\nfour\n")
+        #expect(repository.read("d.txt") == "loose\n")
+        let popped = try await repository.status()
+        #expect(popped.entries.first { $0.path == "a.txt" }?.stageState == .partial)
+    }
+
     @Test func discardPatchesRoundTrip() async throws {
         let repository = try await makeRepository()
         defer { TestRepositories.remove(repository) }

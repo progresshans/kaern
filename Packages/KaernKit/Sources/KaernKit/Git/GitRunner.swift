@@ -63,22 +63,14 @@ public struct GitError: Error, LocalizedError, Sendable, Equatable {
     }
 }
 
-/// One entry of the command log (Settings › Advanced).
-public struct GitCommandRecord: Sendable, Identifiable {
-    public let id = UUID()
-    public let arguments: [String]
-    public let directory: String
-    public let status: Int32
-    public let duration: Duration
-    public let date: Date
-}
-
 /// Runs the git command-line tool. Kaern never links libgit2; everything goes through the CLI so
 /// behaviour (hooks, signing, credential helpers, config) matches what the user gets in Terminal.
 public struct GitRunner: Sendable {
     public var executableURL: URL
     public var environment: [String: String]
-    public var onCommand: (@Sendable (GitCommandRecord) -> Void)?
+    /// Told when a command starts, prints progress and ends (the Command Log). Arguments and
+    /// output arrive with their secrets masked.
+    public var onCommand: (@Sendable (GitCommandEvent) -> Void)?
     /// Whether `git-lfs` is on the PATH git runs with.
     ///
     /// Without it, the Git LFS filters `git lfs install` put in ~/.gitconfig
@@ -109,8 +101,21 @@ public struct GitRunner: Sendable {
         "-c", "filter.lfs.required=false",
     ]
 
+    /// The variables Kaern sets for every command (the Command Log shows them).
+    public static let kaernEnvironmentKeys = [
+        "LC_ALL", "GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS", "GIT_MERGE_AUTOEDIT", "GIT_EDITOR", "GIT_PAGER", "TERM",
+    ]
+
+    /// How much of a command's output a record keeps (user actions; background commands keep a
+    /// tenth of it).
+    public static let recordedOutputLimit = 64 * 1024
+
     /// The subcommand of `arguments` (after any `-c key=value` and `-C dir` options).
     static func subcommand(of arguments: [String]) -> String? {
+        subcommandIndex(of: arguments).map { arguments[$0] }
+    }
+
+    static func subcommandIndex(of arguments: [String]) -> Int? {
         var index = 0
         while index < arguments.count {
             let argument = arguments[index]
@@ -119,7 +124,7 @@ public struct GitRunner: Sendable {
             } else if argument.hasPrefix("-") {
                 index += 1
             } else {
-                return argument
+                return index
             }
         }
         return nil
@@ -136,7 +141,7 @@ public struct GitRunner: Sendable {
         executableURL: URL = GitRunner.defaultExecutableURL,
         extraEnvironment: [String: String] = [:],
         removedEnvironment: [String] = [],
-        onCommand: (@Sendable (GitCommandRecord) -> Void)? = nil
+        onCommand: (@Sendable (GitCommandEvent) -> Void)? = nil
     ) {
         _ = GitRunner.ignoreSIGPIPE
         self.executableURL = executableURL
@@ -187,25 +192,57 @@ public struct GitRunner: Sendable {
         in directory: URL?,
         input: Data? = nil,
         acceptedStatus: Set<Int32> = [0],
+        environment extra: [String: String] = [:],
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> GitOutput {
         let start = ContinuousClock.now
         let lfsArguments = isLFSInstalled || GitRunner.subcommand(of: arguments) == "add" ? [] : GitRunner.lfsFiltersOff
-        let output = try await GitRunner.execute(
+        let onCommand = onCommand
+        var record = onCommand.map { _ in
+            GitCommandRecord(
+                arguments: GitRedaction.redact(arguments: arguments),
+                directory: directory?.path(percentEncoded: false) ?? "",
+                trigger: GitCommandTrigger.current,
+                started: Date(),
+                hasInput: input != nil
+            )
+        }
+        let progress: (@Sendable (String) -> Void)?
+        if let onProgress, let onCommand, let id = record?.id {
+            progress = { line in
+                onProgress(line)
+                onCommand(.progress(id, GitRedaction.redact(line)))
+            }
+        } else {
+            progress = onProgress
+        }
+        let launched = record
+        let result = try await GitRunner.execute(
             executableURL: executableURL,
             arguments: GitRunner.baseArguments + lfsArguments + arguments,
             directory: directory,
-            environment: environment,
+            environment: extra.isEmpty ? environment : environment.merging(extra) { _, new in new },
             input: input,
-            onProgress: onProgress
+            onProgress: progress,
+            onLaunch: { stop in
+                if let onCommand, let launched { onCommand(.started(launched, stop: GitCommandHandle(stop))) }
+            }
         )
-        onCommand?(GitCommandRecord(
-            arguments: arguments,
-            directory: directory?.path(percentEncoded: false) ?? "",
-            status: output.status,
-            duration: ContinuousClock.now - start,
-            date: Date()
-        ))
+        let output = result.output
+        if let onCommand, var finished = record {
+            let limit = finished.isBackground ? GitRunner.recordedOutputLimit / 10 : GitRunner.recordedOutputLimit
+            finished.status = output.status
+            finished.duration = ContinuousClock.now - start
+            finished.output = GitRedaction.redact(String(decoding: output.stdout.prefix(limit), as: UTF8.self))
+            finished.errorOutput = GitRedaction.redact(String(decoding: output.stderr.prefix(limit), as: UTF8.self))
+            finished.isOutputCut = output.stdout.count > limit || output.stderr.count > limit
+            finished.wasStopped = result.wasStopped
+            record = finished
+            onCommand(.finished(finished))
+        }
+        if result.wasStopped {
+            throw CancellationError()
+        }
         guard acceptedStatus.contains(output.status) else {
             let message = output.errorText.isEmpty ? output.text : output.errorText
             throw GitError(arguments: arguments, status: output.status, message: message)
@@ -229,10 +266,43 @@ public struct GitRunner: Sendable {
 
     private final class ProcessBox: @unchecked Sendable {
         let process: Process
+        private let stopped = Mutex(false)
         init(_ process: Process) { self.process = process }
+        var wasStopped: Bool { stopped.withLock { $0 } }
+
+        /// Ends git and everything it started (a hook and the tools it runs), so the pipes close.
         func terminate() {
-            if process.isRunning { process.terminate() }
+            stopped.withLock { $0 = true }
+            guard process.isRunning else { return }
+            let pid = process.processIdentifier
+            for child in ProcessBox.descendants(of: pid) {
+                kill(child, SIGTERM)
+            }
+            process.terminate()
         }
+
+        private static func descendants(of pid: pid_t) -> [pid_t] {
+            var result: [pid_t] = []
+            var queue = [pid]
+            while let parent = queue.popLast(), result.count < 512 {
+                var buffer = [pid_t](repeating: 0, count: 256)
+                let count = buffer.withUnsafeMutableBytes { bytes in
+                    proc_listchildpids(parent, bytes.baseAddress, Int32(bytes.count))
+                }
+                guard count > 0 else { continue }
+                for child in buffer.prefix(Int(count)) where child > 0 {
+                    result.append(child)
+                    queue.append(child)
+                }
+            }
+            return result
+        }
+    }
+
+    private struct Execution: Sendable {
+        let output: GitOutput
+        /// Ended by `terminate()` (Stop, or the task was cancelled), not on its own.
+        let wasStopped: Bool
     }
 
     private static func execute(
@@ -241,8 +311,9 @@ public struct GitRunner: Sendable {
         directory: URL?,
         environment: [String: String],
         input: Data?,
-        onProgress: (@Sendable (String) -> Void)?
-    ) async throws -> GitOutput {
+        onProgress: (@Sendable (String) -> Void)?,
+        onLaunch: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void
+    ) async throws -> Execution {
         let process = Process()
         process.executableURL = executableURL
         process.arguments = arguments
@@ -269,16 +340,26 @@ public struct GitRunner: Sendable {
         let inHandle = stdinPipe?.fileHandleForWriting
 
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<GitOutput, any Error>) in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Execution, any Error>) in
                 let group = DispatchGroup()
                 group.enter()
                 group.enter()
+                let resumed = Mutex(false)
                 process.terminationHandler = { finished in
                     let status = finished.terminationStatus
-                    group.notify(queue: .global(qos: .userInitiated)) {
+                    let finish: @Sendable () -> Void = {
+                        guard resumed.withLock({ done in defer { done = true }; return !done }) else { return }
                         let out = collector.stdout.withLock { $0 }
                         let err = collector.stderr.withLock { $0 }
-                        continuation.resume(returning: GitOutput(status: status, stdout: out, stderr: err))
+                        continuation.resume(returning: Execution(
+                            output: GitOutput(status: status, stdout: out, stderr: err),
+                            wasStopped: box.wasStopped
+                        ))
+                    }
+                    group.notify(queue: .global(qos: .userInitiated), execute: finish)
+                    if box.wasStopped {
+                        // Something that ignored the stop may still hold the pipes open.
+                        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1, execute: finish)
                     }
                 }
 
@@ -294,6 +375,7 @@ public struct GitRunner: Sendable {
                     ))
                     return
                 }
+                onLaunch { box.terminate() }
 
                 DispatchQueue.global(qos: .userInitiated).async {
                     let data = outHandle.readDataToEndOfFile()

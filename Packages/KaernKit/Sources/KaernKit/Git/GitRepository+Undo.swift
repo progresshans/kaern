@@ -60,20 +60,84 @@ extension GitRepository {
     }
 
     /// Keeps a copy of the changes of `paths` in the stash list without changing anything: the
-    /// changes are stashed and applied straight back. Returns the stash's object name, `nil` when
-    /// there was nothing to keep.
+    /// stash commit is built with a scratch index (`git stash store` adds it to the list), so the
+    /// working tree and the index are never touched. Staged and unstaged changes of `paths` go
+    /// in like `git stash push -- <paths>` would put them; with `includeUntracked`, untracked
+    /// files among `paths` go in the stash's third parent. Returns the stash's object name,
+    /// `nil` when there was nothing to keep.
     public func snapshotStash(paths: [String], message: String, includeUntracked: Bool) async throws -> String? {
-        guard !paths.isEmpty else { return nil }
-        let before = await resolve("refs/stash")
-        var arguments = ["stash", "push", "-q", "-m", message]
-        if includeUntracked { arguments.append("--include-untracked") }
-        // Literal pathspecs: a file named "[draft].md" must not match "d.md". (Setting
-        // GIT_LITERAL_PATHSPECS for the whole command breaks `stash -u` internally.)
-        arguments += ["--"] + paths.map { ":(literal)" + $0 }
-        try await git(arguments)
-        guard let after = await resolve("refs/stash"), after != before else { return nil }
-        try await git(["stash", "apply", "--index", "-q", "stash@{0}"])
-        return after
+        // The Command Log shows the `git stash store` under the action; the plumbing that builds
+        // the entry is filed as that action's background work.
+        let action = GitCommandTrigger.current
+        guard let commit = try await GitCommandTrigger.$current.withValue(
+            GitCommandTrigger((action?.action ?? "Keeping a copy") + " › building the copy", background: true),
+            operation: { try await snapshotCommit(paths: paths, message: message, includeUntracked: includeUntracked) }
+        ) else { return nil }
+        try await git(["stash", "store", "-m", commit.title, commit.id])
+        return commit.id
+    }
+
+    /// The stash commit `snapshotStash` stores.
+    private func snapshotCommit(paths: [String], message: String, includeUntracked: Bool) async throws -> (id: String, title: String)? {
+        guard !paths.isEmpty, let head = await resolve("HEAD") else { return nil }
+        let literal = paths.map { ":(literal)" + $0 }
+        let untracked = includeUntracked
+            ? Records.splitNUL(try await git(["ls-files", "-z", "--others", "--exclude-standard", "--"] + literal).stdout)
+            : []
+        let untrackedSet = Set(untracked)
+        let tracked = paths.filter { !untrackedSet.contains($0) }
+        let branch = await currentBranchName() ?? "(no branch)"
+        let subject = (try? await git(["log", "-1", "--format=%h %s", head, "--"]).text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? ""
+        let scratch = gitDirectory.appending(path: "kaern-snapshot-\(UUID().uuidString).index")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let env = ["GIT_INDEX_FILE": scratch.path(percentEncoded: false)]
+
+        // The index part: HEAD with the real index's entries for the tracked paths.
+        try await git(["read-tree", head], environment: env)
+        var entries: [String] = []
+        var inIndex = Set<String>()
+        if !tracked.isEmpty {
+            let staged = try await git(["ls-files", "-s", "-z", "--"] + tracked.map { ":(literal)" + $0 }).stdout
+            for record in Records.splitNUL(staged) {
+                // <mode> SP <object> SP <stage> TAB <path>
+                guard let tab = record.firstIndex(of: "\t") else { continue }
+                let fields = record[..<tab].split(separator: " ")
+                let path = String(record[record.index(after: tab)...])
+                guard fields.count == 3, fields[2] == "0" else { continue }
+                inIndex.insert(path)
+                entries.append("\(fields[0]) \(fields[1])\t\(path)")
+            }
+        }
+        let zero = String(repeating: "0", count: 40)
+        for path in tracked where !inIndex.contains(path) { entries.append("0 \(zero)\t\(path)") }
+        if !entries.isEmpty {
+            try await git(["update-index", "-z", "--index-info"], input: Data((entries.joined(separator: "\0") + "\0").utf8), environment: env)
+        }
+        let indexTree = try await git(["write-tree"], environment: env).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The working-tree part: the files as they are on disk (deleted ones leave).
+        if !tracked.isEmpty {
+            // update-index takes plain paths, not pathspecs.
+            try await git(["update-index", "--add", "--remove", "--"] + tracked, environment: env)
+        }
+        let workTree = try await git(["write-tree"], environment: env).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headTree = await treeID(of: head)
+        guard workTree != headTree || indexTree != headTree || !untracked.isEmpty else { return nil }
+
+        let indexCommit = try await git(["commit-tree", indexTree, "-p", head], input: Data("index on \(branch): \(subject)\n".utf8))
+            .text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var parents = ["-p", head, "-p", indexCommit]
+        if !untracked.isEmpty {
+            try await git(["read-tree", "--empty"], environment: env)
+            try await git(["update-index", "--add", "--"] + untracked, environment: env)
+            let untrackedTree = try await git(["write-tree"], environment: env).text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let untrackedCommit = try await git(["commit-tree", untrackedTree], input: Data("untracked files on \(branch): \(subject)\n".utf8))
+                .text.trimmingCharacters(in: .whitespacesAndNewlines)
+            parents += ["-p", untrackedCommit]
+        }
+        let title = "On \(branch): \(message)"
+        let stash = try await git(["commit-tree", workTree] + parents, input: Data((title + "\n").utf8))
+            .text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (stash, title)
     }
 
     /// Stashes all local changes with `message` and returns the new stash's object name.
