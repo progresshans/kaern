@@ -2,12 +2,14 @@ import KaernKit
 import SwiftUI
 
 /// Graph geometry (Tokens board › 그래프): first lane at x 16, 22 between lanes, 2.2 pt lines,
-/// rounded corners of 10 where a fork or merge line turns.
+/// rounded corners of 10 where a fork or merge line turns, and 1 pt lines from a ref label to its
+/// commit (canvas v60).
 nonisolated enum GraphMetrics {
     static let firstLane: CGFloat = 16
     static let laneSpacing: CGFloat = 22
     static let corner: CGFloat = 10
     static let lineWidth: CGFloat = 2.2
+    static let labelLineWidth: CGFloat = 1
 
     static func x(lane: Int) -> CGFloat { firstLane + laneSpacing * CGFloat(lane) }
 

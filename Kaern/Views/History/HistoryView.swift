@@ -409,12 +409,13 @@ private struct CommitRow: View {
                 .overlay(alignment: .leading) { refColumn }
             ZStack(alignment: .topLeading) {
                 if !labels.isEmpty {
-                    // The connector carries on from the label column to the node's edge, under
-                    // the lanes it crosses (the board draws it first).
+                    // The label's line carries on from the label column to the node's edge, under the
+                    // lanes it passes (drawn first). It's a 1 pt hairline against 2.2 pt lanes, so it
+                    // reads as a pointer to the label, not a branch joining at this row (canvas v60).
                     Rectangle()
-                        .fill(K.lane(lane))
-                        .frame(width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.lineWidth)
-                        .offset(y: KMetric.graphRow / 2 - GraphMetrics.lineWidth / 2)
+                        .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
+                        .frame(width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.labelLineWidth)
+                        .offset(y: KMetric.graphRow / 2 - GraphMetrics.labelLineWidth / 2)
                 }
                 if let graph { GraphLines(row: graph, height: KMetric.graphRow) }
                 CommitNode(commit: commit, isMerge: isMerge, lane: lane, gap: background)
@@ -483,7 +484,7 @@ private struct CommitRow: View {
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
                     .frame(minWidth: 8, maxWidth: .infinity)
-                    .frame(height: 1.5)
+                    .frame(height: GraphMetrics.labelLineWidth)
             }
             .padding(.leading, 10)
         }
