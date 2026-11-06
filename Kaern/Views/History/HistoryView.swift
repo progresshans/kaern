@@ -1,3 +1,4 @@
+import AppKit
 import KaernKit
 import SwiftUI
 
@@ -28,13 +29,17 @@ struct HistoryView: View {
     var body: some View {
         let columns = columns
         VStack(spacing: 0) {
+            if !repository.picked.isEmpty {
+                SelectionBar(repository: repository)
+            }
             HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if repository.showsWorkingCopy, let row = repository.graph.first {
                             WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
-                                           isSelected: repository.selection == .workingCopy,
+                                           isSelected: repository.selection == .workingCopy && repository.picked.isEmpty
+                                               && repository.branchCompare == nil,
                                            isDimmed: repository.search.isFiltering) {
                                 pick(.workingCopy)
                             }
@@ -42,6 +47,8 @@ struct HistoryView: View {
                         }
                         let offset = repository.showsWorkingCopy ? 1 : 0
                         let headBranch = repository.status.branch
+                        let picked = Set(repository.picked)
+                        let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
                         ForEach(Array(repository.commits.enumerated()), id: \.element.id) { index, commit in
                             let graphIndex = index + offset
                             CommitRow(
@@ -49,12 +56,15 @@ struct HistoryView: View {
                                 graph: repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil,
                                 labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
                                 isAlternate: index % 2 == 1,
-                                isSelected: repository.selection == .commit(commit.id),
+                                isSelected: picked.isEmpty
+                                    ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
+                                    : picked.contains(commit.id),
                                 isDimmed: repository.search.isDimmed(commit.id),
+                                tint: CommitRow.Tint(comparison: comparison, id: commit.id),
                                 columns: columns
                             )
                             .contentShape(Rectangle())
-                            .onTapGesture { pick(.commit(commit.id)) }
+                            .onTapGesture { click(commit.id) }
                             .onAppear {
                                 if index >= repository.commits.count - 40 { repository.loadMoreHistory() }
                             }
@@ -67,9 +77,17 @@ struct HistoryView: View {
                     .scrollTargetLayout()
                 }
                 .background(K.content)
+                .contextClip()
                 .focusable()
                 .focusEffectDisabled()
                 .focused($listFocused)
+                .onCopyCommand {
+                    // ⌘C in the graph copies the selected commit's SHA (or every picked one).
+                    let ids = repository.picked.isEmpty ? [repository.selectedCommitID].compactMap { $0 } : repository.picked
+                    guard !ids.isEmpty else { return [] }
+                    repository.showToast(ids.count == 1 ? "Copied \(repository.short(ids[0]))" : "Copied \(ids.count) commit hashes")
+                    return [NSItemProvider(object: ids.joined(separator: " ") as NSString)]
+                }
                 .onKeyPress(.upArrow) { move(-1, proxy: proxy) }
                 .onKeyPress(.downArrow) { move(1, proxy: proxy) }
                 .onKeyPress(.return) {
@@ -95,9 +113,19 @@ struct HistoryView: View {
     }
 
     private func pick(_ selection: HistorySelection) {
+        repository.clearPicks()
         repository.selection = selection
         listFocused = true
         onPick()
+    }
+
+    /// A click on a commit: ⌘ adds it to the picked commits, ⇧ picks a range.
+    private func click(_ id: String) {
+        let flags = NSEvent.modifierFlags
+        let command = flags.contains(.command), shift = flags.contains(.shift)
+        repository.click(commit: id, command: command, shift: shift)
+        listFocused = true
+        if !command, !shift { onPick() }
     }
 
     /// ↑ / ↓ move the selection through the working copy and the commits.
@@ -108,6 +136,7 @@ struct HistoryView: View {
         let current = ids.firstIndex(of: repository.selection) ?? (step > 0 ? -1 : ids.count)
         let next = min(max(current + step, 0), ids.count - 1)
         let selection = ids[next]
+        repository.clearPicks()
         repository.selection = selection
         switch selection {
         case .workingCopy: proxy.scrollTo("wip")
@@ -392,7 +421,22 @@ private struct CommitRow: View {
     let isAlternate: Bool
     let isSelected: Bool
     let isDimmed: Bool
+    var tint: Tint = .none
     let columns: HistoryColumns
+
+    /// Compare marks: between two picked commits (`.inr`), only on the current branch (`.ahd`)
+    /// or only on the other one (`.bhd`).
+    enum Tint: Equatable {
+        case none, inRange, ours, theirs
+
+        init(comparison: Comparison?, id: String) {
+            guard let comparison else { self = .none; return }
+            if comparison.rangeIDs.contains(id) { self = .inRange }
+            else if comparison.oursIDs.contains(id) { self = .ours }
+            else if comparison.theirsIDs.contains(id) { self = .theirs }
+            else { self = .none }
+        }
+    }
 
     @State private var hovering = false
 
@@ -460,9 +504,16 @@ private struct CommitRow: View {
         .frame(height: KMetric.graphRow)
         .background {
             // `.row:hover`: the hover tint on the list's background.
-            if hovering, !isSelected { ZStack { K.content; K.hover } } else { background }
+            if tint == .inRange, !isSelected { ZStack { K.content; K.accentSoft } }
+            else if hovering, !isSelected { ZStack { K.content; K.hover } } else { background }
+        }
+        .overlay(alignment: .leading) {
+            if !isSelected, tint == .ours || tint == .theirs {
+                (tint == .ours ? K.accent : K.lane2).frame(width: 3)
+            }
         }
         .onHover { hovering = $0 }
+        .contextTarget(.commit(commit.id))
         .opacity(isDimmed ? 0.3 : 1)
         .help("\(commit.subject)\n\(commit.author.name) · \(commit.shortID)")
     }
@@ -472,6 +523,7 @@ private struct CommitRow: View {
         if let first = labels.first {
             HStack(spacing: 0) {
                 RefLabel(label: first, lane: lane, selected: isSelected)
+                    .contextTarget(first.contextTarget, ring: ContextRing(radius: 6, inset: -2))
                     .layoutPriority(1)
                 if labels.count > 1 {
                     Text("+\(labels.count - 1)")
@@ -513,6 +565,41 @@ struct HoverPlateStyle: ButtonStyle {
                         .fill(hovering || configuration.isPressed ? (selected ? Color.white.opacity(0.15) : K.hover) : .clear)
                 )
                 .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// `.selbar`: how many commits are picked, how to pick more, and Clear.
+private struct SelectionBar: View {
+    let repository: RepositoryModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(repository.picked.count == 1 ? "1 commit picked" : "\(repository.picked.count) commits picked")
+            Spacer(minLength: 0)
+            Text("⌘-click adds a commit · ⇧-click picks a range")
+                .fontWeight(.medium)
+                .opacity(0.75)
+                .lineLimit(1)
+            GhostButton(title: "Clear") { repository.clearPicks() }
+        }
+        .font(.system(size: 12.5, weight: .semibold))
+        .foregroundStyle(K.accentText)
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .frame(height: 34)
+        .background { ZStack { K.content; K.accentSoft } }
+        .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
+    }
+}
+
+extension RefLabelItem {
+    /// A branch label's menu is the branch menu; a remote branch's and a tag's their own.
+    var contextTarget: ContextTarget {
+        switch kind {
+        case .branch: .branch(title)
+        case .remote: .remoteBranch(title)
+        case .tag: .tag(title)
         }
     }
 }

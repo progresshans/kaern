@@ -82,14 +82,51 @@ struct RepositoryScreen: View {
             .frame(maxHeight: .infinity)
             .background(K.content)
             .clipped()
+            .overlay(alignment: .bottomTrailing) {
+                if let run = repository.hookRun {
+                    // `.hookhud`: over the composer, 16 pt from the right edge.
+                    HookHUD(repository: repository, run: run)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 118)
+                        .transition(.opacity)
+                }
+            }
             StatusBarView(repository: repository)
+        }
+        .overlay(alignment: .bottom) {
+            ToastView(repository: repository)
+                .padding(.bottom, 44)
+                .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
+        }
+        .overlay {
+            if repository.confirmation != nil || repository.hookFailure != nil {
+                // The shade covers the window below the tab row; the card sits near the top.
+                ZStack(alignment: .top) {
+                    AlertShade()
+                    if let confirmation = repository.confirmation {
+                        ConfirmationCard(confirmation: confirmation) { repository.confirmation = nil }
+                            .padding(.top, 58)
+                    } else if let failure = repository.hookFailure {
+                        HookFailureCard(repository: repository, failure: failure)
+                            .padding(.top, 58)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .animation(.easeOut(duration: 0.18), value: showsSidebar)
         .animation(.easeOut(duration: 0.18), value: showsDetails)
         .animation(.easeOut(duration: 0.18), value: window.isFocused && window.showsDrawer)
+        .animation(.easeOut(duration: 0.15), value: repository.hookRun != nil)
         .alert(item: $repository.alert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message))
+            if let title = alert.actionTitle, let action = alert.action {
+                Alert(title: Text(alert.title), message: Text(alert.message),
+                      primaryButton: .default(Text("Resolve Later")), secondaryButton: .destructive(Text(title), action: action))
+            } else {
+                Alert(title: Text(alert.title), message: Text(alert.message))
+            }
         }
+        .modifier(NameRequestAlert(repository: repository))
     }
 
     @ViewBuilder
@@ -166,5 +203,33 @@ private struct MessageView: View {
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.content)
+    }
+}
+
+/// Create Branch Here…, Rename…, Create Tag Here…: a name in a small alert.
+private struct NameRequestAlert: ViewModifier {
+    @Bindable var repository: RepositoryModel
+    @State private var name = ""
+
+    func body(content: Content) -> some View {
+        let request = repository.nameRequest
+        content
+            .alert(request?.title ?? "", isPresented: Binding(get: { repository.nameRequest != nil },
+                                                               set: { if !$0 { repository.nameRequest = nil } })) {
+                TextField(request?.kind == .tag ? "Tag name" : "Branch name", text: $name)
+                Button(request?.confirmTitle ?? "OK") {
+                    let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let commit = repository.nameRequest?.commit
+                    repository.nameRequest = nil
+                    if !value.isEmpty { commit?(value) }
+                }
+                .keyboardShortcut(.defaultAction)
+                Button("Cancel", role: .cancel) { repository.nameRequest = nil }
+            } message: {
+                Text(request?.message ?? "")
+            }
+            .onChange(of: repository.nameRequest?.id) {
+                name = repository.nameRequest?.initial ?? ""
+            }
     }
 }

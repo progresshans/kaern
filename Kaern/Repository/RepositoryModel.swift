@@ -29,6 +29,10 @@ enum RepositoryActivity: Equatable {
     case creatingBranch(String)
     case committing
     case amending
+    /// Any other action, with the status bar's text ("Cherry-picking 3e71b0c…").
+    case working(String)
+    /// An action that talks to a remote ("Publishing feature/x to origin…").
+    case network(String)
 
     var statusText: String {
         switch self {
@@ -41,13 +45,14 @@ enum RepositoryActivity: Equatable {
         case .creatingBranch(let name): "Creating \(name)…"
         case .committing: "Committing…"
         case .amending: "Amending the last commit…"
+        case .working(let text), .network(let text): text
         }
     }
 
     /// Network activity shows the ring in the tab.
     var isNetwork: Bool {
         switch self {
-        case .fetching, .pulling, .pushing: true
+        case .fetching, .pulling, .pushing, .network: true
         default: false
         }
     }
@@ -134,15 +139,30 @@ final class RepositoryModel: Identifiable {
             loadSelectionDetails()
             drawerPath = nil
             if review != nil { review?.path = nil }
+            clearLinePicksIfNeeded()
             diffsAreStale = true
             refreshDiffsIfNeeded()
         }
+    }
+
+    func clearLinePicksIfNeeded() {
+        if !linePicks.isEmpty || linePicks.path != nil { linePicks = LinePicks() }
     }
     var sidebar = SidebarState()
     /// The first visible history row when the tab was last shown (scroll restore).
     var historyScrollAnchor: String?
     /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
-    var review: ReviewState?
+    var review: ReviewState? {
+        didSet {
+            if review?.compare != oldValue?.compare {
+                diffsAreStale = true
+                refreshDiffsIfNeeded()
+            }
+            if review == nil || review?.compare != nil { clearLinePicksIfNeeded() }
+        }
+    }
+    /// Diffs Review shows for a compare (`key`: base, target, white space).
+    var compareDiffs: (key: String, diffs: [FileDiff])?
     /// The Search find bar over the graph.
     var search = HistorySearch()
     /// The commit composer's text and Amend switch (kept per repository).
@@ -151,6 +171,53 @@ final class RepositoryModel: Identifiable {
     var drawerPath: String?
     /// Asks the history to scroll a row into view (search steps, selecting from elsewhere).
     var scrollRequest: ScrollRequest?
+
+    // Phase 3: picking several commits, comparing, ⌘Z, toasts, hooks.
+    /// Commits picked with ⌘-click or ⇧-click, in the order they were picked (2: compare, 3+: the
+    /// multi-select panel).
+    var picked: [String] = [] {
+        didSet { if picked != oldValue { refreshComparisonIfNeeded() } }
+    }
+    /// Where ⇧-click ranges start.
+    var pickAnchor: String?
+    /// Compare Two Commits shows the diff the other way round (Swap).
+    var compareSwapped = false {
+        didSet { if compareSwapped != oldValue { refreshComparisonIfNeeded() } }
+    }
+    /// Branch compare against the current branch ("Compare with “develop”").
+    var branchCompare: BranchCompareState? {
+        didSet { if branchCompare != oldValue { refreshComparisonIfNeeded() } }
+    }
+    /// Lines picked in Review for staging or discarding.
+    var linePicks = LinePicks()
+    /// ⌘Z and ⇧⌘Z.
+    var undoSteps: [ReversibleStep] = []
+    var redoSteps: [ReversibleStep] = []
+    /// The toast at the bottom of the window.
+    var toast: Toast?
+    /// The pre-commit hook running for a commit (the HUD).
+    var hookRun: HookRun?
+    /// A commit stopped by a hook: the sheet with its output.
+    var hookFailure: HookFailure?
+    /// The publish popover over Push.
+    var publishDraft: PublishDraft?
+    /// A confirmation (Reset Hard, Delete on origin, Force Push).
+    var confirmation: Confirmation?
+    /// Names asked for in a small sheet (Create Branch Here…, Rename…, Create Tag Here…).
+    var nameRequest: NameRequest?
+    /// Commits reachable from HEAD among the loaded ones ("on this branch").
+    @ObservationIgnored private(set) var headAncestors: Set<String> = []
+    /// Where the action that's about to run was started from ("Commit menu"), for the Command Log.
+    @ObservationIgnored var uiSource: String?
+    @ObservationIgnored var toastTask: Task<Void, Never>?
+    @ObservationIgnored var activityTask: Task<Void, Never>?
+    @ObservationIgnored var compareTask: Task<Void, Never>?
+    /// Two picked commits or a branch compare, loaded for the panel.
+    var comparison: Comparison?
+    /// A branch without upstream: its commits no remote branch has (Push's badge).
+    private(set) var unpublishedCount = 0
+    /// The branch rewrote commits its upstream has (amend, rebase): Push needs force.
+    private(set) var rewroteUpstream = false
 
     // Diffs for Review and the Focus drawer, loaded while one of them is on screen.
     /// The working copy's diffs by path, staged and unstaged apart.
@@ -244,7 +311,9 @@ final class RepositoryModel: Identifiable {
         }
         phase = .opening
         do {
-            let repository = try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
+            let repository = try await GitCommandTrigger.$current.withValue(.background("Opening the repository")) {
+                try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
+            }
             self.repository = repository
             startWatching(repository)
             if isVisible {
@@ -261,6 +330,12 @@ final class RepositoryModel: Identifiable {
     /// Loads everything the window shows. Used for the first load of a tab; afterwards the
     /// refresh paths keep it current.
     func loadEverything() async {
+        await GitCommandTrigger.$current.withValue(.background("Loading the repository")) {
+            await loadEverythingNow()
+        }
+    }
+
+    private func loadEverythingNow() async {
         guard let repository else { return }
         debugFullLoads += 1
         if phase != .ready { phase = .loading }
@@ -292,6 +367,7 @@ final class RepositoryModel: Identifiable {
         rebuildGraph()
         phase = .ready
         pendingScope = []
+        await refreshBranchFacts()
         await refreshLineStats()
         loadSelectionDetails()
         diffsAreStale = true
@@ -331,7 +407,7 @@ final class RepositoryModel: Identifiable {
         case .ready:
             if !pendingScope.isEmpty || !statusIsFull {
                 pendingScope.insert(.workTree)
-                runPendingRefresh()
+                runPendingRefresh(trigger: "Tab became visible")
             }
         default:
             break
@@ -341,24 +417,28 @@ final class RepositoryModel: Identifiable {
     /// Re-reads the status right away (after staging): the file event would come 0.3 s later.
     func refreshStatusNow() async {
         guard let repository else { return }
-        if let status = try? await repository.status() {
-            self.status = status
-            statusIsFull = true
+        await GitCommandTrigger.$current.withValue(.background("Refreshing after a change")) {
+            if let status = try? await repository.status() {
+                self.status = status
+                statusIsFull = true
+            }
+            rebuildGraph()
+            await refreshLineStats()
         }
-        rebuildGraph()
-        await refreshLineStats()
         diffsAreStale = true
         refreshDiffsIfNeeded()
     }
 
     /// Runs the refreshes that file events asked for, one at a time, until none are left.
-    private func runPendingRefresh() {
+    private func runPendingRefresh(trigger: String = "File watcher") {
         guard refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
-            while let self, self.isVisible, self.phase == .ready, !self.pendingScope.isEmpty {
-                let scope = self.pendingScope
-                self.pendingScope = []
-                await self.refresh(scope)
+            await GitCommandTrigger.$current.withValue(.background(trigger)) {
+                while let self, self.isVisible, self.phase == .ready, !self.pendingScope.isEmpty {
+                    let scope = self.pendingScope
+                    self.pendingScope = []
+                    await self.refresh(scope)
+                }
             }
             self?.refreshTask = nil
         }
@@ -398,6 +478,7 @@ final class RepositoryModel: Identifiable {
         }
         operation = repository.operationState()
         rebuildGraph()
+        await refreshBranchFacts()
         await refreshLineStats()
         diffsAreStale = true
         refreshDiffsIfNeeded()
@@ -412,10 +493,12 @@ final class RepositoryModel: Identifiable {
         }
         lightTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
-            repeat {
-                self?.lightAgain = false
-                await self?.lightRefresh()
-            } while self?.lightAgain == true
+            await GitCommandTrigger.$current.withValue(.background("File watcher (background tab)")) {
+                repeat {
+                    self?.lightAgain = false
+                    await self?.lightRefresh()
+                } while self?.lightAgain == true
+            }
             self?.lightTask = nil
         }
     }
@@ -430,6 +513,23 @@ final class RepositoryModel: Identifiable {
         operation = repository.operationState()
     }
 
+    /// What Push's badge and the status bar say beyond ahead/behind: commits not on any remote
+    /// for a branch without upstream, and whether the branch rewrote commits on its upstream.
+    private func refreshBranchFacts() async {
+        guard let repository else { return }
+        if status.branch != nil, status.upstream == nil, !remotes.isEmpty {
+            unpublishedCount = await repository.unpublishedCount() ?? 0
+        } else if unpublishedCount != 0 {
+            unpublishedCount = 0
+        }
+        if status.ahead > 0, status.behind > 0, let branch = status.branch, let upstream = status.upstream,
+           let tip = refs.remoteBranch(named: upstream)?.target {
+            rewroteUpstream = await repository.branchHadCommit(branch, commit: tip)
+        } else if rewroteUpstream {
+            rewroteUpstream = false
+        }
+    }
+
     func refreshLineStats() async {
         guard let repository, isVisible else { return }
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
@@ -441,7 +541,10 @@ final class RepositoryModel: Identifiable {
         isLoadingMoreHistory = true
         Task {
             defer { isLoadingMoreHistory = false }
-            guard let page = try? await repository.log(skip: commits.count, limit: Self.pageSize, includeHEAD: true) else { return }
+            let skip = commits.count
+            guard let page = try? await GitCommandTrigger.$current.withValue(.background("Scrolling the history"), operation: {
+                try await repository.log(skip: skip, limit: Self.pageSize, includeHEAD: true)
+            }) else { return }
             let known = Set(commits.map(\.id))
             commits.append(contentsOf: page.filter { !known.contains($0.id) })
             hasMoreHistory = page.count == Self.pageSize
@@ -461,7 +564,34 @@ final class RepositoryModel: Identifiable {
             selection = .workingCopy
         }
         search.refreshLocalMatches(in: commits)
+        headAncestors = Self.ancestors(of: status.headID, in: commits)
+        let known = Set(commits.map(\.id))
+        if picked.contains(where: { !known.contains($0) }) {
+            picked.removeAll { !known.contains($0) }
+        }
+        refreshComparisonIfNeeded()
     }
+
+    /// The loaded commits reachable from `head` (through loaded parents).
+    private static func ancestors(of head: String?, in commits: [Commit]) -> Set<String> {
+        guard let head else { return [] }
+        let byID = Dictionary(commits.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        var stack = [head]
+        while let id = stack.popLast() {
+            guard seen.insert(id).inserted, let commit = byID[id] else { continue }
+            stack.append(contentsOf: commit.parents)
+        }
+        return seen.intersection(byID.keys)
+    }
+
+    /// The loaded commit with `id`.
+    func commit(_ id: String) -> Commit? {
+        commits.first { $0.id == id }
+    }
+
+    /// Whether `id` is on the branch HEAD is on (reachable from HEAD).
+    func isOnCurrentBranch(_ id: String) -> Bool { headAncestors.contains(id) }
 
     // MARK: Selection details
 
@@ -478,8 +608,12 @@ final class RepositoryModel: Identifiable {
             return
         }
         detailsTask = Task {
-            guard let details = try? await repository.commitDetails(id) else { return }
-            let files = (try? await repository.changedFiles(in: details.commit)) ?? []
+            let loaded = await GitCommandTrigger.$current.withValue(.background("Commit details")) {
+                () async -> (CommitDetails, [FileChange])? in
+                guard let details = try? await repository.commitDetails(id) else { return nil }
+                return (details, (try? await repository.changedFiles(in: details.commit)) ?? [])
+            }
+            guard let (details, files) = loaded else { return }
             guard !Task.isCancelled else { return }
             detailsCache[id] = (details, files)
             if detailsCache.count > 200 { detailsCache.removeAll() }
@@ -491,25 +625,51 @@ final class RepositoryModel: Identifiable {
     // MARK: Actions
 
     /// Runs a git action with its activity shown in the tab and status bar, then refreshes.
-    func perform(_ activity: RepositoryActivity, _ work: @escaping (GitRepository) async throws -> Void,
-                 onSuccess: (() -> Void)? = nil) {
-        guard let repository, self.activity == nil else { return }
+    /// `trigger` names it in the Command Log (with ``uiSource`` in front). An error shows an alert
+    /// unless `onFailure` handles it; a stop (the hook HUD, the Command Log) shows nothing.
+    @discardableResult
+    func perform(_ activity: RepositoryActivity, trigger: String? = nil, _ work: @escaping (GitRepository) async throws -> Void,
+                 onSuccess: (() -> Void)? = nil, onFailure: ((any Error) -> Bool)? = nil) -> Task<Void, Never>? {
+        guard let repository, self.activity == nil else { return nil }
         self.activity = activity
         let previousIndexChange = indexTask
-        Task {
+        let command = GitCommandTrigger(triggerName(trigger ?? activity.statusText.replacingOccurrences(of: "…", with: "")))
+        let task = Task {
             // Wait for staging that's still running (git locks the index).
             await previousIndexChange?.value
             do {
-                try await work(repository)
+                try await GitCommandTrigger.$current.withValue(command) {
+                    try await work(repository)
+                }
                 onSuccess?()
+            } catch is CancellationError {
+                // Stopped on purpose.
             } catch {
-                alert = RepositoryAlert(title: "Couldn't finish: \(activity.statusText.replacingOccurrences(of: "…", with: ""))",
-                                        message: error.localizedDescription)
+                if onFailure?(error) != true {
+                    alert = RepositoryAlert(title: "Couldn't finish: \(activity.statusText.replacingOccurrences(of: "…", with: ""))",
+                                            message: error.localizedDescription)
+                }
             }
             self.activity = nil
+            activityTask = nil
             pendingScope.formUnion([.refs, .workTree, .index])
-            if isVisible, phase == .ready { runPendingRefresh() } else { scheduleLightRefresh() }
+            if isVisible, phase == .ready { runPendingRefresh(trigger: "After \(command.action)") } else { scheduleLightRefresh() }
         }
+        activityTask = task
+        return task
+    }
+
+    /// "Commit menu › Cherry-pick 3e71b0c" when the action came from a menu.
+    func triggerName(_ action: String) -> String {
+        uiSource.map { "\($0) › \(action)" } ?? action
+    }
+
+    /// Runs `body` (which starts actions) as coming from `source` ("Toolbar", "Sidebar").
+    func from(_ source: String, _ body: () -> Void) {
+        let previous = uiSource
+        uiSource = source
+        body()
+        uiSource = previous
     }
 
     var defaultRemote: String? {
@@ -518,43 +678,70 @@ final class RepositoryModel: Identifiable {
     }
 
     func fetch() {
-        perform(.fetching(remote: remotes.count == 1 ? remotes.first?.name : nil)) { try await $0.fetch() }
+        let remote = remotes.count == 1 ? remotes.first?.name : nil
+        perform(.fetching(remote: remote), trigger: "Fetch") { try await $0.fetch() } onSuccess: { [weak self] in
+            self?.showToast(remote.map { "Fetched \($0)" } ?? "Fetched all remotes")
+        }
     }
 
     func pull(_ strategy: GitRepository.PullStrategy) {
-        perform(.pulling) { try await $0.pull(strategy: strategy) }
-    }
-
-    func push() {
-        let remote = defaultRemote
-        let publish = status.upstream == nil ? remote : nil
-        perform(.pushing(remote: remote)) { try await $0.push(setUpstreamOn: publish) }
+        let before = status.headID
+        let branch = status.branch
+        perform(.pulling, trigger: "Pull") { [weak self] repository in
+            try await repository.pull(strategy: strategy)
+            let after = await repository.resolve("HEAD")
+            guard let self, let before, let after, before != after, let branch else {
+                self?.showToast("Already up to date")
+                return
+            }
+            let count = await repository.countCommits(from: before, to: after)
+            self.record(ReversibleStep.moveBranch(label: "Pull", branch: branch, from: before, to: after),
+                        toast: "Pulled \(Formatters.count(count, "commit", "commits")) into \(branch)")
+        }
     }
 
     func stash() {
-        perform(.stashing) { try await $0.stash(message: nil, includeUntracked: true) }
+        let count = status.entries.count
+        perform(.stashing, trigger: "Stash Changes") { [weak self] repository in
+            guard let object = try await repository.stashAll(message: "", includeUntracked: true) else { return }
+            self?.record(ReversibleStep.stashed(object: object), toast: "Stashed \(Formatters.count(count, "change", "changes"))")
+        }
     }
 
     func popStash() {
         guard let latest = stashes.first else { return }
-        perform(.popping) { try await $0.applyStash(latest, pop: true) }
+        applyStash(latest, pop: true)
     }
 
     func switchBranch(_ name: String) {
-        perform(.switching(name)) { try await $0.switchBranch(name) }
+        checkout(branch: name)
     }
 
     func checkoutRemoteBranch(_ ref: Ref) {
         let local = ref.branchName
         if refs.localBranch(named: local) != nil {
-            switchBranch(local)
+            checkout(branch: local)
         } else {
-            perform(.switching(local)) { try await $0.switchToRemoteBranch(ref.name, localName: local) }
+            let previous = headPosition
+            perform(.switching(local), trigger: "Checkout \(ref.name)") { [weak self] repository in
+                try await repository.switchToRemoteBranch(ref.name, localName: local)
+                guard let previous, let tip = await repository.resolve("HEAD") else { return }
+                self?.record(ReversibleStep.createdBranch(label: "Checkout \(ref.name)", name: local, at: tip, upstream: ref.name,
+                                                          previous: previous),
+                             toast: "Created \(local) tracking \(ref.name) and checked it out")
+            }
         }
     }
 
-    func createBranch(_ name: String) {
-        perform(.creatingBranch(name)) { try await $0.createBranch(name, startPoint: nil, checkout: true) }
+    func createBranch(_ name: String, at startPoint: String? = nil) {
+        let previous = headPosition
+        let label = "Create Branch \(name)"
+        perform(.creatingBranch(name), trigger: label) { [weak self] repository in
+            try await repository.createBranch(name, startPoint: startPoint, checkout: true)
+            guard let previous, let tip = await repository.resolve("HEAD") else { return }
+            self?.record(ReversibleStep.createdBranch(label: label, name: name, at: tip, upstream: nil, previous: previous),
+                         toast: startPoint == nil ? "Created \(name)" : "Created \(name) at \(String(tip.prefix(7))) and switched to it")
+        }
     }
 
     func isValidBranchName(_ name: String) async -> Bool {
@@ -575,8 +762,11 @@ final class RepositoryModel: Identifiable {
     }
 }
 
-struct RepositoryAlert: Identifiable, Equatable {
+struct RepositoryAlert: Identifiable {
     let id = UUID()
     var title: String
     var message: String
+    /// A second button besides OK ("Abort Cherry-pick").
+    var actionTitle: String?
+    var action: (() -> Void)?
 }

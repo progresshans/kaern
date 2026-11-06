@@ -95,6 +95,12 @@ final class DebugDriver {
              "stage", "unstage", "stageAll", "unstageAll", "stageHunk", "unstageHunk", "summary", "body", "amend", "commit",
              "column", "scroll":
             phase2(command, args)
+        case "menu", "menuClose", "menuHover", "rightClick", "pick", "clearPicks", "branchCompare", "swap", "undo", "redo", "checkout", "checkoutCommit",
+             "cherryPick", "revert", "reset", "merge", "rebase", "deleteBranch", "discard", "ignore", "apply", "popStash", "drop",
+             "pickLines", "stageLines", "discardLines", "clearLines", "publish", "publishDraft", "confirm", "dismiss", "commitHooks",
+             "commandLog", "commandLogFilter", "commandLogSelect", "snapshotAll", "snapshotWindow", "compareWorking", "toast", "rename",
+             "tag", "stopCommit", "hookAction":
+            phase3(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -119,14 +125,17 @@ final class DebugDriver {
         case "fetch", "push", "stash", "pop", "pull", "switch", "createBranch":
             guard let tab = window?.activeTab else { return }
             let repository = app.repository(for: tab.path)
-            switch command {
-            case "fetch": repository.fetch()
-            case "push": repository.push()
-            case "stash": repository.stash()
-            case "pop": repository.popStash()
-            case "pull": repository.pull(.merge)
-            case "switch": if let name = args.first { repository.switchBranch(name) }
-            default: if let name = args.first { repository.createBranch(name) }
+            // As if from the toolbar, so the Command Log names it the way a click would.
+            repository.from("Toolbar") {
+                switch command {
+                case "fetch": repository.fetch()
+                case "push": repository.push()
+                case "stash": repository.stash()
+                case "pop": repository.popStash()
+                case "pull": repository.pull(.merge)
+                case "switch": if let name = args.first { repository.switchBranch(name) }
+                default: if let name = args.first { repository.createBranch(name) }
+                }
             }
         case "dump":
             dump(to: args.first ?? "/tmp/kaern-state.json")
@@ -243,6 +252,404 @@ final class DebugDriver {
         default:
             break
         }
+    }
+
+    // MARK: Phase 3
+
+    private var openMenu: NSMenu?
+    /// The first pass of a menu capture, and where its menu was.
+    private var menuCapture: NSBitmapImageRep?
+    private var menuCaptureFrame: NSRect?
+
+    /// Context menus, picking and compare, ⌘Z, the push flows, line staging, the Command Log.
+    private func phase3(_ command: String, _ args: [String]) {
+        let rest = args.joined(separator: " ")
+        switch command {
+        case "commandLog":
+            // commandLog [repository path] — opens Window › Command Log.
+            CommandLogWindowController.shared.show(repository: window?.activeTab?.path)
+            // The board's size, so the two can be compared.
+            CommandLogWindowController.shared.window?.setFrame(NSRect(x: 60, y: 40, width: 1440, height: 900), display: true)
+            return
+        case "commandLogFilter":
+            // commandLogFilter all|failed|changes|network [background on|off] [repo on|off]
+            let state = CommandLogWindowController.shared.debugState
+            if let filter = CommandLogState.Filter(rawValue: args.first ?? "") { state.filter = filter }
+            if let index = args.firstIndex(of: "background"), args.count > index + 1 { state.showsBackground = args[index + 1] == "on" }
+            if let index = args.firstIndex(of: "repo"), args.count > index + 1 { state.onlyRepository = args[index + 1] == "on" }
+            if let index = args.firstIndex(of: "query") { state.query = args.dropFirst(index + 1).joined(separator: " ") }
+            return
+        case "commandLogSelect":
+            // commandLogSelect <text in the command line> — selects the newest entry that has it.
+            let state = CommandLogWindowController.shared.debugState
+            state.selection = CommandLog.shared.entries.last { $0.record.commandLine.contains(rest) }?.id
+            return
+        case "snapshotAll":
+            snapshotComposite(to: args.first ?? "/tmp/kaern-all.png")
+            return
+        case "snapshotWindow":
+            // snapshotWindow <png> <title…>
+            let title = args.dropFirst().joined(separator: " ")
+            if args.count >= 2, let target = NSApp.windows.first(where: { $0.title == title && $0.isVisible }) {
+                render(target, to: args[0])
+            }
+            return
+        default:
+            break
+        }
+        guard let window, let tab = window.activeTab, let controller else { return }
+        let repository = app.repository(for: tab.path)
+        func commitID(_ text: String?) -> String? {
+            guard let text else { return nil }
+            if let index = Int(text), repository.commits.indices.contains(index) { return repository.commits[index].id }
+            return repository.commits.first { $0.id.hasPrefix(text) }?.id
+        }
+        switch command {
+        case "menu":
+            // menu commit <index> | branch <name> | remote <name> | tag <name> | file <path> [staged] | stash <index>,
+            // then <x> <y> (window points, top-left): where the menu's top-left goes, or with `sub <item title…>`
+            // where that item goes. `snap <png>` saves the window with the menu (and the item's submenu) open.
+            // Distributed notifications don't arrive while a menu tracks the mouse, so the menu takes
+            // its own snapshot after a moment and closes again; a submenu is captured in a second
+            // pass, opened next to its item.
+            var parts = args
+            var sub: String?
+            var snap: String?
+            if let index = parts.firstIndex(of: "sub") {
+                sub = parts[(index + 1)...].joined(separator: " ")
+                parts = Array(parts[..<index])
+            }
+            if let index = parts.firstIndex(of: "snap"), parts.count > index + 1 {
+                snap = parts[index + 1]
+                parts.remove(at: index + 1)
+                parts.remove(at: index)
+            }
+            guard parts.count >= 4, let x = Double(parts[parts.count - 2]), let y = Double(parts[parts.count - 1]) else { return }
+            let spec = Array(parts.dropLast(2))
+            let target: ContextTarget?
+            switch spec[0] {
+            case "commit": target = commitID(spec[1]).map { .commit($0) }
+            case "branch": target = .branch(spec.dropFirst().joined(separator: " "))
+            case "remote": target = .remoteBranch(spec.dropFirst().joined(separator: " "))
+            case "tag": target = .tag(spec.dropFirst().joined(separator: " "))
+            case "file":
+                let staged = spec.last == "staged"
+                target = .file(path: spec.dropFirst().dropLast(staged ? 1 : 0).joined(separator: " "), staged: staged)
+            case "stash": target = Int(spec[1]).flatMap { repository.stashes.indices.contains($0) ? .stash(repository.stashes[$0].id) : nil }
+            default: target = nil
+            }
+            guard let target, let menu = ContextMenus.menu(for: target, repository: repository, window: window),
+                  let nsWindow = controller.window, let view = nsWindow.contentView else { return }
+            let point = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
+            let parent = sub.flatMap { title in menu.items.first { $0.title == title } }
+            openMenu = menu
+            let tracker = controller.contextTracker
+            DispatchQueue.main.async {
+                self.menuCapture = nil
+                self.menuCaptureFrame = nil
+                if snap != nil {
+                    let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+                        MainActor.assumeIsolated {
+                            self.menuCapture = self.compositeRep()
+                            self.menuCaptureFrame = NSApp.windows.first {
+                                String(describing: type(of: $0)).contains("PopupMenu") && $0.isVisible
+                            }?.frame
+                            self.openMenu?.cancelTracking()
+                        }
+                    }
+                    RunLoop.main.add(timer, forMode: .common)
+                }
+                tracker.open = tracker.view(for: target)
+                menu.popUp(positioning: parent, at: point, in: view)
+                tracker.open = nil
+                self.openMenu = nil
+                guard let snap, let rep = self.menuCapture else { return }
+                guard let parent, let submenu = parent.submenu, let frame = self.menuCaptureFrame else {
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(filePath: snap))
+                    return
+                }
+                // Second pass: the submenu, next to its item, drawn onto the first capture.
+                let edge = view.convert(nsWindow.convertPoint(fromScreen: NSPoint(x: frame.maxX, y: frame.maxY)), from: nil)
+                let subPoint = NSPoint(x: edge.x - 6, y: point.y - (view.isFlipped ? 5 : -5))
+                self.openMenu = submenu
+                let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+                    MainActor.assumeIsolated {
+                        guard let rep = self.menuCapture, let origin = self.controller?.window?.frame.origin else { return }
+                        if let window = NSApp.windows.first(where: { String(describing: type(of: $0)).contains("PopupMenu") && $0.isVisible }) {
+                            self.drawMenu(window, onto: rep, origin: origin)
+                        }
+                        try? rep.representation(using: .png, properties: [:])?.write(to: URL(filePath: snap))
+                        self.openMenu?.cancelTracking()
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                submenu.popUp(positioning: submenu.items.first, at: subPoint, in: view)
+                self.openMenu = nil
+            }
+        case "menuClose":
+            openMenu?.cancelTracking()
+        case "rightClick":
+            // rightClick x y snap <png> — moves the pointer there (hover), then right-clicks through the
+            // window like a real click; the menu that opens is snapshotted and closed.
+            guard args.count >= 4, let x = Double(args[0]), let y = Double(args[1]), let nsWindow = controller.window else { return }
+            let point = CGPoint(x: x, y: y)
+            let snap = args[3]
+            let tracker = controller.contextTracker
+            Task {
+                let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+                    MainActor.assumeIsolated {
+                        self.snapshotComposite(to: snap)
+                        tracker.openMenu?.cancelTracking()
+                    }
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                let location = NSPoint(x: point.x, y: nsWindow.frame.height - point.y)
+                if let event = NSEvent.mouseEvent(with: .rightMouseDown, location: location, modifierFlags: [],
+                                                  timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: nsWindow.windowNumber,
+                                                  context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                    nsWindow.sendEvent(event)
+                }
+            }
+        case "pick":
+            // pick <index> [<index>…] — the picked commits (2: compare, 3+: the multi-select panel).
+            repository.clearPicks()
+            let ids = args.compactMap(commitID)
+            if ids.count == 1 { repository.selection = .commit(ids[0]) } else { repository.picked = ids }
+            repository.pickAnchor = ids.last
+        case "clearPicks":
+            repository.clearPicks()
+        case "branchCompare":
+            repository.compare(branch: rest)
+        case "swap":
+            repository.compareSwapped.toggle()
+        case "compareWorking":
+            if let id = commitID(args.first) { repository.compareWithWorkingCopy(id) }
+        case "undo":
+            repository.from("Debug") { repository.undo() }
+        case "redo":
+            repository.from("Debug") { repository.redo() }
+        case "checkout":
+            repository.from("Debug") { repository.checkout(branch: rest) }
+        case "checkoutCommit":
+            if let id = commitID(args.first) { repository.from("Debug") { repository.checkout(commit: id) } }
+        case "cherryPick":
+            repository.from("Debug") { repository.cherryPick(args.compactMap(commitID)) }
+        case "revert":
+            repository.from("Debug") { repository.revert(args.compactMap(commitID)) }
+        case "reset":
+            // reset <index> soft|mixed|hard
+            let modes: [String: GitRepository.ResetMode] = ["soft": .soft, "mixed": .mixed, "hard": .hard]
+            if args.count == 2, let id = commitID(args[0]), let mode = modes[args[1]] { repository.from("Debug") { repository.reset(to: id, mode: mode) } }
+        case "merge":
+            repository.from("Debug") { repository.merge(rest) }
+        case "rebase":
+            repository.from("Debug") { repository.rebase(onto: rest) }
+        case "deleteBranch":
+            repository.from("Debug") { repository.deleteBranch(rest) }
+        case "rename":
+            // rename <old> <new>
+            if args.count == 2 {
+                repository.askRename(branch: args[0])
+                let commit = repository.nameRequest?.commit
+                repository.nameRequest = nil
+                commit?(args[1])
+            }
+        case "tag":
+            // tag <index> <name>
+            if args.count == 2, let id = commitID(args[0]) {
+                repository.askCreateTag(at: id)
+                let commit = repository.nameRequest?.commit
+                repository.nameRequest = nil
+                commit?(args[1])
+            }
+        case "discard":
+            // discard <path> [unstaged]
+            let keep = args.last == "unstaged"
+            let path = args.dropLast(keep ? 1 : 0).joined(separator: " ")
+            if let entry = repository.status.entries.first(where: { $0.path == path }) {
+                repository.from("Debug") { repository.discard([entry], keepingStaged: keep) }
+            }
+        case "ignore":
+            repository.from("Debug") { repository.ignore(pattern: rest) }
+        case "apply", "popStash", "drop":
+            if let index = Int(args.first ?? ""), repository.stashes.indices.contains(index) {
+                let stash = repository.stashes[index]
+                repository.from("Debug") {
+                    if command == "drop" { repository.dropStash(stash) } else { repository.applyStash(stash, pop: command == "popStash") }
+                }
+            }
+        case "pickLines":
+            // pickLines <path> <u|s>:<hunk>:<line>[,…] — picks lines as clicks would (the first plain, the rest with ⌘).
+            guard args.count >= 2, let files = repository.reviewFiles, let file = files.first(where: { $0.path == args[0] }) else { return }
+            let picks = args[1].split(separator: ",").compactMap { spec -> LinePick? in
+                let parts = spec.split(separator: ":")
+                guard parts.count == 3, let hunk = Int(parts[1]), let line = Int(parts[2]) else { return nil }
+                return LinePick(stage: parts[0] == "s" ? .staged : .unstaged, hunk: hunk, line: line)
+            }
+            for (index, pick) in picks.enumerated() {
+                repository.pickLine(pick, path: file.path, order: file.pickOrder, command: index > 0, shift: false)
+            }
+        case "stageLines":
+            repository.from("Debug") { repository.stagePickedLines() }
+        case "discardLines":
+            repository.from("Debug") { repository.discardPickedLines() }
+        case "clearLines":
+            repository.clearLinePicks()
+        case "publishDraft":
+            // publishDraft — what Push does on a branch without upstream (opens the popover).
+            repository.from("Debug") { repository.push() }
+        case "publish":
+            if let draft = repository.publishDraft { repository.publish(draft) }
+        case "confirm":
+            if let confirmation = repository.confirmation {
+                repository.confirmation = nil
+                confirmation.confirm()
+            }
+        case "dismiss":
+            repository.confirmation = nil
+            repository.hookFailure = nil
+            repository.publishDraft = nil
+        case "commitHooks":
+            // commitHooks on|off — commit with or without running hooks.
+            repository.from("Debug") { repository.commit(runHooks: args.first != "off") }
+        case "stopCommit":
+            repository.stopCommit()
+        case "hookAction":
+            // hookAction again|without
+            repository.hookFailure = nil
+            repository.from("Debug") { repository.commit(runHooks: args.first != "without") }
+        case "toast":
+            repository.showToast(rest, undo: false)
+        default:
+            break
+        }
+    }
+
+    /// Draws the main window and every other visible Kaern window over it (menus, popovers,
+    /// the Command Log) at their places, at the screen's scale.
+    private func snapshotComposite(to path: String) {
+        try? compositeRep()?.representation(using: .png, properties: [:])?.write(to: URL(filePath: path))
+    }
+
+    private func compositeRep() -> NSBitmapImageRep? {
+        guard let main = controller?.window, let frameView = main.contentView?.superview else { return nil }
+        frameView.layoutSubtreeIfNeeded()
+        let scale = main.backingScaleFactor
+        let origin = main.frame.origin
+        let size = main.frame.size
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = size
+        // Menus are drawn over a glass backdrop window of their own; it renders blank, so a plain
+        // menu-colored plate stands in for it under each menu.
+        let others = NSApp.windows
+            .filter { $0 !== main && $0.isVisible && $0.frame.intersects(main.frame) && $0.alphaValue > 0 }
+            .filter { !String(describing: type(of: $0)).contains("GlassEffect") }
+            .sorted { $0.level.rawValue < $1.level.rawValue }
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        if let image = image(of: frameView) { image.draw(in: NSRect(origin: .zero, size: size)) }
+        NSGraphicsContext.restoreGraphicsState()
+        for target in others {
+            let kind = String(describing: type(of: target))
+            if kind.contains("Menu") {
+                drawMenu(target, onto: rep, origin: origin)
+            } else if kind.contains("Popover"), let content = target.contentView, let image = image(of: content) {
+                // A popover's glass frame renders black: its content goes on a plate in the popover color.
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = context
+                let frame = target.frame
+                let inset = content.convert(content.bounds, to: nil)
+                let rect = NSRect(x: frame.minX - origin.x + inset.minX, y: frame.minY - origin.y + inset.minY,
+                                  width: inset.width, height: inset.height)
+                let plate = NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14)
+                NSGraphicsContext.saveGraphicsState()
+                let shadow = NSShadow()
+                shadow.shadowBlurRadius = 18
+                shadow.shadowOffset = NSSize(width: 0, height: -8)
+                shadow.shadowColor = NSColor.black.withAlphaComponent(0.2)
+                shadow.set()
+                (NSApp.effectiveAppearance.isDark ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 0.985, alpha: 1)).setFill()
+                plate.fill()
+                NSGraphicsContext.restoreGraphicsState()
+                NSColor.black.withAlphaComponent(0.12).setStroke()
+                plate.lineWidth = 0.5
+                plate.stroke()
+                image.draw(in: rect)
+                NSGraphicsContext.restoreGraphicsState()
+            } else if let view = target.contentView?.superview ?? target.contentView, let image = image(of: view) {
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = context
+                let frame = target.frame
+                image.draw(in: NSRect(x: frame.minX - origin.x, y: frame.minY - origin.y, width: frame.width, height: frame.height))
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            Self.log.info("composite \(String(describing: type(of: target)), privacy: .public) \(NSStringFromRect(target.frame), privacy: .public)")
+        }
+        return rep
+    }
+
+    /// A menu window on a plate in the menu color with the menu's shadow.
+    private func drawMenu(_ window: NSWindow, onto rep: NSBitmapImageRep, origin: NSPoint) {
+        guard let context = NSGraphicsContext(bitmapImageRep: rep), let image = layerImage(of: window, scale: window.backingScaleFactor) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        let frame = window.frame
+        let rect = NSRect(x: frame.minX - origin.x, y: frame.minY - origin.y, width: frame.width, height: frame.height)
+        let plate = NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12)
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowBlurRadius = 16
+        shadow.shadowOffset = NSSize(width: 0, height: -6)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
+        shadow.set()
+        (NSApp.effectiveAppearance.isDark ? NSColor(white: 0.19, alpha: 1) : NSColor(white: 0.975, alpha: 1)).setFill()
+        plate.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.black.withAlphaComponent(0.12).setStroke()
+        plate.lineWidth = 0.5
+        plate.stroke()
+        image.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// A window drawn from its frame view's layer tree (`CALayer.render(in:)`).
+    private func layerImage(of window: NSWindow, scale: CGFloat) -> NSImage? {
+        guard let view = window.contentView?.superview ?? window.contentView else { return nil }
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+        guard let layer = view.layer else { return image(of: view) }
+        let size = view.bounds.size
+        guard let context = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        if view.isFlipped {
+            context.translateBy(x: 0, y: size.height)
+            context.scaleBy(x: 1, y: -1)
+        }
+        layer.render(in: context)
+        guard let cgImage = context.makeImage() else { return nil }
+        return NSImage(cgImage: cgImage, size: size)
+    }
+
+    private func image(of view: NSView) -> NSImage? {
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    private func render(_ target: NSWindow, to path: String) {
+        guard let view = target.contentView?.superview else { return }
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(filePath: path))
     }
 
     private func dumpMenus(to path: String) {
@@ -439,6 +846,32 @@ final class DebugDriver {
                 "descriptions": repository.commits.prefix(12).map(\.bodyPreview),
                 "activity": repository.activity?.statusText ?? "",
                 "head": repository.status.headID.map { String($0.prefix(7)) } ?? "",
+                "branch": repository.status.branch ?? "",
+                "alert": repository.alert.map { $0.title + " — " + $0.message } ?? "",
+                "undo": repository.undoSteps.map(\.label),
+                "redo": repository.redoSteps.map(\.label),
+                "undoTitle": repository.undoTitle,
+                "toast": repository.toast.map { ["message": $0.message, "undo": $0.canUndo] as [String: Any] } ?? NSNull(),
+                "picked": repository.picked.compactMap { id in repository.commits.firstIndex { $0.id == id } },
+                "branchCompare": repository.branchCompare?.other ?? "",
+                "comparison": repository.comparison.map { comparison -> [String: Any] in
+                    ["key": comparison.key, "between": comparison.between.map(\.subject), "ours": comparison.oursCount,
+                     "theirs": comparison.theirsCount, "files": comparison.files.map(\.path), "linear": comparison.linear,
+                     "base": comparison.base.map { String($0.prefix(7)) } ?? ""]
+                } ?? NSNull(),
+                "linePicks": ["path": repository.linePicks.path ?? "",
+                              "lines": repository.linePicks.lines.map { "\($0.stage == .staged ? "s" : "u"):\($0.hunk):\($0.line)" }.sorted()],
+                "confirmation": repository.confirmation.map { ["title": $0.title, "lost": $0.lost.map(\.subject)] as [String: Any] } ?? NSNull(),
+                "hookRun": repository.hookRun?.command ?? "",
+                "hookFailure": repository.hookFailure.map { ["summary": $0.summary, "lines": $0.lines.count] as [String: Any] } ?? NSNull(),
+                "publishDraft": repository.publishDraft.map { ["remote": $0.remote, "name": $0.name, "track": $0.track] as [String: Any] } ?? NSNull(),
+                "operation": repository.operation.map { "\($0.kind)" } ?? "",
+                "stashes": repository.stashes.map(\.message),
+                "upstream": repository.status.upstream ?? "",
+                "ahead": repository.status.ahead, "behind": repository.status.behind,
+                "commandLog": CommandLog.shared.entries.suffix(12).map { entry in
+                    "\(entry.record.isBackground ? "bg" : "ui") \(entry.record.status.map(String.init) ?? "…") \(entry.record.trigger?.action ?? "-") :: \(entry.record.commandLine)"
+                },
             ]
         }
         let state: [String: Any] = [

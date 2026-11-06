@@ -7,6 +7,8 @@ struct ReviewState: Equatable {
     var showsAllFiles = true
     /// The file shown in One File mode, or scrolled to in All Files (`nil`: the first).
     var path: String?
+    /// Compare instead of the selection: two commits, or a commit and the working tree.
+    var compare: CompareRange?
 }
 
 /// Asks the history to bring a row into view ("wip" or a commit id). A new token scrolls again
@@ -148,52 +150,71 @@ extension RepositoryModel {
 extension RepositoryModel {
     var canChangeIndex: Bool { isReady && repository != nil && activity == nil }
 
+    /// The paths of entries, with the old path of a staged rename.
+    private func pathsWithRenames(_ paths: [String]) -> [String] {
+        var result = paths
+        for entry in status.entries where paths.contains(entry.path) {
+            if let original = entry.originalPath { result.append(original) }
+        }
+        return Array(Set(result)).sorted()
+    }
+
     func stage(_ paths: [String]) {
         guard !paths.isEmpty else { return }
-        changeIndex { try await $0.stage(paths) }
+        let label = paths.count == 1 ? "Stage \((paths[0] as NSString).lastPathComponent)" : "Stage \(paths.count) Files"
+        changeIndex(label: label, paths: pathsWithRenames(paths)) { try await $0.stage(paths) }
     }
 
     func unstage(_ paths: [String]) {
         guard !paths.isEmpty else { return }
         let hasHead = status.headID != nil
-        changeIndex { try await $0.unstage(paths, hasHead: hasHead) }
+        let label = paths.count == 1 ? "Unstage \((paths[0] as NSString).lastPathComponent)" : "Unstage \(paths.count) Files"
+        changeIndex(label: label, paths: pathsWithRenames(paths)) { try await $0.unstage(paths, hasHead: hasHead) }
     }
 
     func stageAll() {
         guard status.entries.contains(where: \.hasUnstagedChanges) else { return }
-        changeIndex { try await $0.stageAll() }
+        changeIndex(label: "Stage All", paths: pathsWithRenames(status.entries.map(\.path))) { try await $0.stageAll() }
     }
 
     func unstageAll() {
         guard status.stagedCount > 0 else { return }
         let hasHead = status.headID != nil
-        changeIndex { try await $0.unstageAll(hasHead: hasHead) }
+        changeIndex(label: "Unstage All", paths: pathsWithRenames(status.entries.map(\.path))) { try await $0.unstageAll(hasHead: hasHead) }
     }
 
     /// Stages one hunk of the file's unstaged diff (as Review shows it).
     func stageHunk(path: String, hunk: Int) {
         guard let diff = workingDiffs[path]?.unstaged else { return }
-        changeIndex { try await $0.stage(hunk: hunk, of: diff) }
+        changeIndex(label: "Stage Hunk", paths: pathsWithRenames([path])) { try await $0.stage(hunk: hunk, of: diff) }
     }
 
     /// Unstages one hunk of the file's staged diff.
     func unstageHunk(path: String, hunk: Int) {
         guard let diff = workingDiffs[path]?.staged else { return }
         let hasHead = status.headID != nil
-        changeIndex { try await $0.unstage(hunk: hunk, of: diff, hasHead: hasHead) }
+        changeIndex(label: "Unstage Hunk", paths: pathsWithRenames([path])) { try await $0.unstage(hunk: hunk, of: diff, hasHead: hasHead) }
     }
 
-    /// Runs an index change after the ones before it, then reads the status again.
-    private func changeIndex(_ work: @escaping @Sendable (GitRepository) async throws -> Void) {
+    /// Runs an index change after the ones before it, then reads the status again. ⌘Z takes it
+    /// back quietly (the index entries of `paths` go back to what they were).
+    func changeIndex(label: String, paths: [String], _ work: @escaping @Sendable (GitRepository) async throws -> Void) {
         guard canChangeIndex, let repository else { return }
         let previous = indexTask
+        let trigger = GitCommandTrigger(triggerName(label))
         pendingIndexChanges += 1
         indexTask = Task {
             await previous?.value
-            do {
-                try await work(repository)
-            } catch {
-                alert = RepositoryAlert(title: "Couldn’t change what’s staged", message: error.localizedDescription)
+            await GitCommandTrigger.$current.withValue(trigger) {
+                let before = await repository.writeIndexTree()
+                do {
+                    try await work(repository)
+                    if let before, let after = await repository.writeIndexTree(), after != before {
+                        recordQuietly(.index(label: label, paths: paths, before: before, after: after))
+                    }
+                } catch {
+                    alert = RepositoryAlert(title: "Couldn’t change what’s staged", message: error.localizedDescription)
+                }
             }
             await refreshStatusNow()
             pendingIndexChanges -= 1
@@ -214,21 +235,77 @@ extension RepositoryModel {
 
     /// "Commit 3 Files", "Amend Previous Commit", "Stage Changes to Commit".
     var commitButtonTitle: String {
+        if let hookRun { return "Running \(hookRun.hook)…" }
         if composer.amend { return "Amend Previous Commit" }
         let staged = status.stagedCount
         if staged == 0 { return "Stage Changes to Commit" }
         return staged == 1 ? "Commit 1 File" : "Commit \(staged) Files"
     }
 
+    /// Commits what's staged. While a `pre-commit` (or `commit-msg`) hook runs, the HUD shows it
+    /// with Stop; when a hook stops the commit, the sheet shows its output with Try Again and
+    /// Commit Without Hooks. ⌘Z takes the commit back (its changes are staged again).
     func commit(runHooks: Bool = true) {
         guard canCommit else { return }
         let message = composer.message
         let amend = composer.amend
-        perform(amend ? .amending : .committing, { try await $0.commit(message: message, amend: amend, runHooks: runHooks) }) {
-            [weak self] in
-            self?.composer = CommitDraft()
-            self?.selection = .workingCopy
+        let count = status.stagedCount
+        let branch = status.branch
+        let before = status.headID
+        let label = amend ? "Amend “\(composer.summary.trimmingCharacters(in: .whitespaces))”"
+            : "Commit “\(composer.summary.trimmingCharacters(in: .whitespaces))”"
+        hookFailure = nil
+        perform(amend ? .amending : .committing, trigger: amend ? "Amend Previous Commit" : (count == 1 ? "Commit 1 File" : "Commit \(count) Files")) {
+            [weak self] repository in
+            let hooks = runHooks ? await repository.commitHooks().filter {
+                $0.isInstalled && ($0.name == "pre-commit" || $0.name == "commit-msg")
+            } : []
+            let hook = hooks.first { $0.name == "pre-commit" } ?? hooks.first
+            if let hook { self?.hookRun = HookRun(hook: hook.name, command: hook.summary ?? hook.name, started: .now) }
+            let clock = ContinuousClock()
+            let started = clock.now
+            do {
+                try await repository.commit(message: message, amend: amend, runHooks: runHooks)
+                self?.hookRun = nil
+            } catch let error as GitError where hook != nil && Self.isHookFailure(error) {
+                self?.hookRun = nil
+                let elapsed = clock.now - started
+                let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+                self?.hookFailure = HookFailure(hook: hook?.name ?? "pre-commit", command: hook?.summary, output: error.message,
+                                                status: error.status, seconds: seconds)
+                throw AlreadyReported()
+            } catch {
+                self?.hookRun = nil
+                throw error
+            }
+            guard let self else { return }
+            self.composer = CommitDraft()
+            self.selection = .workingCopy
+            guard let after = await repository.resolve("HEAD") else { return }
+            let files = count == 1 ? "1 file" : "\(count) files"
+            let text = amend ? "Amended \(self.short(before ?? after)) as \(self.short(after))"
+                : "Committed \(files) as \(self.short(after))" + (runHooks ? "" : " without running hooks")
+            self.record(before.map { ReversibleStep.committed(label: label, branch: branch, from: $0, to: after) }, toast: text)
+        } onFailure: { error in
+            error is AlreadyReported
         }
+    }
+
+    /// Stop in the hook HUD: ends the commit (and the hook); nothing is committed.
+    func stopCommit() {
+        guard let hook = hookRun else { return }
+        activityTask?.cancel()
+        hookRun = nil
+        showToast("Stopped \(hook.hook) · nothing was committed")
+    }
+
+    /// Whether a failed `git commit` was stopped by a hook rather than by git itself: git's own
+    /// failures print `fatal:` / known `error:` lines; a hook prints whatever it prints.
+    static func isHookFailure(_ error: GitError) -> Bool {
+        guard error.status != 0 else { return false }
+        let known = ["fatal:", "error: gpg failed", "error: cannot", "error: unable", "nothing to commit", "no changes added to commit",
+                     "Aborting commit due to empty commit message", "nothing added to commit"]
+        return !error.message.split(separator: "\n").contains { line in known.contains { line.hasPrefix($0) } }
     }
 
     /// Amend fills in the last commit's message (what was typed comes back when Amend goes off).
@@ -263,6 +340,28 @@ extension RepositoryModel {
         guard diffViewers > 0, diffsAreStale, phase == .ready, let repository else { return }
         diffsAreStale = false
         diffTask?.cancel()
+        if let compare = review?.compare {
+            let key = "\(compare.base):\(compare.target ?? "worktree"):\(ignoreWhitespace)"
+            if compareDiffs?.key == key, compare.target != nil { return }
+            diffTask = Task {
+                let diffs = await GitCommandTrigger.$current.withValue(.background("Review › Compare")) { () async -> [FileDiff] in
+                    if let target = compare.target {
+                        return (try? await repository.diffs(from: compare.base, to: target, ignoringWhitespace: ignoreWhitespace)) ?? []
+                    }
+                    return (try? await repository.diffsToWorkingTree(from: compare.base, ignoringWhitespace: ignoreWhitespace)) ?? []
+                }
+                guard !Task.isCancelled else { return }
+                compareDiffs = (key, diffs)
+            }
+            return
+        }
+        // Tasks made here keep the trigger, so the Command Log files these under Review.
+        GitCommandTrigger.$current.withValue(.background(review == nil ? "Diff drawer" : "Review")) {
+            loadSelectionDiffs(repository: repository, ignoreWhitespace: ignoreWhitespace)
+        }
+    }
+
+    private func loadSelectionDiffs(repository: GitRepository, ignoreWhitespace: Bool) {
         switch selection {
         case .workingCopy:
             let untracked = Array(status.entries.filter(\.isUntracked).prefix(300).map(\.path))

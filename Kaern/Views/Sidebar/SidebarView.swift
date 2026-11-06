@@ -20,6 +20,7 @@ struct SidebarView: View {
                 .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
             }
             .scrollIndicators(.automatic)
+            .contextClip()
             filterField
                 .padding(8)
         }
@@ -63,6 +64,7 @@ struct SidebarView: View {
             if let current, matches(current) {
                 SidebarRow(icon: Icons.check, iconColor: K.accent, title: current, isCurrent: true,
                            ahead: repository.status.ahead, behind: repository.status.behind)
+                    .contextTarget(.branch(current), ring: ContextRing(radius: 6, inset: 0))
             }
             ForEach(loose.filter { matches($0.name) }) { ref in
                 branchRow(ref, title: ref.name, nested: false)
@@ -89,7 +91,8 @@ struct SidebarView: View {
     private func branchRow(_ ref: Ref, title: String, nested: Bool) -> some View {
         SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind)
             .help(ref.upstream.map { "\(ref.name) — tracks \($0). Double-click to switch." } ?? "\(ref.name) — double-click to switch.")
-            .onTapGesture(count: 2) { repository.switchBranch(ref.name) }
+            .onTapGesture(count: 2) { repository.from("Sidebar › double-click branch") { repository.switchBranch(ref.name) } }
+            .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
     }
 
     private func toggleFolder(_ folder: String) {
@@ -123,7 +126,8 @@ struct SidebarView: View {
                         ForEach(members.sorted { $0.branchName.localizedStandardCompare($1.branchName) == .orderedAscending }) { ref in
                             SidebarRow(icon: Icons.rowBranch, title: ref.branchName, nested: true)
                                 .help("\(ref.name) — double-click to check out a local branch that tracks it.")
-                                .onTapGesture(count: 2) { repository.checkoutRemoteBranch(ref) }
+                                .onTapGesture(count: 2) { repository.from("Sidebar › double-click remote branch") { repository.checkoutRemoteBranch(ref) } }
+                                .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: 6, inset: 0))
                         }
                     }
                 }
@@ -166,6 +170,7 @@ struct SidebarView: View {
         ) {
             ForEach(shown) { tag in
                 SidebarRow(title: tag.name, flat: true, meta: tag.date.map { Formatters.shortDate($0) })
+                    .contextTarget(.tag(tag.name), ring: ContextRing(radius: 6, inset: 0))
             }
             if tags.count > limit, filter.isEmpty {
                 SidebarRow(title: repository.sidebar.showsAllTags ? "Show Fewer" : "Show \(tags.count - limit) More", flat: true, isLink: true)
@@ -186,12 +191,22 @@ struct SidebarView: View {
             count: repository.stashes.count, isOpen: isOpen(.stashes), toggle: { toggle(.stashes) }
         ) {
             ForEach(stashes) { stash in
-                SidebarRow(title: stash.message, flat: true, subtitle: "\(stash.reference) · \(Formatters.shortDate(stash.date))")
+                // Kaern's own copies (before Discard, Reset Hard, a pick over local changes) go by what
+                // they were made for, marked "auto".
+                let copy = RepositoryModel.isKaernCopy(stash)
+                SidebarRow(title: copy ? RepositoryModel.stashTitle(stash) : stash.message, flat: true,
+                           subtitle: ([stash.reference] + (copy ? ["auto"] : []) + [stashDate(stash.date)]).joined(separator: " · "))
+                    .contextTarget(.stash(stash.id), ring: ContextRing(radius: 6, inset: 0))
             }
             if repository.stashes.isEmpty, repository.isReady {
                 SidebarRow(title: "No stashes", flat: true, isPlaceholder: true)
             }
         }
+    }
+
+    /// "just now", "3 hours ago" within a day, then "Sep 26".
+    private func stashDate(_ date: Date) -> String {
+        Date.now.timeIntervalSince(date) < 86_400 ? Formatters.shortRelative(date) : Formatters.shortDate(date)
     }
 
     // MARK: Worktrees

@@ -139,4 +139,10 @@ enum Icons {
         .circle(7, 4.1, 0.9, fill: .white),
     ])
     static let download = SVGIcon(14, [.path("M7 2v7.5M3.8 6.5L7 9.7l3.2-3.2M2.5 12h9", width: 1.6, cap: .round, join: .round)])
+
+    // MARK: Compare
+
+    static let arrowRightLong = SVGIcon(14, [.path("M2.5 7h9M8.5 4l3 3-3 3", width: 1.5, cap: .round, join: .round)])
+    static let checkSmall = SVGIcon(12, [.path("M2.6 6.3l2.2 2.2 4.6-5", width: 1.8, cap: .round, join: .round)])
+    static let swap = SVGIcon(14, [.path("M3 5h8.5M9 2.5L11.5 5 9 7.5M11 9H2.5M5 6.5L2.5 9 5 11.5", width: 1.4, cap: .round, join: .round)])
 }

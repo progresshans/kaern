@@ -28,31 +28,43 @@ struct MainToolbar: View {
                 BranchButton(repository: repository, onNewBranch: askNewBranch)
             }
             ToolbarCap {
-                ToolbarButton(icon: Icons.undo, name: "Undo", shortcut: "⌘Z") {}
-                    .disabled(true)
-                ToolbarButton(icon: Icons.redo, name: "Redo", shortcut: "⇧⌘Z") {}
-                    .disabled(true)
+                // Their tooltips say what they'd take back ("Undo Checkout develop").
+                ToolbarButton(icon: Icons.undo, name: repository.undoTitle, shortcut: "⌘Z", accessibilityLabel: repository.undoTitle) {
+                    repository.from("Toolbar") { repository.undo() }
+                }
+                .disabled(!repository.canUndo)
+                ToolbarButton(icon: Icons.redo, name: repository.redoTitle, shortcut: "⇧⌘Z", accessibilityLabel: repository.redoTitle) {
+                    repository.from("Toolbar") { repository.redo() }
+                }
+                .disabled(!repository.canRedo)
             }
             ToolbarCap {
-                ToolbarButton(icon: Icons.fetch, name: "Fetch", shortcut: "⌥⌘F") { repository.fetch() }
+                ToolbarButton(icon: Icons.fetch, name: "Fetch", shortcut: "⌥⌘F") { repository.from("Toolbar") { repository.fetch() } }
                     .disabled(!ready || busy || repository.remotes.isEmpty)
                 ToolbarButton(icon: Icons.pull, name: "Pull", shortcut: "⌥⌘↓", badge: repository.status.behind) {
-                    repository.pull(pullStrategy.strategy)
+                    repository.from("Toolbar") { repository.pull(pullStrategy.strategy) }
                 }
                 .disabled(!ready || busy || repository.status.upstream == nil)
                 PullMenu(repository: repository, choice: $pullStrategy)
                     .disabled(!ready || busy)
-                ToolbarButton(icon: Icons.push, name: "Push", shortcut: "⌥⌘↑", badge: repository.status.ahead) {
-                    repository.push()
+                ToolbarButton(icon: Icons.push, name: "Push", shortcut: "⌥⌘↑",
+                              badge: repository.status.upstream == nil ? repository.unpublishedCount : repository.status.ahead) {
+                    repository.from("Toolbar") { repository.push() }
                 }
                 .disabled(!ready || busy || repository.remotes.isEmpty || repository.status.branch == nil)
+                .popover(isPresented: Binding(get: { repository.publishDraft != nil }, set: { if !$0 { repository.publishDraft = nil } }),
+                         arrowEdge: .bottom) {
+                    if let draft = repository.publishDraft {
+                        PublishPopover(repository: repository, draft: draft)
+                    }
+                }
             }
             ToolbarCap {
                 ToolbarButton(icon: Icons.newBranch, name: "New Branch", shortcut: "⇧⌘N") { askNewBranch() }
                     .disabled(!ready || busy)
-                ToolbarButton(icon: Icons.stash(1.35), name: "Stash", shortcut: "⌥⌘S") { repository.stash() }
+                ToolbarButton(icon: Icons.stash(1.35), name: "Stash", shortcut: "⌥⌘S") { repository.from("Toolbar") { repository.stash() } }
                     .disabled(!ready || busy || repository.status.isClean)
-                ToolbarButton(icon: Icons.pop, name: "Pop Stash", shortcut: "⌥⇧⌘S") { repository.popStash() }
+                ToolbarButton(icon: Icons.pop, name: "Pop Stash", shortcut: "⌥⇧⌘S") { repository.from("Toolbar") { repository.popStash() } }
                     .disabled(!ready || busy || repository.stashes.isEmpty)
             }
             Spacer(minLength: 6)
@@ -96,7 +108,7 @@ struct MainToolbar: View {
             TextField("Branch name", text: $newBranchName)
             Button("Create Branch") {
                 let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !name.isEmpty { repository.createBranch(name) }
+                if !name.isEmpty { repository.from("New Branch") { repository.createBranch(name) } }
             }
             .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
@@ -185,7 +197,7 @@ private struct BranchButton: View {
             let locals = repository.refs.localBranches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             ForEach(locals) { ref in
                 Toggle(ref.name, isOn: Binding(get: { ref.isHead }, set: { _ in
-                    if !ref.isHead { repository.switchBranch(ref.name) }
+                    if !ref.isHead { repository.from("Toolbar › Branch menu") { repository.switchBranch(ref.name) } }
                 }))
             }
             if !locals.isEmpty { Divider() }

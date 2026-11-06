@@ -63,7 +63,8 @@ final class AppModel {
             let userPath = UserDefaults.standard.string(forKey: GitLocator.userPathKey)
             let resolution = await GitLocator.resolve(userPath: userPath)
             git = resolution
-            runner = GitRunner(executableURL: resolution.url)
+            // Every command goes to Window › Command Log (secrets masked by KaernKit).
+            runner = GitRunner(executableURL: resolution.url, onCommand: { CommandLog.receive($0) })
             Self.log.info("Using git at \(resolution.url.path(percentEncoded: false), privacy: .public) (\(resolution.source.rawValue, privacy: .public)), version \(resolution.version ?? "unknown", privacy: .public)")
             startRepositories()
         }

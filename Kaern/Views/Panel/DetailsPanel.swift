@@ -9,11 +9,17 @@ struct DetailsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            switch repository.selection {
-            case .workingCopy:
-                WorkingCopyPanel(repository: repository)
-            case .commit:
-                CommitPanel(repository: repository)
+            if repository.branchCompare != nil || repository.picked.count == 2 {
+                ComparePanel(repository: repository)
+            } else if repository.picked.count >= 3 {
+                MultiSelectPanel(repository: repository)
+            } else {
+                switch repository.selection {
+                case .workingCopy:
+                    WorkingCopyPanel(repository: repository)
+                case .commit:
+                    CommitPanel(repository: repository)
+                }
             }
         }
         .frame(width: KMetric.panelWidth)
@@ -55,6 +61,7 @@ private struct WorkingCopyPanel: View {
                     }
                     .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
                 }
+                .contextClip()
             }
             Composer(repository: repository)
         }
@@ -225,6 +232,7 @@ private struct PanelFileRow: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help(entry.path)
+            .contextTarget(.file(path: entry.path, staged: staged), ring: ContextRing(radius: 6, inset: 0))
         }
     }
 
@@ -411,8 +419,33 @@ private struct CommitPanel: View {
                 .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            CommitActions(repository: repository, commit: details.commit)
         } else {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// `.cdacts` under commit details: Revert, Create Branch… and ⋯ (the commit menu).
+private struct CommitActions: View {
+    let repository: RepositoryModel
+    let commit: Commit
+
+    var body: some View {
+        let idle = repository.activity == nil
+        PanelActions {
+            GhostButton(title: "Revert") { repository.from("Commit details") { repository.revert([commit.id]) } }
+                .disabled(!idle || !repository.isOnCurrentBranch(commit.id))
+                .help(repository.isOnCurrentBranch(commit.id) ? "Revert \(commit.shortID) with a new commit" : "Not on this branch")
+            GhostButton(title: "Create Branch…") { repository.from("Commit details") { repository.askCreateBranch(at: commit.id) } }
+                .disabled(!idle)
+            GhostButton(title: "⋯") {
+                guard let menu = ContextMenus.commitMenu(commit.id, repository).map(ContextMenus.fitHeader), let event = NSApp.currentEvent,
+                      let window = NSApp.keyWindow as? KaernWindow, let view = window.contentView else { return }
+                window.showContextMenu(menu, for: window.contextTracker?.view(for: .commit(commit.id)), event: event, in: view)
+            }
+            .accessibilityLabel("More commit actions")
+            Spacer(minLength: 0)
         }
     }
 }

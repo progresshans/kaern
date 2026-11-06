@@ -8,6 +8,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let model: WindowModel
     private weak var app: AppModel?
     private var lights: TrafficLights?
+    /// Where this window's rows with context menus are.
+    let contextTracker = ContextMenuTracker()
 
     static let defaultSize = NSSize(width: 1440, height: 900)
 
@@ -30,8 +32,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x323232) : K.hex(0xececec) }
         window.isReleasedWhenClosed = false
 
+        let tracker = contextTracker
         let root = WindowRootView(window: model)
             .environment(app)
+            .environment(tracker)
         let hosting = KaernHostingView(rootView: root)
         hosting.sizingOptions = []
         window.contentView = hosting
@@ -39,6 +43,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         window.closeTab = { [weak self] in self?.closeActiveTab() ?? false }
+        window.contextMenu = { [weak self] point in self?.contextMenu(at: point) }
+        window.contextTracker = tracker
 
         lights = TrafficLights(window: window, centerFromTop: KMetric.tabRow / 2)
         hosting.onLayout = { [weak self] in self?.lights?.apply() }
@@ -86,6 +92,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let active = model.activeTabID else { return false }
         app?.close([active], in: model)
         return true
+    }
+
+    /// The menu for the row at `point` (a commit, label, sidebar row, file or stash), in window
+    /// coordinates with the origin at the top left.
+    private func contextMenu(at point: CGPoint) -> (NSMenu, UUID)? {
+        guard let tab = model.activeTab, let app, let hit = contextTracker.hit(at: point) else { return nil }
+        let repository = app.repository(for: tab.path)
+        return ContextMenus.menu(for: hit.target, repository: repository, window: model).map { ($0, hit.view) }
     }
 
     // MARK: Title (Window menu, Mission Control)
@@ -143,7 +157,32 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 /// and Close Window (⇧⌘W) always close the window.
 final class KaernWindow: NSWindow {
     var closeTab: (() -> Bool)?
+    /// The context menu for the row at a point (window coordinates, top-left origin), `nil`
+    /// where Kaern has none (the tab bar's own menus and text fields then get the click).
+    var contextMenu: ((CGPoint) -> (NSMenu, UUID)?)?
+    var contextTracker: ContextMenuTracker?
     private var closingWindow = false
+
+    override func sendEvent(_ event: NSEvent) {
+        let isContextClick = event.type == .rightMouseDown
+            || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        let point = CGPoint(x: event.locationInWindow.x, y: frame.height - event.locationInWindow.y)
+        // Below the tab row and toolbar only: their own menus stay theirs.
+        if isContextClick, point.y > KMetric.tabRow + KMetric.toolbar,
+           let (menu, row) = contextMenu?(point), let view = contentView {
+            showContextMenu(menu, for: row, event: event, in: view)
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    /// Shows a context menu with the ring around its row while it's open.
+    func showContextMenu(_ menu: NSMenu, for row: UUID?, event: NSEvent, in view: NSView) {
+        contextTracker?.open = row
+        contextTracker?.openMenu = menu
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        contextTracker?.open = nil
+    }
 
     override func performClose(_ sender: Any?) {
         let fromKeyboard = NSApp.currentEvent?.type == .keyDown

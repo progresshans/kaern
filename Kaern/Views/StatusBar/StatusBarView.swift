@@ -47,6 +47,13 @@ struct StatusBarView: View {
                 .foregroundStyle(state.icon == .ok || state.icon == .idle ? K.label2 : K.label)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if repository.rewroteUpstream, repository.activity == nil, let upstream = repository.status.upstream {
+                // Pushing now needs force (ScreenFlowPush's status bar).
+                Text("·").foregroundStyle(K.label2)
+                Text("↑\(repository.status.ahead) ↓\(repository.status.behind) — you rewrote commits that are on \(upstream.split(separator: "/").first.map(String.init) ?? upstream)")
+                    .foregroundStyle(K.warn)
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -63,6 +70,8 @@ struct StatusBarView: View {
         if status.upstream != nil {
             parts.append("↑\(status.ahead) to push")
             if status.behind > 0 { parts.append("↓\(status.behind) to pull") }
+        } else if let branch = status.branch, !repository.remotes.isEmpty {
+            parts.append("\(branch) isn’t published yet")
         }
         return parts.joined(separator: " · ")
     }

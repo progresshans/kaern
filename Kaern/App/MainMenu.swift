@@ -93,13 +93,38 @@ enum MainMenu {
         return menu
     }
 
+    /// The text view being typed in (a field's editor, the description), if any.
+    private static var textView: NSTextView? { NSApp.keyWindow?.firstResponder as? NSTextView }
+
     private static func editMenu() -> NSMenu {
         let menu = NSMenu(title: "Edit")
-        menu.addItem(system("Undo", Selector(("undo:")), key: "z"))
-        menu.addItem(system("Redo", Selector(("redo:")), key: "z", modifiers: [.shift, .command]))
+        // ⌘Z undoes typing while a text field has focus, and the last git action otherwise
+        // ("Undo Checkout develop").
+        menu.addItem(MenuAction.item("Undo", key: "z", enabled: {
+            if let text = textView { return text.undoManager?.canUndo == true }
+            return repository?.canUndo == true
+        }, title: {
+            if let text = textView { return text.undoManager?.undoMenuItemTitle ?? "Undo" }
+            return repository?.canUndo == true ? repository?.undoTitle ?? "Undo" : "Undo"
+        }) {
+            if let text = textView { text.undoManager?.undo() } else { repository?.from("Edit menu") { repository?.undo() } }
+        })
+        menu.addItem(MenuAction.item("Redo", key: "z", modifiers: [.shift, .command], enabled: {
+            if let text = textView { return text.undoManager?.canRedo == true }
+            return repository?.canRedo == true
+        }, title: {
+            if let text = textView { return text.undoManager?.redoMenuItemTitle ?? "Redo" }
+            return repository?.canRedo == true ? repository?.redoTitle ?? "Redo" : "Redo"
+        }) {
+            if let text = textView { text.undoManager?.redo() } else { repository?.from("Edit menu") { repository?.redo() } }
+        })
         menu.addItem(.separator())
         menu.addItem(system("Cut", #selector(NSText.cut(_:)), key: "x"))
         menu.addItem(system("Copy", #selector(NSText.copy(_:)), key: "c"))
+        menu.addItem(MenuAction.item("Copy Commit Message", key: "c", modifiers: [.option, .command],
+                                    enabled: { textView == nil && repository?.selectedCommitID != nil }) {
+            if let id = repository?.selectedCommitID { repository?.copyMessage(of: id) }
+        })
         menu.addItem(system("Paste", #selector(NSText.paste(_:)), key: "v"))
         menu.addItem(system("Select All", #selector(NSText.selectAll(_:)), key: "a"))
         menu.addItem(.separator())
@@ -172,21 +197,31 @@ enum MainMenu {
     private static func repositoryMenu() -> NSMenu {
         let menu = NSMenu(title: "Repository")
         menu.addItem(MenuAction.item("Fetch", key: "f", modifiers: [.option, .command],
-                                    enabled: { isIdle && repository?.remotes.isEmpty == false }) { repository?.fetch() })
+                                    enabled: { isIdle && repository?.remotes.isEmpty == false }) { repository?.from("Repository menu") { repository?.fetch() } })
         menu.addItem(MenuAction.item("Pull", key: arrow(NSDownArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.status.upstream != nil }) {
             let choice = PullChoice(rawValue: UserDefaults.standard.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
-            repository?.pull(choice.strategy)
+            repository?.from("Repository menu") { repository?.pull(choice.strategy) }
         })
         menu.addItem(MenuAction.item("Push", key: arrow(NSUpArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.remotes.isEmpty == false && repository?.status.branch != nil }) {
-            repository?.push()
+            repository?.from("Repository menu") { repository?.push() }
         })
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Stash Changes", key: "s", modifiers: [.option, .command],
-                                    enabled: { isIdle && repository?.status.isClean == false }) { repository?.stash() })
+                                    enabled: { isIdle && repository?.status.isClean == false }) { repository?.from("Repository menu") { repository?.stash() } })
         menu.addItem(MenuAction.item("Pop Stash", key: "s", modifiers: [.option, .shift, .command],
-                                    enabled: { isIdle && repository?.stashes.isEmpty == false }) { repository?.popStash() })
+                                    enabled: { isIdle && repository?.stashes.isEmpty == false }) { repository?.from("Repository menu") { repository?.popStash() } })
+        menu.addItem(.separator())
+        // While a merge, rebase, cherry-pick or revert waits on conflicts.
+        menu.addItem(MenuAction.item("Continue", enabled: { isIdle && repository?.operation != nil && repository?.status.conflictCount == 0 },
+                                    title: { repository?.operation.map { "Continue \($0.kind.title)" } ?? "Continue" }) {
+            repository?.from("Repository menu") { repository?.continueOperation() }
+        })
+        menu.addItem(MenuAction.item("Abort", enabled: { isIdle && repository?.operation != nil },
+                                    title: { repository?.operation.map { "Abort \($0.kind.title)" } ?? "Abort" }) {
+            repository?.from("Repository menu") { repository?.abortOperation() }
+        })
         return menu
     }
 
@@ -195,7 +230,34 @@ enum MainMenu {
         menu.addItem(MenuAction.item("New Branch…", key: "n", modifiers: [.shift, .command], enabled: { isIdle }) {
             if let window { NotificationCenter.default.post(name: .kaernNewBranch, object: window.id) }
         })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Publish Branch…", enabled: {
+            isIdle && repository?.status.branch != nil && repository?.status.upstream == nil && repository?.remotes.isEmpty == false
+        }) {
+            repository?.from("Branch menu") { repository?.push() }
+        })
+        menu.addItem(MenuAction.item("Create Pull Request…", enabled: { pullRequestPage != nil }) {
+            if let page = pullRequestPage { NSWorkspace.shared.open(page) }
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Rename Branch…", enabled: { isIdle && repository?.status.branch != nil }) {
+            if let branch = repository?.status.branch { repository?.from("Branch menu") { repository?.askRename(branch: branch) } }
+        })
         return menu
+    }
+
+    /// The current branch's pull request page on its host.
+    private static var pullRequestPage: URL? {
+        guard let repository, let upstream = repository.status.upstream,
+              let tracked = repository.refs.remoteBranch(named: upstream) else { return nil }
+        return repository.remoteURL?.pullRequestPage(branch: tracked.branchName)
+    }
+
+    /// The commits the Commit menu acts on: the picked ones, or the selected one.
+    private static var targetCommits: [String] {
+        guard let repository else { return [] }
+        if !repository.picked.isEmpty { return repository.picked }
+        return [repository.selectedCommitID].compactMap { $0 }
     }
 
     private static func commitMenu() -> NSMenu {
@@ -223,7 +285,59 @@ enum MainMenu {
                                     enabled: { isIdle && (repository?.status.stagedCount ?? 0) > 0 }) {
             repository?.unstageAll()
         })
+        // Reversible (a copy goes to the stash list), so it doesn't ask.
+        menu.addItem(MenuAction.item("Discard All Changes", enabled: { isIdle && repository?.status.isClean == false }) {
+            guard let repository else { return }
+            let entries = repository.status.entries.filter { !$0.isConflicted }
+            repository.from("Commit menu") { repository.discard(entries, keepingStaged: false) }
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Cherry-pick", enabled: {
+            guard isIdle, let repository, !targetCommits.isEmpty else { return false }
+            return targetCommits.allSatisfy { !repository.isOnCurrentBranch($0) }
+        }, title: { commitTitle("Cherry-pick") }) {
+            let ids = targetCommits
+            repository?.from("Commit menu") { repository?.cherryPick(ids) }
+        })
+        menu.addItem(MenuAction.item("Revert", enabled: {
+            guard isIdle, let repository, !targetCommits.isEmpty else { return false }
+            return targetCommits.allSatisfy { repository.isOnCurrentBranch($0) }
+        }, title: { commitTitle("Revert") }) {
+            let ids = targetCommits
+            repository?.from("Commit menu") { repository?.revert(ids) }
+        })
+        let reset = NSMenu(title: "Reset Branch to Here")
+        for (title, mode) in [("Soft — keep changes staged", GitRepository.ResetMode.soft),
+                              ("Mixed — keep changes unstaged", .mixed), ("Hard — discard changes…", .hard)] {
+            reset.addItem(MenuAction.item(title, enabled: { canResetToSelection }) {
+                if let id = repository?.selectedCommitID { repository?.from("Commit menu") { repository?.reset(to: id, mode: mode) } }
+            })
+        }
+        let resetItem = NSMenuItem(title: "Reset Branch to Here", action: nil, keyEquivalent: "")
+        resetItem.submenu = reset
+        menu.addItem(resetItem)
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Compare Selected Commits", enabled: { repository?.pickedPair != nil }) {
+            guard let repository, let pair = repository.pickedPair else { return }
+            repository.review = ReviewState(showsAllFiles: true, compare: CompareRange(base: pair.older, target: pair.newer))
+        })
+        menu.addItem(MenuAction.item("Compare with Working Copy", enabled: { repository?.selectedCommitID != nil && repository?.picked.isEmpty == true }) {
+            if let id = repository?.selectedCommitID { repository?.compareWithWorkingCopy(id) }
+        })
         return menu
+    }
+
+    private static var canResetToSelection: Bool {
+        guard isIdle, let repository, repository.picked.isEmpty, let id = repository.selectedCommitID,
+              repository.status.branch != nil else { return false }
+        return id != repository.status.headID && repository.isOnCurrentBranch(id)
+    }
+
+    /// "Cherry-pick 3e71b0c" / "Revert 3 Commits".
+    private static func commitTitle(_ verb: String) -> String {
+        let ids = targetCommits
+        guard let repository, !ids.isEmpty else { return verb }
+        return ids.count == 1 ? "\(verb) \(repository.short(ids[0]))" : "\(verb) \(ids.count) Commits"
     }
 
     /// Split or Unified for every diff (View › Diff Layout).
@@ -253,6 +367,10 @@ enum MainMenu {
         menu.addItem(goToItem)
         menu.addItem(MenuAction.item("Move Tab to New Window", enabled: { (window?.tabs.count ?? 0) > 1 }) {
             if let window, let id = window.activeTabID { app.moveToNewWindow(id, from: window) }
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Command Log", key: "l", modifiers: [.shift, .command]) {
+            CommandLogWindowController.shared.show(repository: repository?.path)
         })
         menu.addItem(.separator())
         menu.addItem(system("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
@@ -293,18 +411,21 @@ final class MenuAction: NSObject, NSMenuItemValidation {
     private let run: () -> Void
     private let isAvailable: () -> Bool
     private let isChecked: (() -> Bool)?
+    private let currentTitle: (() -> String)?
 
-    private init(run: @escaping () -> Void, isAvailable: @escaping () -> Bool, isChecked: (() -> Bool)?) {
+    private init(run: @escaping () -> Void, isAvailable: @escaping () -> Bool, isChecked: (() -> Bool)?, title: (() -> String)?) {
         self.run = run
         self.isAvailable = isAvailable
         self.isChecked = isChecked
+        self.currentTitle = title
         super.init()
     }
 
+    /// `title`: when set, the item's title is updated each time it's validated ("Undo Checkout develop").
     static func item(_ title: String, key: String = "", modifiers: NSEvent.ModifierFlags = [.command],
-                     enabled: @escaping () -> Bool = { true }, checked: (() -> Bool)? = nil,
+                     enabled: @escaping () -> Bool = { true }, checked: (() -> Bool)? = nil, title currentTitle: (() -> String)? = nil,
                      run: @escaping () -> Void) -> NSMenuItem {
-        let action = MenuAction(run: run, isAvailable: enabled, isChecked: checked)
+        let action = MenuAction(run: run, isAvailable: enabled, isChecked: checked, title: currentTitle)
         // AppKit spells Shift with a letter as the uppercase letter (⇧⌘T is "T" with ⌘).
         var key = key
         var modifiers = modifiers
@@ -325,6 +446,7 @@ final class MenuAction: NSObject, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if let isChecked { menuItem.state = isChecked() ? .on : .off }
+        if let currentTitle { menuItem.title = currentTitle() }
         return isAvailable()
     }
 }

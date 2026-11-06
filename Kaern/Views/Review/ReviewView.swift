@@ -1,3 +1,4 @@
+import AppKit
 import KaernKit
 import SwiftUI
 
@@ -16,6 +17,9 @@ struct ReviewView: View {
         let files = repository.reviewFiles
         VStack(spacing: 0) {
             ReviewHeader(repository: repository, files: files ?? [], state: state, layout: $layout)
+            if let files, files.contains(where: { !$0.pickable.isEmpty }), state.compare == nil {
+                LinePickHint()
+            }
             if let files {
                 if files.isEmpty {
                     emptyState
@@ -29,9 +33,29 @@ struct ReviewView: View {
             }
         }
         .background(K.content)
+        .overlay(alignment: .bottom) {
+            if !repository.linePicks.isEmpty {
+                LinePickBar(repository: repository)
+                    .padding(.bottom, 44)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: repository.linePicks.isEmpty)
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
         .onChange(of: repository.selection) { limits = [:] }
+    }
+
+    /// Line picking for a working-copy file whose diffs allow it.
+    private func picking(for file: ReviewFile) -> LinePicking? {
+        guard file.isWorking, !file.pickable.isEmpty, repository.review?.compare == nil else { return nil }
+        let order = file.pickOrder
+        let repository = repository
+        return LinePicking(file: file, picks: repository.linePicks) { pick in
+            let flags = NSEvent.modifierFlags
+            repository.pickLine(pick, path: file.path, order: order,
+                                command: flags.contains(.command), shift: flags.contains(.shift))
+        }
     }
 
     @ViewBuilder
@@ -51,8 +75,9 @@ struct ReviewView: View {
                         ForEach(shown) { file in
                             Section {
                                 let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit)
+                                let picking = picking(for: file)
                                 ForEach(rows) { item in
-                                    DiffRowView(item: item, repository: repository) {
+                                    DiffRowView(item: item, repository: repository, picking: picking) {
                                         limits[file.path] = Int.max
                                     }
                                 }
@@ -71,7 +96,7 @@ struct ReviewView: View {
 
     private var emptyState: some View {
         VStack(spacing: 6) {
-            Text(repository.selection == .workingCopy ? "No changes to review" : "This commit changes no files")
+            Text(repository.review?.compare != nil ? "No differences" : repository.selection == .workingCopy ? "No changes to review" : "This commit changes no files")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(K.label2)
         }
@@ -118,6 +143,13 @@ private struct ReviewHeader: View {
             LineCounts(additions: state.showsAllFiles ? files.reduce(0) { $0 + $1.additions } : file?.additions ?? 0,
                        deletions: state.showsAllFiles ? files.reduce(0) { $0 + $1.deletions } : file?.deletions ?? 0)
             Spacer(minLength: 0)
+            if !state.showsAllFiles, let file, !file.pickable.isEmpty, state.compare == nil {
+                Text(Self.stagedLines(file))
+                    .font(.system(size: 12))
+                    .foregroundStyle(K.label2)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
             if !state.showsAllFiles, !files.isEmpty {
                 HStack(spacing: 2) {
                     StepButton(icon: Icons.arrowLeft, label: "Previous file") { show(current - 1) }
@@ -132,9 +164,9 @@ private struct ReviewHeader: View {
             }
             SegmentedChoice(options: [(DiffLayout.split, "Split"), (.unified, "Unified")], selection: $layout, label: "Diff layout")
             GhostButton(title: state.showsAllFiles ? "One File" : "All Files") {
-                repository.review = ReviewState(showsAllFiles: !state.showsAllFiles, path: file?.path)
+                repository.review = ReviewState(showsAllFiles: !state.showsAllFiles, path: file?.path, compare: state.compare)
             }
-            if !state.showsAllFiles, let file, file.isWorking {
+            if !state.showsAllFiles, let file, file.isWorking, state.compare == nil {
                 GhostButton(title: file.hasUnstaged ? "Stage File" : "Unstage File") {
                     if file.hasUnstaged { repository.stage([file.path]) } else { repository.unstage([file.path]) }
                 }
@@ -148,7 +180,22 @@ private struct ReviewHeader: View {
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
 
+    /// "4 of 24 changed lines staged" (`.dmeta`).
+    static func stagedLines(_ file: ReviewFile) -> String {
+        var staged = 0, total = 0
+        for hunk in file.hunks {
+            let changed = hunk.hunk.lines.count(where: \.isChange)
+            total += changed
+            if hunk.stage == .staged { staged += changed }
+        }
+        return "\(staged) of \(total) changed lines staged"
+    }
+
     private var title: String {
+        if let compare = state.compare {
+            let base = String(compare.base.prefix(7))
+            return compare.target.map { "\(base) → \(String($0.prefix(7)))" } ?? "\(base) ↔ working copy"
+        }
         switch repository.selection {
         case .workingCopy:
             return "Uncommitted changes · " + Formatters.count(files.count, "file", "files")
@@ -164,7 +211,7 @@ private struct ReviewHeader: View {
 
     private func show(_ index: Int) {
         guard files.indices.contains(index) else { return }
-        repository.review = ReviewState(showsAllFiles: false, path: files[index].path)
+        repository.review = ReviewState(showsAllFiles: false, path: files[index].path, compare: state.compare)
     }
 }
 
@@ -239,5 +286,69 @@ struct AccentPlateStyle: ButtonStyle {
                 )
                 .onHover { hovering = $0 }
         }
+    }
+}
+
+/// `.lshint`: how picking works, and the legend.
+private struct LinePickHint: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Click a changed line to pick it · ⇧-click picks a range · ⌘-click adds one")
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            HStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 2).fill(K.accentSoft)
+                    .overlay(alignment: .leading) { K.accent.frame(width: 3) }
+                    .frame(width: 10, height: 10)
+                Text("picked")
+                RoundedRectangle(cornerRadius: 2).fill(K.addGut)
+                    .frame(width: 10, height: 10)
+                    .padding(.leading, 8)
+                Text("staged")
+            }
+            .fixedSize()
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(K.label2)
+        .padding(.horizontal, 14)
+        .frame(height: 30)
+        .background(K.alt)
+        .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
+    }
+}
+
+/// `.lsfloat`: what to do with the picked lines.
+struct LinePickBar: View {
+    let repository: RepositoryModel
+
+    var body: some View {
+        let picks = repository.linePicks
+        let unstaged = picks.unstaged.count
+        let staged = picks.staged.count
+        let total = picks.lines.count
+        HStack(spacing: 8) {
+            Text(total == 1 ? "1 line picked" : "\(total) lines picked")
+                .font(KFont.weighted(12.5, 0.35))
+                .padding(.trailing, 4)
+            if unstaged > 0 {
+                PrimaryButton(title: unstaged == 1 ? "Stage 1 Line" : "Stage \(unstaged) Lines") { repository.stagePickedLines() }
+                GhostButton(title: unstaged == 1 ? "Discard 1 Line" : "Discard \(unstaged) Lines") { repository.discardPickedLines() }
+            } else {
+                PrimaryButton(title: staged == 1 ? "Unstage 1 Line" : "Unstage \(staged) Lines") { repository.stagePickedLines() }
+            }
+            Button { repository.clearLinePicks() } label: {
+                Icon(Icons.close, size: 11)
+                    .foregroundStyle(K.label2)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverPlateStyle(radius: 6))
+            .accessibilityLabel("Clear picked lines")
+        }
+        .disabled(!repository.canChangeIndex)
+        .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 8))
+        .popSurface(radius: 12)
+        .fixedSize()
     }
 }
