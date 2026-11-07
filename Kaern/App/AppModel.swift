@@ -407,6 +407,11 @@ final class AppModel {
         return recent.filter { !open.contains($0.path) }
     }
 
+    func forgetRecent(_ path: String) {
+        recent.removeAll { $0.path == path }
+        scheduleSave()
+    }
+
     func clearRecent() {
         recent.removeAll()
         scheduleSave()

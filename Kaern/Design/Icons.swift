@@ -142,6 +142,8 @@ enum Icons {
         .path("M7 6.2v4", width: 1.6, cap: .round, stroke: .white),
         .circle(7, 4.1, 0.9, fill: .white),
     ])
+    /// ScreenRepos: a filled folder (the repository column).
+    static let folderFilled = SVGIcon(16, [.filled("M2.2 5a1 1 0 0 1 1-1h3.1l1.3 1.4h5.2a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1z")])
     /// ScreenInit's banner: a cloud (the repository is only on this Mac).
     static let cloud = SVGIcon(16, [.path("M5 12.5h6.6a2.9 2.9 0 0 0 .3-5.8A4 4 0 0 0 4.3 7.6 2.5 2.5 0 0 0 5 12.5z", width: 1.4, join: .round)])
     static let download = SVGIcon(14, [.path("M7 2v7.5M3.8 6.5L7 9.7l3.2-3.2M2.5 12h9", width: 1.6, cap: .round, join: .round)])

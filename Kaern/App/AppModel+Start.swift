@@ -270,6 +270,26 @@ extension AppModel {
     }
 }
 
+extension AppModel {
+    /// Locate…: a repository's folder moved to `url`. Every tab showing the old folder points at
+    /// the new one. Returns the new folder, or `nil` when `url` isn't that kind of folder.
+    func relocate(_ oldPath: String, to url: URL) async -> String? {
+        guard let runner = await waitForGit(),
+              let repository = try? await GitRepository.open(url, runner: runner) else { return nil }
+        let newPath = repository.root.path(percentEncoded: false).trimmingTrailingSlash
+        guard newPath != oldPath else { retry(self.repository(for: oldPath)); return newPath }
+        _ = self.repository(for: newPath)
+        for controller in windows {
+            controller.model.replacePath(oldPath, with: newPath)
+        }
+        forgetRecent(oldPath)
+        releaseUnusedRepositoriesNow()
+        updateVisibility()
+        scheduleSave()
+        return newPath
+    }
+}
+
 extension ActivityCenter {
     /// A progress line from git (Receiving objects: 62%…) for a running task.
     func update(_ id: UUID, progress: GitProgress) {

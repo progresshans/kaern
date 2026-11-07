@@ -432,6 +432,9 @@ enum MainMenu {
                                     checked: { window?.showsQuickOpen == true }) {
             window?.showsQuickOpen.toggle()
         })
+        menu.addItem(MenuAction.item("Repositories", key: "r", modifiers: [.shift, .command]) {
+            RepositoriesWindowController.shared.show()
+        })
         menu.addItem(MenuAction.item("Activity", key: "a", modifiers: [.option, .command], enabled: { repository?.isReady == true }) {
             if let repository { NotificationCenter.default.post(name: .kaernShowActivity, object: repository.id) }
         })

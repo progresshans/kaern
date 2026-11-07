@@ -469,7 +469,7 @@ final class RepositoryModel: Identifiable {
     }
 
     private func filesChanged(_ paths: [String]) {
-        guard let repository else { return }
+        guard let repository, !noticeMissingFolder() else { return }
         let scope = repository.classify(paths)
         guard !scope.isEmpty else { return }
         pendingScope.formUnion(scope)
@@ -480,8 +480,19 @@ final class RepositoryModel: Identifiable {
         }
     }
 
+    /// The folder went away while the tab was open (moved, renamed, deleted, disk ejected).
+    @discardableResult
+    func noticeMissingFolder() -> Bool {
+        guard phase != .missing, !FileManager.default.fileExists(atPath: path) else { return false }
+        watcher?.stop()
+        watcher = nil
+        phase = .missing
+        return true
+    }
+
     private func visibilityChanged() {
         guard isVisible else { return }
+        if noticeMissingFolder() { return }
         switch phase {
         case .light:
             Task { await loadEverything() }
@@ -588,7 +599,7 @@ final class RepositoryModel: Identifiable {
     }
 
     private func lightRefresh() async {
-        guard let repository else { return }
+        guard let repository, !noticeMissingFolder() else { return }
         debugLightRefreshes += 1
         if let status = try? await repository.status(untrackedFiles: .normal) {
             self.status = status

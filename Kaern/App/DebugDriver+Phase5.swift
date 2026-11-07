@@ -8,9 +8,57 @@ extension DebugDriver {
     static let phase5Commands: Set<String> = [
         "clone", "cloneField", "cloneSource", "cloneStart", "fakeHosted", "fakeCloneProgress",
         "create", "createField", "createStart", "publishSheet", "windowSheetClose",
+        "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
+        let state = RepositoriesWindowController.shared.state
+        switch command {
+        case "repositories":
+            // repositories — Window › Repositories, at the board's size.
+            RepositoriesWindowController.shared.show()
+            RepositoriesWindowController.shared.window?.setFrame(NSRect(x: 80, y: 60, width: 1260, height: 760), display: true)
+            return
+        case "reposClose":
+            RepositoriesWindowController.shared.window?.close()
+            return
+        case "reposFilter":
+            state.filter = args.joined(separator: " ")
+            return
+        case "reposAttention":
+            state.onlyAttention = args.first == "on"
+            return
+        case "reposSelect", "reposFix", "reposOpen":
+            // reposSelect|reposFix|reposOpen <repository name>
+            let name = args.joined(separator: " ")
+            let rows = RepositoryTable.sections(app: app, state: state).flatMap(\.rows)
+            guard let row = rows.first(where: { $0.name == name }) else { return }
+            state.selection = row.path
+            if command == "reposFix", let model = row.model {
+                switch row.fix {
+                case .pull: model.from("Repositories window") { model.pull(model.pullChoice.strategy) }
+                case .resolve: FailureHelp.reveal(model); model.openConflicts()
+                case .open: FailureHelp.reveal(model)
+                default: break
+                }
+            }
+            if command == "reposOpen" {
+                if let model = row.model { FailureHelp.reveal(model) } else if let window {
+                    app.open([URL(filePath: row.path, directoryHint: .isDirectory)], in: window)
+                }
+            }
+            return
+        case "fakeFetchProblem":
+            // fakeFetchProblem <tab name> signIn|network <host> — as if its last fetch failed that way.
+            guard args.count >= 2, let tab = window?.tabs.first(where: { $0.name == args[0] }) else { return }
+            let model = app.repository(for: tab.path)
+            let host = args.count > 2 ? args[2] : "github.com"
+            let failure: GitFailure = args[1] == "signIn" ? .signIn(host: host) : .network(host: host)
+            model.fetchProblem = FetchProblem(failure: failure, remote: "origin", message: "fake", date: .now)
+            return
+        default:
+            break
+        }
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
@@ -117,6 +165,16 @@ extension DebugDriver {
             result["publishBanner"] = repository.showsPublishBanner
             result["remotes"] = repository.remotes.map(\.name)
         }
+        let reposState = RepositoriesWindowController.shared.state
+        result["repositories"] = [
+            "open": RepositoriesWindowController.shared.window?.isVisible ?? false,
+            "selection": reposState.selection.map { ($0 as NSString).lastPathComponent } ?? "",
+            "sections": RepositoryTable.filtered(RepositoryTable.sections(app: app, state: reposState), state: reposState).map { section -> [String: Any] in
+                ["name": section.name, "note": section.note,
+                 "rows": section.rows.map { "\($0.name) | \($0.branch) | \($0.changes.map(String.init) ?? "—") | \($0.toPush.map(String.init) ?? "—") | \($0.toPull.map(String.init) ?? "—") | \($0.tone) | \($0.status) | \($0.fixTitle ?? "")" }]
+            },
+        ] as [String: Any]
+        result["lastFetchAll"] = AutoFetcher.shared.lastFetchAll.map { "\($0)" } ?? ""
         result["activity"] = ActivityCenter.shared.running.map { "\($0.title) \($0.detail ?? "") \($0.fraction.map { String(format: "%.2f", $0) } ?? "-")" }
         result["recentActivity"] = ActivityCenter.shared.recent.prefix(4).map { "\($0.title): \($0.result ?? "")" }
         return result

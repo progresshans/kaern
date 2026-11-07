@@ -95,6 +95,8 @@ final class AutoFetcher {
     private(set) var isOnline = true
     /// When the Mac went offline (the status bar says how long the counts are from).
     private(set) var offlineSince: Date?
+    /// When Fetch All (or auto-fetch) last went through every repository.
+    private(set) var lastFetchAll: Date?
 
     func start() {
         monitor.pathUpdateHandler = { path in
@@ -164,6 +166,7 @@ final class AutoFetcher {
             if let taskID {
                 center.finish(taskID, result: Task.isCancelled ? "Stopped fetching after \(done) of \(models.count)" : "Fetched \(Formatters.count(done, "repository", "repositories"))")
             }
+            if !Task.isCancelled { lastFetchAll = .now }
             run = nil
         }
         if !auto || models.count > 1 {

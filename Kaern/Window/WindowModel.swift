@@ -373,6 +373,20 @@ final class WindowModel: Identifiable {
         return GroupColor.allCases.first { !used.contains($0) } ?? .blue
     }
 
+    /// A repository's folder moved (Locate…): its tab keeps its place, group and selection.
+    func replacePath(_ oldPath: String, with newPath: String) {
+        guard let index = tabs.firstIndex(where: { $0.path == oldPath }) else { return }
+        if tabs.contains(where: { $0.path == newPath }) {
+            // Already open at the new place: the old tab goes.
+            close([tabs[index].id])
+            return
+        }
+        let old = tabs[index]
+        tabs[index] = RepoTab(id: old.id, path: newPath, group: old.group)
+        if activeTabID == old.id { onActiveTabChange?() }
+        changed()
+    }
+
     /// Takes over another model's strip (used to bring back a closed window's tabs).
     func restoreContents(of other: WindowModel) {
         tabs = other.tabs
