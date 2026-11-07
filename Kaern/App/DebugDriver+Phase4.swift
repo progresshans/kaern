@@ -11,6 +11,7 @@ extension DebugDriver {
         "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose",
         "irAction", "irMove", "irStart", "squash", "type",
         "history", "blame", "historySelect", "blameFocus", "blameBefore", "exploreMode", "blameOption", "showInHistory",
+        "autoFetchNow", "fetchAll", "activity", "fakeFailure", "signInSheet",
     ]
 
     func phase4(_ command: String, _ args: [String]) {
@@ -43,6 +44,15 @@ extension DebugDriver {
         case "type":
             // type <text…> — key events for each character, to the focused field of the window.
             typeText(args.joined(separator: " "))
+            return
+        case "autoFetchNow":
+            AutoFetcher.shared.fetchAll(auto: true)
+            return
+        case "fetchAll":
+            AutoFetcher.shared.fetchAll(auto: false)
+            return
+        case "signInSheet":
+            SettingsWindowController.shared.showSignIn(host: args.first ?? "github.com")
             return
         case "fakeAccount":
             // fakeAccount <login> <host> [Full Name] — shows an account without a token (Accounts pane).
@@ -138,6 +148,13 @@ extension DebugDriver {
             }
         case "irStart":
             if case .interactiveRebase(let draft) = repository.sheet { repository.from("Debug") { repository.startInteractiveRebase(draft) } }
+        case "activity":
+            NotificationCenter.default.post(name: .kaernShowActivity, object: repository.id)
+        case "fakeFailure":
+            // fakeFailure signIn|network — as if the last fetch had failed that way (status bar, Activity).
+            let failure: GitFailure = args.first == "network" ? .network(host: "github.com") : .signIn(host: "github.com")
+            repository.fetchProblem = FetchProblem(failure: failure, remote: repository.defaultRemote ?? "origin", message: "", date: .now)
+            if case .signIn = failure { repository.autoFetchPaused = true }
         case "history":
             // history <path> [commit row]
             if let path = args.first { repository.showFileHistory(path, at: commitID(args.count > 1 ? args[1] : nil)) }
@@ -209,6 +226,14 @@ extension DebugDriver {
             "stashDetails": repository.stashDetails.map { ["stash": $0.stash.reference, "files": $0.files.map(\.path), "base": String($0.baseID.prefix(7)),
                                                          "branch": $0.branch ?? "", "untracked": Array($0.untrackedPaths)] as [String: Any] } ?? NSNull(),
             "runsHooks": repository.runsHooks,
+            "fetchProblem": repository.fetchProblem.map { "\($0.failure.map { "\($0)" } ?? "") \($0.remote)" } ?? "",
+            "autoFetchPaused": repository.autoFetchPaused,
+            "activityRunning": ActivityCenter.shared.running.map { $0.title + " " + $0.repositoryName },
+            "activityRecent": ActivityCenter.shared.recent.map { ($0.failed ? "FAILED " : "") + ($0.result ?? $0.title) + " · " + $0.repositoryName },
+            "online": AutoFetcher.shared.isOnline,
+            "fetchCommands": CommandLog.shared.entries.filter { $0.record.arguments.contains("fetch") }.suffix(6).map { entry in
+                "\(entry.record.isBackground ? "bg" : "ui") \(entry.record.status.map(String.init) ?? "…") \(entry.record.trigger?.action ?? "-") :: \(entry.record.commandLine)"
+            },
             "pullOverride": repository.pullOverride?.rawValue ?? "",
             "recentBranches": repository.recentBranches,
         ]

@@ -57,6 +57,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var currentPane: Pane { Pane.allCases[max(0, tabs.selectedTabViewItemIndex)] }
+
+    /// Sign In to GitHub… from a failure: Accounts with the sign-in sheet open for that host.
+    func showSignIn(host: String) {
+        show(.accounts)
+        SettingsRouter.shared.signInHost = host
+    }
+}
+
+/// Asks a pane to do something when the window opens on it (the sign-in sheet).
+@MainActor @Observable
+final class SettingsRouter {
+    static let shared = SettingsRouter()
+    var signInHost: String?
 }
 
 // MARK: - Layout
@@ -376,6 +389,7 @@ private struct AccountsPane: View {
     @State private var accounts = HostingAccount.all
     @State private var selection: String?
     @State private var signingIn = false
+    @State private var signInHost = "github.com"
     @State private var identity: (name: String?, email: String?) = (nil, nil)
 
     var body: some View {
@@ -384,7 +398,10 @@ private struct AccountsPane: View {
                 VStack(alignment: .leading, spacing: 8) {
                     accountList
                     HStack(spacing: 0) {
-                        SmallSquareButton(title: "+", label: "Add account") { signingIn = true }
+                        SmallSquareButton(title: "+", label: "Add account") {
+                    signInHost = "github.com"
+                    signingIn = true
+                }
                         SmallSquareButton(title: "−", label: "Remove account") { removeSelected() }
                             .disabled(selected == nil)
                     }
@@ -407,7 +424,7 @@ private struct AccountsPane: View {
                 .padding(.top, 52)
         }
         .sheet(isPresented: $signingIn) {
-            SignInSheet { account in
+            SignInSheet(initialHost: signInHost) { account in
                 accounts.removeAll { $0.id == account.id }
                 accounts.append(account)
                 HostingAccount.all = accounts
@@ -418,11 +435,20 @@ private struct AccountsPane: View {
         .onAppear {
             accounts = HostingAccount.all
             if selection == nil { selection = accounts.first?.id }
+            takeSignInRequest()
         }
+        .onChange(of: SettingsRouter.shared.signInHost) { takeSignInRequest() }
         .task(id: selection) { await loadIdentity() }
     }
 
     private var selected: HostingAccount? { accounts.first { $0.id == selection } }
+
+    private func takeSignInRequest() {
+        guard let host = SettingsRouter.shared.signInHost else { return }
+        SettingsRouter.shared.signInHost = nil
+        signInHost = host
+        signingIn = true
+    }
 
     private var accountList: some View {
         VStack(spacing: 2) {

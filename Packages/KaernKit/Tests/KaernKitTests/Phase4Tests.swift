@@ -159,3 +159,47 @@ struct ConflictStashTests {
         #expect(repository.read("f2.txt") == "2\n")
     }
 }
+
+@Suite("Why a command failed")
+struct GitFailureTests {
+    @Test func signInExpired() {
+        let error = """
+        remote: Invalid username or token. Password authentication is not supported for Git operations.
+        fatal: Authentication failed for 'https://github.com/***/recipe-box.git/'
+        """
+        #expect(GitFailure.explain(arguments: ["fetch", "--prune", "origin"], errorOutput: error, status: 128) == .signIn(host: "github.com"))
+        let prompt = "fatal: could not read Username for 'https://gitlab.com': terminal prompts disabled"
+        #expect(GitFailure.explain(arguments: ["push"], errorOutput: prompt, status: 128) == .signIn(host: "gitlab.com"))
+    }
+
+    @Test func sshAndNetwork() {
+        let ssh = "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository."
+        #expect(GitFailure.explain(arguments: ["fetch"], errorOutput: ssh, status: 128) == .sshKey(host: "github.com"))
+        let dns = "fatal: unable to access 'https://github.com/kaern/app.git/': Could not resolve host: github.com"
+        #expect(GitFailure.explain(arguments: ["fetch"], errorOutput: dns, status: 128) == .network(host: "github.com"))
+        let port = "ssh: connect to host gitlab.example.com port 22: Operation timed out"
+        #expect(GitFailure.explain(arguments: ["pull"], errorOutput: port, status: 128) == .network(host: "gitlab.example.com"))
+    }
+
+    @Test func pushRejectedConflictsAndLocks() {
+        let rejected = """
+        To github.com:kaern/app.git
+         ! [rejected]        main -> main (fetch first)
+        error: failed to push some refs to 'github.com:kaern/app.git'
+        """
+        #expect(GitFailure.explain(arguments: ["push", "origin", "main"], errorOutput: rejected, status: 1) == .pushRejected(remote: "origin"))
+        let conflict = "CONFLICT (content): Merge conflict in a.txt\nCONFLICT (content): Merge conflict in b.txt\nAutomatic merge failed; fix conflicts and then commit the result."
+        #expect(GitFailure.explain(arguments: ["merge", "develop"], errorOutput: "", output: conflict, status: 1) == .conflicts(files: 2))
+        let lock = "fatal: Unable to create '/Users/me/app/.git/index.lock': File exists.\n\nAnother git process seems to be running"
+        #expect(GitFailure.explain(arguments: ["commit"], errorOutput: lock, status: 128) == .locked(path: "/Users/me/app/.git/index.lock"))
+        let local = """
+        error: Your local changes to the following files would be overwritten by checkout:
+        \tSources/App.swift
+        \tREADME.md
+        Please commit your changes or stash them before you switch branches.
+        """
+        #expect(GitFailure.explain(arguments: ["switch", "develop"], errorOutput: local, status: 1) == .localChanges(files: ["Sources/App.swift", "README.md"]))
+        #expect(GitFailure.explain(arguments: ["status"], errorOutput: "", status: 0) == nil)
+        #expect(GitFailure.explain(arguments: ["log"], errorOutput: "fatal: something else", status: 128) == nil)
+    }
+}

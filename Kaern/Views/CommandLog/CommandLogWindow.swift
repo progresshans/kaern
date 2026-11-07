@@ -119,7 +119,8 @@ struct CommandLogView: View {
     /// are hidden until Show Background; a read that failed or still runs stays in the list.
     static func isQuiet(_ entry: CommandLog.Entry) -> Bool {
         let record = entry.record
-        if entry.isBackground { return true }
+        // A background network command that failed (auto-fetch) stays in the list.
+        if entry.isBackground { return !(record.failed && !record.wasStopped && record.kinds.contains(.network)) }
         return record.kinds.isEmpty && !record.failed && !record.isRunning
     }
 
@@ -374,6 +375,12 @@ private struct CommandDetail: View {
                         .disabled(record.directory.isEmpty)
                     }
                     .padding(.top, 8)
+                    if record.failed, !record.wasStopped,
+                       let failure = GitFailure.explain(arguments: record.arguments, errorOutput: record.errorOutput, output: record.output, status: record.status) {
+                        WhyBox(help: FailureHelp.make(failure, repositoryPath: record.directory, repositoryName: entry.repository,
+                                                      auto: record.trigger?.action.hasPrefix("Auto-fetch") == true))
+                            .padding(.top, 14)
+                    }
                     VStack(alignment: .leading, spacing: 6) {
                         meta("Repository", entry.repository + " · " + Formatters.abbreviatedPath(record.directory))
                         meta("Started", "Today at " + CommandRow.time.string(from: record.started))
@@ -453,6 +460,28 @@ private struct CommandDetail: View {
             try? await Task.sleep(for: .seconds(2.6))
             if state.toast == message { state.toast = nil }
         }
+    }
+}
+
+/// `.why`: what went wrong in one sentence, and the button that fixes it.
+private struct WhyBox: View {
+    let help: FailureHelp
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(help.message)
+                .font(.system(size: 12.5))
+                .lineSpacing(2)
+                .foregroundStyle(K.label)
+                .fixedSize(horizontal: false, vertical: true)
+            if let title = help.fixTitle, let fix = help.fix {
+                PrimaryButton(title: title, height: 24, fontSize: 12, action: fix)
+            }
+        }
+        .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.err.opacity(0.09))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.err.opacity(0.18), lineWidth: 0.5)))
     }
 }
 

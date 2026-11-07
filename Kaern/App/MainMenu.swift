@@ -198,6 +198,10 @@ enum MainMenu {
         let menu = NSMenu(title: "Repository")
         menu.addItem(MenuAction.item("Fetch", key: "f", modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.remotes.isEmpty == false }) { repository?.from("Repository menu") { repository?.fetch() } })
+        menu.addItem(MenuAction.item("Fetch All Repositories", key: "f", modifiers: [.option, .shift, .command],
+                                    enabled: { !AutoFetcher.shared.isFetchingAll && !app.openRepositories.isEmpty }) {
+            AutoFetcher.shared.fetchAll(auto: false)
+        })
         menu.addItem(MenuAction.item("Pull", key: arrow(NSDownArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.status.upstream != nil }) {
             repository?.from("Repository menu") { repository?.pull(repository?.pullChoice.strategy ?? .merge) }
@@ -417,6 +421,9 @@ enum MainMenu {
             if let window, let id = window.activeTabID { app.moveToNewWindow(id, from: window) }
         })
         menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Activity", key: "a", modifiers: [.option, .command], enabled: { repository?.isReady == true }) {
+            if let repository { NotificationCenter.default.post(name: .kaernShowActivity, object: repository.id) }
+        })
         menu.addItem(MenuAction.item("Command Log", key: "l", modifiers: [.shift, .command]) {
             CommandLogWindowController.shared.show(repository: repository?.path)
         })

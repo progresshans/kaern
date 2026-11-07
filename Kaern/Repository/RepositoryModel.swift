@@ -225,6 +225,10 @@ final class RepositoryModel: Identifiable {
     var operationFinish: OperationFinish?
     /// Where the stopped operation began (⌘Z once it's finished).
     var operationStart: OperationStart?
+    /// The last fetch failed (sign-in, network): the status bar says so with the fix.
+    var fetchProblem: FetchProblem?
+    /// Auto-fetch waits for you after the server turned down the sign-in.
+    var autoFetchPaused = false
     /// File History and Blame: the file, the mode and what's picked.
     var explore: ExploreState?
     var fileHistory: (path: String, entries: [FileHistoryEntry])?
@@ -720,13 +724,21 @@ final class RepositoryModel: Identifiable {
     /// Runs a git action with its activity shown in the tab and status bar, then refreshes.
     /// `trigger` names it in the Command Log (with ``uiSource`` in front). An error shows an alert
     /// unless `onFailure` handles it; a stop (the hook HUD, the Command Log) shows nothing.
+    /// `background`: Kaern started it on its own (auto-fetch): the Command Log keeps it with the
+    /// background commands and Activity lists it only when it fails.
     @discardableResult
-    func perform(_ activity: RepositoryActivity, trigger: String? = nil, _ work: @escaping (GitRepository) async throws -> Void,
+    func perform(_ activity: RepositoryActivity, trigger: String? = nil, background: Bool = false,
+                 _ work: @escaping (GitRepository) async throws -> Void,
                  onSuccess: (() -> Void)? = nil, onFailure: ((any Error) -> Bool)? = nil) -> Task<Void, Never>? {
         guard let repository, self.activity == nil else { return nil }
         self.activity = activity
         let previousIndexChange = indexTask
-        let command = GitCommandTrigger(triggerName(trigger ?? activity.statusText.replacingOccurrences(of: "…", with: "")))
+        let title = activity.statusText.replacingOccurrences(of: "…", with: "")
+        let command = GitCommandTrigger(background ? (trigger ?? title) : triggerName(trigger ?? title), background: background)
+        let center = ActivityCenter.shared
+        let taskID = center.begin(repositoryPath: path, repositoryName: name, title: title, isAuto: background,
+                                  cancel: { [weak self] in self?.activityTask?.cancel() })
+        let toastBefore = toast?.id
         let task = Task {
             // Wait for staging that's still running (git locks the index).
             await previousIndexChange?.value
@@ -735,9 +747,13 @@ final class RepositoryModel: Identifiable {
                     try await work(repository)
                 }
                 onSuccess?()
+                center.finish(taskID, result: toast?.id != toastBefore ? toast?.message : nil)
             } catch is CancellationError {
                 // Stopped on purpose.
+                center.finish(taskID, result: "Stopped")
             } catch {
+                let failure = (error as? GitError).flatMap { GitFailure.explain(arguments: $0.arguments, errorOutput: $0.message, status: $0.status) }
+                center.finish(taskID, result: error.localizedDescription, failure: failure, failed: true)
                 if onFailure?(error) != true {
                     alert = RepositoryAlert(title: "Couldn't finish: \(activity.statusText.replacingOccurrences(of: "…", with: ""))",
                                             message: error.localizedDescription)
@@ -773,7 +789,12 @@ final class RepositoryModel: Identifiable {
     func fetch() {
         let remote = remotes.count == 1 ? remotes.first?.name : nil
         perform(.fetching(remote: remote), trigger: "Fetch") { try await $0.fetch() } onSuccess: { [weak self] in
+            self?.fetchProblem = nil
+            self?.autoFetchPaused = false
             self?.showToast(remote.map { "Fetched \($0)" } ?? "Fetched all remotes")
+        } onFailure: { [weak self] error in
+            self?.noteFetchFailure(error, auto: false)
+            return false
         }
     }
 

@@ -26,6 +26,11 @@ enum Formatters {
         return formatter
     }()
 
+    /// "10:42 AM".
+    static func time(_ date: Date) -> String {
+        Self.time.string(from: date)
+    }
+
     /// History dates: "2 hours ago", "Yesterday", "Sep 27", "Sep 27, 2025".
     static func historyDate(_ date: Date, now: Date = .now) -> String {
         let calendar = Calendar.current

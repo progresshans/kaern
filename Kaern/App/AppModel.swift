@@ -84,6 +84,7 @@ final class AppModel {
                                onCommand: { CommandLog.receive($0) })
             Self.log.info("Using git at \(resolution.url.path(percentEncoded: false), privacy: .public) (\(resolution.source.rawValue, privacy: .public)), version \(resolution.version ?? "unknown", privacy: .public)")
             startRepositories()
+            AutoFetcher.shared.start()
         }
     }
 
@@ -201,6 +202,21 @@ final class AppModel {
     }
 
     // MARK: Repositories
+
+    /// Every repository open in a tab, in tab order (windows front to back).
+    var openRepositories: [RepositoryModel] {
+        var seen = Set<String>()
+        return windows.flatMap { $0.model.tabs.map(\.path) }.compactMap { path in
+            guard seen.insert(path).inserted else { return nil }
+            return repositories[path]
+        }
+    }
+
+    /// The open repository at `path` (the folder a command ran in), if there's one.
+    func openRepository(at path: String) -> RepositoryModel? {
+        let trimmed = path.trimmingTrailingSlash
+        return repositories[trimmed] ?? repositories.values.first { $0.repository?.root.path(percentEncoded: false).trimmingTrailingSlash == trimmed }
+    }
 
     func repository(for path: String) -> RepositoryModel {
         if let model = repositories[path] { return model }
