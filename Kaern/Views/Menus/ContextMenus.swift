@@ -446,7 +446,7 @@ enum ContextMenus {
 
     /// The toolbar's branch button (ScreenSheets 브랜치 메뉴): recent branches with ↑↓, Other
     /// Branches ▸, New Branch…, Merge into…, Rebase onto…, Rename…, Delete.
-    static func toolbarBranchMenu(_ r: RepositoryModel, onNewBranch: @escaping () -> Void) -> NSMenu {
+    static func toolbarBranchMenu(_ r: RepositoryModel, onNewBranch: @escaping () -> Void, onOtherBranches: (() -> Void)? = nil) -> NSMenu {
         let menu = NSMenu(title: "Branches")
         menu.autoenablesItems = false
         let source = "Toolbar › Branch menu"
@@ -466,7 +466,10 @@ enum ContextMenus {
             menuItem.state = ref.isHead ? .on : .off
             menu.addItem(menuItem)
         }
-        if !others.isEmpty || !r.refs.remoteBranches.isEmpty {
+        if let onOtherBranches {
+            // Quick Open finds any branch by name (ScreenSheets' Other Branches…).
+            menu.addItem(item("Other Branches…", key: "o", modifiers: [.shift, .command], enabled: true, run: onOtherBranches))
+        } else if !others.isEmpty || !r.refs.remoteBranches.isEmpty {
             var otherItems: [NSMenuItem] = others.map { ref in
                 item(ref.name, enabled: idle) { r.from(source) { r.checkout(branch: ref.name) } }
             }

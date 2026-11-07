@@ -11,7 +11,7 @@ extension DebugDriver {
         "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose",
         "irAction", "irMove", "irStart", "squash", "type",
         "history", "blame", "historySelect", "blameFocus", "blameBefore", "exploreMode", "blameOption", "showInHistory",
-        "autoFetchNow", "fetchAll", "activity", "fakeFailure", "signInSheet",
+        "autoFetchNow", "fetchAll", "activity", "fakeFailure", "signInSheet", "quickOpen",
     ]
 
     func phase4(_ command: String, _ args: [String]) {
@@ -150,6 +150,9 @@ extension DebugDriver {
             if case .interactiveRebase(let draft) = repository.sheet { repository.from("Debug") { repository.startInteractiveRebase(draft) } }
         case "activity":
             NotificationCenter.default.post(name: .kaernShowActivity, object: repository.id)
+        case "quickOpen":
+            // quickOpen on|off
+            window.showsQuickOpen = args.first != "off"
         case "fakeFailure":
             // fakeFailure signIn|network — as if the last fetch had failed that way (status bar, Activity).
             let failure: GitFailure = args.first == "network" ? .network(host: "github.com") : .signIn(host: "github.com")
@@ -231,6 +234,7 @@ extension DebugDriver {
             "activityRunning": ActivityCenter.shared.running.map { $0.title + " " + $0.repositoryName },
             "activityRecent": ActivityCenter.shared.recent.map { ($0.failed ? "FAILED " : "") + ($0.result ?? $0.title) + " · " + $0.repositoryName },
             "online": AutoFetcher.shared.isOnline,
+            "quickOpen": window?.showsQuickOpen ?? false,
             "fetchCommands": CommandLog.shared.entries.filter { $0.record.arguments.contains("fetch") }.suffix(6).map { entry in
                 "\(entry.record.isBackground ? "bg" : "ui") \(entry.record.status.map(String.init) ?? "…") \(entry.record.trigger?.action ?? "-") :: \(entry.record.commandLine)"
             },

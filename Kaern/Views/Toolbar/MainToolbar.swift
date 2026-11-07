@@ -25,7 +25,7 @@ struct MainToolbar: View {
                 }
             }
             ToolbarCap {
-                BranchButton(repository: repository, onNewBranch: askNewBranch)
+                BranchButton(repository: repository, onNewBranch: askNewBranch, onOtherBranches: { window.showsQuickOpen = true })
             }
             ToolbarCap {
                 // Their tooltips say what they'd take back ("Undo Checkout develop").
@@ -179,13 +179,14 @@ private struct PullMenu: View {
 private struct BranchButton: View {
     let repository: RepositoryModel
     let onNewBranch: () -> Void
+    let onOtherBranches: () -> Void
     @State private var hovering = false
     @State private var anchor = MenuAnchor()
 
     var body: some View {
         Button {
             guard let view = anchor.view else { return }
-            let menu = ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch)
+            let menu = ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch, onOtherBranches: onOtherBranches)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
         } label: {
             HStack(spacing: 6) {
@@ -213,7 +214,8 @@ private struct BranchButton: View {
         .accessibilityLabel("Switch branch, current branch \(title)")
         .onReceive(NotificationCenter.default.publisher(for: .kaernShowBranchMenu)) { note in
             guard (note.object as? String) == repository.id, let view = anchor.view else { return }
-            ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
+            ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch, onOtherBranches: onOtherBranches)
+                .popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
         }
     }
 

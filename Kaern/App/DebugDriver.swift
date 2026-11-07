@@ -340,8 +340,11 @@ final class DebugDriver {
             case "stash": target = Int(spec[1]).flatMap { repository.stashes.indices.contains($0) ? .stash(repository.stashes[$0].id) : nil }
             default: target = nil
             }
-            guard let target, let menu = ContextMenus.menu(for: target, repository: repository, window: window),
-                  let nsWindow = controller.window, let view = nsWindow.contentView else { return }
+            // `toolbarBranch`: the toolbar branch button's menu (phase 4).
+            let built = spec[0] == "toolbarBranch"
+                ? ContextMenus.toolbarBranchMenu(repository, onNewBranch: {})
+                : target.flatMap { ContextMenus.menu(for: $0, repository: repository, window: window) }
+            guard let menu = built, let nsWindow = controller.window, let view = nsWindow.contentView else { return }
             let point = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
             let parent = sub.flatMap { title in menu.items.first { $0.title == title } }
             openMenu = menu
@@ -361,7 +364,7 @@ final class DebugDriver {
                     }
                     RunLoop.main.add(timer, forMode: .common)
                 }
-                tracker.open = tracker.view(for: target)
+                tracker.open = target.flatMap { tracker.view(for: $0) }
                 menu.popUp(positioning: parent, at: point, in: view)
                 tracker.open = nil
                 self.openMenu = nil

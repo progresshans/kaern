@@ -54,6 +54,8 @@ final class WindowModel: Identifiable {
     var isFocused = false
     /// Focus mode's bottom drawer (closed with its ×, opened again by picking a row).
     var showsDrawer = true
+    /// Quick Open (⇧⌘O). Not saved.
+    var showsQuickOpen = false
 
     /// Sidebar on the toolbar or ⌃⌘S. In Focus it leaves Focus and shows the sidebar.
     func toggleSidebar() {

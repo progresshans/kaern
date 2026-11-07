@@ -83,6 +83,10 @@ struct StatusBarView: View {
     private var summary: String {
         guard repository.phase == .ready || repository.phase == .light || repository.phase == .loading else { return "" }
         if let explore = repository.exploreSummary { return explore }
+        // During a rebase the right side says where it is (ScreenConflicts).
+        if let operation = repository.operation, operation.kind == .rebase, let step = operation.step, let total = operation.total {
+            return "Rebase in progress · commit \(step) of \(total)"
+        }
         let status = repository.status
         var parts: [String] = []
         if status.isClean {

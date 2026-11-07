@@ -110,6 +110,18 @@ struct RepositoryScreen: View {
                 .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
         }
         .overlay {
+            if window.showsQuickOpen, repository.isReady {
+                ZStack(alignment: .top) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { window.showsQuickOpen = false }
+                    QuickOpenPanel(repository: repository, window: window)
+                        .padding(.top, KMetric.toolbar + 50)
+                }
+                .transition(.opacity)
+            }
+        }
+        .overlay {
             RepositorySheetHost(repository: repository)
         }
         .animation(.easeOut(duration: 0.15), value: repository.sheet?.id)

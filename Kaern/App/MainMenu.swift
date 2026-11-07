@@ -421,6 +421,10 @@ enum MainMenu {
             if let window, let id = window.activeTabID { app.moveToNewWindow(id, from: window) }
         })
         menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Quick Open", key: "o", modifiers: [.shift, .command], enabled: { repository?.isReady == true },
+                                    checked: { window?.showsQuickOpen == true }) {
+            window?.showsQuickOpen.toggle()
+        })
         menu.addItem(MenuAction.item("Activity", key: "a", modifiers: [.option, .command], enabled: { repository?.isReady == true }) {
             if let repository { NotificationCenter.default.post(name: .kaernShowActivity, object: repository.id) }
         })
