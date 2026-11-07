@@ -79,7 +79,14 @@ final class AppModel {
             launchUsesSSHAgent = AppSettings.usesSSHAgent
             // Every command goes to Window › Command Log (secrets masked by KaernKit). Without the
             // SSH agent (Settings › Advanced), git and ssh don't see SSH_AUTH_SOCK.
+            #if DEBUG
+            // A test instance's git config and credentials stay next to its session file.
+            let testEnvironment = TestSession.gitEnvironment()
+            #else
+            let testEnvironment: [String: String] = [:]
+            #endif
             runner = GitRunner(executableURL: resolution.url,
+                               extraEnvironment: testEnvironment,
                                removedEnvironment: launchUsesSSHAgent ? [] : ["SSH_AUTH_SOCK"],
                                onCommand: { CommandLog.receive($0) })
             Self.log.info("Using git at \(resolution.url.path(percentEncoded: false), privacy: .public) (\(resolution.source.rawValue, privacy: .public)), version \(resolution.version ?? "unknown", privacy: .public)")

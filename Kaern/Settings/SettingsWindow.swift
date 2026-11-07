@@ -1144,10 +1144,18 @@ private struct AdvancedPane: View {
 enum Relauncher {
     static func relaunch() {
         let path = Bundle.main.bundleURL.path(percentEncoded: false)
+        #if DEBUG
+        // A test instance comes back on its own test session, in the background.
+        let testArguments = SessionStore.testSessionPath != nil ? TestSession.launchArguments : nil
+        #else
+        let testArguments: [String]? = nil
+        #endif
+        let open = testArguments == nil ? "/usr/bin/open \"$0\"" : "/usr/bin/open -n -g \"$0\" --args \"$@\""
         let process = Process()
         process.executableURL = URL(filePath: "/bin/sh")
         // Waits for this process to end, then opens the app again.
-        process.arguments = ["-c", "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", path]
+        process.arguments = ["-c", "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; " + open, path]
+            + (testArguments ?? [])
         try? process.run()
         NSApp.terminate(nil)
     }

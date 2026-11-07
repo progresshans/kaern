@@ -882,6 +882,8 @@ final class DebugDriver {
             "windows": windows,
             "lastClosedTabs": app.lastClosed?.window.tabs.count ?? 0,
             "recent": app.recent.map(\.name),
+            // The global git config and credential helpers git sees (TestSession).
+            "gitConfigEnvironment": (app.runner?.environment ?? [:]).filter { $0.key.hasPrefix("GIT_CONFIG") },
             // Kaern's settings as this instance reads them: launch arguments over its own store.
             "settings": UserDefaults.kaern.dictionaryRepresentation().filter { $0.key.hasPrefix("Kaern") }.mapValues { "\($0)" },
         ]
