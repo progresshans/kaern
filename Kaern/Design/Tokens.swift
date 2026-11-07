@@ -63,6 +63,15 @@ nonisolated enum K {
     static let addWord = dynamic(rgba(40, 167, 69, 0.28), rgba(48, 209, 88, 0.3))    // changed words
     static let delWord = dynamic(rgba(255, 59, 48, 0.22), rgba(255, 69, 58, 0.32))
     static let hunk = dynamic(0xf0f4fa, 0x222b37)
+    // ScreenConflicts: the operation bar, open conflict blocks, the two sides.
+    static let opBg = dynamic(0xfdecea, 0x3b2321)
+    static let opText = dynamic(0x8a1f17, 0xffb4ab)
+    static let okBg = dynamic(0xe6f5eb, 0x1c3326)
+    static let okText = dynamic(0x13693a, 0x8de0ad)
+    static let cbBg = dynamic(0xfdecea, 0x3b2321)
+    static let cbText = dynamic(0x8a1f17, 0xffb4ab)
+    static let oursBg = dynamic(rgba(40, 167, 69, 0.13), rgba(48, 209, 88, 0.14))
+    static let theirsBg = dynamic(rgba(10, 108, 255, 0.12), rgba(10, 132, 255, 0.18))
     static let hunkText = dynamic(0x36557f, 0x9db6d8)
     static let emptyA = dynamic(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.045))
 

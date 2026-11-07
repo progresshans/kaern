@@ -61,6 +61,11 @@ extension GitRepository {
         try await git(["remote", "rename", name, newName])
     }
 
+    /// `git remote set-url`: a new fetch (and push) address.
+    public func setRemoteURL(_ name: String, url: String) async throws {
+        try await git(["remote", "set-url", name, url])
+    }
+
     /// `git remote remove`: also drops its remote branches and the upstream settings that use it.
     public func removeRemote(_ name: String) async throws {
         try await git(["remote", "remove", name])

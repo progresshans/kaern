@@ -23,6 +23,10 @@ enum Icons {
         .path("M7 3.8v3.9", width: 1.6, cap: .round, stroke: .white),
         .circle(7, 10.2, 0.9, fill: .white),
     ])
+    /// `.fico`: a page with a folded corner (the conflict editor's file).
+    static let file = SVGIcon(16, [
+        .path("M4 2.5h5.2L12.5 5.8v7.2a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V3.3a.8.8 0 0 1 .8-.8z M9 2.6V6h3.4", width: 1.3, join: .round),
+    ])
     static let missingFolder = SVGIcon(16, [
         .path("M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z", width: 1.4, join: .round),
         .path("M3 14L13.5 2.5", width: 1.4, cap: .round),

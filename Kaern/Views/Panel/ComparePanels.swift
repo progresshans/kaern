@@ -186,7 +186,14 @@ struct MultiSelectPanel: View {
                             repository.clearPicks()
                             repository.from("Multi-select panel") { repository.revert(picked) }
                         }
-                        BulkAction(title: "Squash \(commits.count) into One…", note: "Interactive rebase comes in a later build", enabled: false) {}
+                        let squashReason = repository.squashUnavailableReason(repository.picked)
+                        BulkAction(title: "Squash \(commits.count) into One…",
+                                   note: squashReason ?? "Opens the interactive rebase with them folded into the oldest",
+                                   enabled: idle && squashReason == nil) {
+                            let picked = repository.picked
+                            repository.clearPicks()
+                            repository.from("Multi-select panel") { repository.askSquash(picked) }
+                        }
                         if let oldest = commits.last, let newest = commits.first {
                             BulkAction(title: "Compare Oldest with Newest", note: "\(oldest.shortID) → \(newest.shortID)") {
                                 repository.picked = [oldest.id, newest.id]

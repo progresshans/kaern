@@ -316,6 +316,38 @@ nonisolated extension ReversibleStep {
             }
         }
     }
+
+    /// A branch was made without switching to it; ⌘Z deletes it, ⇧⌘Z makes it again.
+    static func createdBranchOnly(label: String, name: String, at tip: String) -> ReversibleStep {
+        ReversibleStep(label: label) { repository in
+            guard await repository.resolve("refs/heads/\(name)") == tip else {
+                throw UndoRefusal(message: "\(name) moved since it was created, so Kaern can’t take it back.")
+            }
+            try await repository.deleteBranch(name, force: true)
+            return ReversibleStep(label: label) { repository in
+                try await repository.createBranch(name, startPoint: tip, checkout: false)
+                return createdBranchOnly(label: label, name: name, at: tip)
+            }
+        }
+    }
+
+    /// A stash got a new message; ⌘Z gives it the old one back (it keeps its place).
+    static func renamedStash(object: String, from: String, to: String) -> ReversibleStep {
+        let label = "Rename Stash"
+        return ReversibleStep(label: label) { repository in
+            guard let stash = await repository.stash(withObject: object), stash.message == to else {
+                throw UndoRefusal(message: "That stash changed since it was renamed, so Kaern can’t take it back.")
+            }
+            try await repository.renameStash(stash, to: from)
+            return ReversibleStep(label: label) { repository in
+                guard let stash = await repository.stash(withObject: object) else {
+                    throw UndoRefusal(message: "That stash isn’t in the list anymore.")
+                }
+                try await repository.renameStash(stash, to: to)
+                return renamedStash(object: object, from: from, to: to)
+            }
+        }
+    }
 }
 
 // MARK: - ⌘Z on the repository

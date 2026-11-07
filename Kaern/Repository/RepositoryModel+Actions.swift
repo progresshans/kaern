@@ -114,18 +114,6 @@ struct Confirmation: Identifiable {
     var confirm: () -> Void
 }
 
-/// A sheet asking for a name (Create Branch Here…, Rename…, Create Tag Here…).
-struct NameRequest: Identifiable {
-    enum Kind { case branch, tag }
-    let id = UUID()
-    var kind: Kind
-    var title: String
-    var message: String
-    var initial: String
-    var confirmTitle: String
-    var commit: (String) -> Void
-}
-
 /// What the compare panel shows, loaded from git.
 struct Comparison: Equatable {
     enum Kind: Equatable {
@@ -166,6 +154,10 @@ extension RepositoryModel {
 
     func checkout(branch name: String) {
         guard let previous = headPosition, previous != .branch(name) else { return }
+        if case .branch(let old) = previous {
+            switchedBranches.removeAll { $0 == old || $0 == name }
+            switchedBranches.insert(old, at: 0)
+        }
         let changes = status.entries.count
         let label = "Checkout \(name)"
         perform(.switching(name), trigger: label) { [weak self] repository in
@@ -199,7 +191,7 @@ extension RepositoryModel {
             }
             guard let self else { return }
             guard result.outcome == .finished, let after = await repository.resolve("HEAD") else {
-                self.stoppedOnConflicts("Cherry-pick", keptChanges: result.kept != nil)
+                self.stoppedOnConflicts("Cherry-pick", start: OperationStart(label: label, branch: branch, head: before, kept: result.kept))
                 return
             }
             let text = list.count == 1
@@ -221,7 +213,7 @@ extension RepositoryModel {
             }
             guard let self else { return }
             guard result.outcome == .finished, let after = await repository.resolve("HEAD") else {
-                self.stoppedOnConflicts("Revert", keptChanges: result.kept != nil)
+                self.stoppedOnConflicts("Revert", start: OperationStart(label: label, branch: branch, head: before, kept: result.kept))
                 return
             }
             let text = list.count == 1
@@ -273,8 +265,9 @@ extension RepositoryModel {
         }
     }
 
-    /// Merges `revision` (a branch, remote branch or commit) into the current branch.
-    func merge(_ revision: String) {
+    /// Merges `revision` (a branch, remote branch or commit) into the current branch;
+    /// `noFastForward` always makes a merge commit.
+    func merge(_ revision: String, noFastForward: Bool = false) {
         guard let before = status.headID else { return }
         let branch = status.branch
         let into = branch ?? "HEAD"
@@ -283,11 +276,11 @@ extension RepositoryModel {
             // Like a cherry-pick: uncommitted changes go aside and come back staged as they were
             // (git's own --autostash brings them back unstaged).
             let result = try await repository.withChangesStashed(message: "Before \(label)") {
-                try await repository.merge(revision)
+                try await repository.merge(revision, fastForward: noFastForward ? .never : .allowed)
             }
             guard let self else { return }
             guard result.outcome == .finished, let after = await repository.resolve("HEAD") else {
-                self.stoppedOnConflicts("Merge", keptChanges: result.kept != nil)
+                self.stoppedOnConflicts("Merge", start: OperationStart(label: label, branch: branch, head: before, kept: result.kept))
                 return
             }
             guard after != before else {
@@ -314,7 +307,7 @@ extension RepositoryModel {
             }
             guard let self else { return }
             guard result.outcome == .finished, let after = await repository.resolve("HEAD") else {
-                self.stoppedOnConflicts("Rebase", keptChanges: result.kept != nil)
+                self.stoppedOnConflicts("Rebase", start: OperationStart(label: label, branch: branch, head: before, kept: result.kept))
                 return
             }
             guard after != before else {
@@ -360,42 +353,10 @@ extension RepositoryModel {
         )
     }
 
-    func askRename(branch name: String) {
-        nameRequest = NameRequest(kind: .branch, title: "Rename “\(name)”", message: "Its upstream setting moves with it.",
-                                  initial: name, confirmTitle: "Rename") { [weak self] newName in
-            guard let self, newName != name else { return }
-            self.perform(.working("Renaming \(name)…"), trigger: "Rename \(name)") { [weak self] repository in
-                try await repository.renameBranch(name, to: newName)
-                self?.record(.renamedBranch(from: name, to: newName), toast: "Renamed \(name) to \(newName)")
-            }
-        }
-    }
-
-    func askCreateBranch(at id: String?) {
-        let message = id.map { "The branch starts at \(String($0.prefix(7))) and is checked out." }
-            ?? (currentBranch.map { "The branch starts at \($0) and is checked out." } ?? "The branch starts at the current commit and is checked out.")
-        nameRequest = NameRequest(kind: .branch, title: "New Branch", message: message, initial: "", confirmTitle: "Create Branch") { [weak self] name in
-            self?.createBranch(name, at: id)
-        }
-    }
-
-    func askCreateTag(at id: String) {
-        nameRequest = NameRequest(kind: .tag, title: "New Tag", message: "A lightweight tag on \(short(id)).", initial: "",
-                                  confirmTitle: "Create Tag") { [weak self] name in
-            guard let self else { return }
-            self.perform(.working("Creating \(name)…"), trigger: "Create Tag \(name)") { [weak self] repository in
-                try await repository.createTag(name, at: id, message: nil)
-                guard let object = await repository.resolve("refs/tags/\(name)") else { return }
-                self?.record(.createdTag(name: name, object: object), toast: "Tagged \(String(id.prefix(7))) as \(name)")
-            }
-        }
-    }
-
     /// Pull on a branch: the current one pulls; another one fast-forwards to its upstream.
     func pull(branch name: String) {
         if name == status.branch {
-            let choice = PullChoice(rawValue: UserDefaults.kaern.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
-            pull(choice.strategy)
+            pull(pullChoice.strategy)
             return
         }
         guard let ref = refs.localBranch(named: name), let upstream = ref.upstream,
@@ -439,35 +400,6 @@ extension RepositoryModel {
                    toast: toast + " · your changes touch the same files, so they’re in Stashes")
         } else {
             record(.moveBranch(label: label, branch: branch, from: from, to: to), toast: toast)
-        }
-    }
-
-    /// A stop on conflicts: the status bar shows the operation; the alert offers Abort.
-    func stoppedOnConflicts(_ what: String, keptChanges: Bool = false) {
-        alert = RepositoryAlert(
-            title: "\(what) stopped on conflicts",
-            message: "Resolve the conflicted files in your editor and stage them, then choose Repository › Continue \(what). To go back to where you were, abort it."
-                + (keptChanges ? " Your uncommitted changes are in the stash list; pop them when you’re done." : ""),
-            actionTitle: "Abort \(what)",
-            action: { [weak self] in self?.abortOperation() }
-        )
-    }
-
-    func abortOperation() {
-        guard let operation else { return }
-        let name = operation.kind.title
-        perform(.working("Aborting the \(name.lowercased())…"), trigger: "Abort \(name)") { [weak self] repository in
-            try await repository.abortOperation(operation.kind)
-            self?.showToast("Aborted the \(name.lowercased()) · everything is as it was before")
-        }
-    }
-
-    func continueOperation() {
-        guard let operation else { return }
-        let name = operation.kind.title
-        perform(.working("Continuing the \(name.lowercased())…"), trigger: "Continue \(name)") { [weak self] repository in
-            let outcome = try await repository.continueOperation(operation)
-            if outcome == .stopped { self?.stoppedOnConflicts(name) } else { self?.showToast("Finished the \(name.lowercased())") }
         }
     }
 }
@@ -603,9 +535,20 @@ extension RepositoryModel {
     func applyStash(_ stash: Stash, pop: Bool) {
         let label = (pop ? "Pop " : "Apply ") + stash.reference
         perform(pop ? .popping : .working("Applying \(stash.reference)…"), trigger: label) { [weak self] repository in
-            let applied = try await repository.applyStashUndoably(stash, pop: pop)
+            let applied = try await repository.applyStashReportingConflicts(stash, pop: pop)
             let text = pop ? "Popped \(stash.reference) · \(Self.stashTitle(stash))" : "Applied \(stash.reference) · the stash stays in the list"
             self?.record(applied.map(ReversibleStep.applied), toast: text)
+            if pop, self?.screen == .stash(stash.id) { self?.screen = nil }
+        } onFailure: { [weak self] error in
+            // Stopped on conflicts: the operation bar offers Undo Pop and the editor opens.
+            guard let self, let conflict = error as? StashApplyConflict else { return false }
+            self.stashConflict = conflict
+            self.conflictSession = nil
+            Task {
+                await self.refreshStatusNow()
+                self.openConflicts()
+            }
+            return true
         }
     }
 

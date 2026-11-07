@@ -245,7 +245,9 @@ extension RepositoryModel {
     /// Commits what's staged. While a `pre-commit` (or `commit-msg`) hook runs, the HUD shows it
     /// with Stop; when a hook stops the commit, the sheet shows its output with Try Again and
     /// Commit Without Hooks. ⌘Z takes the commit back (its changes are staged again).
-    func commit(runHooks: Bool = true) {
+    func commit(runHooks requested: Bool = true) {
+        // Repository Settings can turn hooks off for commits made from Kaern.
+        let runHooks = requested && runsHooks
         guard canCommit else { return }
         let message = composer.message
         let amend = composer.amend

@@ -195,8 +195,11 @@ struct SidebarView: View {
                 // they were made for, marked "auto".
                 let copy = RepositoryModel.isKaernCopy(stash)
                 SidebarRow(title: copy ? RepositoryModel.stashTitle(stash) : stash.message, flat: true,
+                           isCurrent: repository.screen == .stash(stash.id),
                            subtitle: ([stash.reference] + (copy ? ["auto"] : []) + [stashDate(stash.date)]).joined(separator: " · "))
                     .contextTarget(.stash(stash.id), ring: ContextRing(radius: 6, inset: 0))
+                    .onTapGesture { repository.openStash(stash.id) }
+                    .accessibilityAddTraits(.isButton)
             }
             if repository.stashes.isEmpty, repository.isReady {
                 SidebarRow(title: "No stashes", flat: true, isPlaceholder: true)

@@ -200,8 +200,7 @@ enum MainMenu {
                                     enabled: { isIdle && repository?.remotes.isEmpty == false }) { repository?.from("Repository menu") { repository?.fetch() } })
         menu.addItem(MenuAction.item("Pull", key: arrow(NSDownArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.status.upstream != nil }) {
-            let choice = PullChoice(rawValue: UserDefaults.kaern.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
-            repository?.from("Repository menu") { repository?.pull(choice.strategy) }
+            repository?.from("Repository menu") { repository?.pull(repository?.pullChoice.strategy ?? .merge) }
         })
         menu.addItem(MenuAction.item("Push", key: arrow(NSUpArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.remotes.isEmpty == false && repository?.status.branch != nil }) {
@@ -222,13 +221,41 @@ enum MainMenu {
                                     title: { repository?.operation.map { "Abort \($0.kind.title)" } ?? "Abort" }) {
             repository?.from("Repository menu") { repository?.abortOperation() }
         })
+        menu.addItem(MenuAction.item("Resolve Conflicts", enabled: { repository?.isReady == true && repository?.conflictedPaths.isEmpty == false }) {
+            repository?.openConflicts()
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Repository Settings…", key: ",", modifiers: [.option, .command], enabled: { repository?.isReady == true }) {
+            repository?.sheet = .repositorySettings
+        })
         return menu
     }
 
     private static func branchMenu() -> NSMenu {
         let menu = NSMenu(title: "Branch")
+        let current = { repository?.status.branch ?? "HEAD" }
+        let canAct = { isIdle && repository?.isMidOperation == false }
+        menu.addItem(MenuAction.item("Switch Branch…", key: "b", modifiers: [.shift, .command], enabled: { repository?.isReady == true }) {
+            if let repository { NotificationCenter.default.post(name: .kaernShowBranchMenu, object: repository.id) }
+        })
         menu.addItem(MenuAction.item("New Branch…", key: "n", modifiers: [.shift, .command], enabled: { isIdle }) {
             if let window { NotificationCenter.default.post(name: .kaernNewBranch, object: window.id) }
+        })
+        menu.addItem(MenuAction.item("New Tag…", enabled: { isIdle && (repository?.selectedCommitID ?? repository?.status.headID) != nil }) {
+            guard let repository, let id = repository.selectedCommitID ?? repository.status.headID else { return }
+            repository.askCreateTag(at: id)
+        })
+        menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Merge into…", enabled: { canAct() && repository?.status.branch != nil },
+                                    title: { "Merge into “\(current())”…" }) {
+            repository?.from("Branch menu") { repository?.askMerge() }
+        })
+        menu.addItem(MenuAction.item("Rebase onto…", enabled: { canAct() && repository?.status.branch != nil },
+                                    title: { "Rebase “\(current())” onto…" }) {
+            repository?.from("Branch menu") { repository?.askRebase() }
+        })
+        menu.addItem(MenuAction.item("Interactive Rebase…", enabled: { canAct() && interactiveRebaseBase != nil }) {
+            if let base = interactiveRebaseBase { repository?.from("Branch menu") { repository?.askInteractiveRebase(onto: base) } }
         })
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Publish Branch…", enabled: {
@@ -243,7 +270,21 @@ enum MainMenu {
         menu.addItem(MenuAction.item("Rename Branch…", enabled: { isIdle && repository?.status.branch != nil }) {
             if let branch = repository?.status.branch { repository?.from("Branch menu") { repository?.askRename(branch: branch) } }
         })
+        // ⌘⌫ deletes to the start of the line while typing, so the item steps aside then.
+        menu.addItem(MenuAction.item("Delete Branch…", key: "\u{8}", enabled: {
+            textView == nil && canAct() && (repository?.refs.localBranches.contains { !$0.isHead } ?? false)
+        }) {
+            repository?.from("Branch menu") { repository?.askDeleteBranch() }
+        })
         return menu
+    }
+
+    /// Branch › Interactive Rebase…: the selected commit when it's on this branch, else the upstream.
+    private static var interactiveRebaseBase: String? {
+        guard let repository, repository.status.branch != nil else { return nil }
+        if let id = repository.selectedCommitID, id != repository.status.headID, repository.isOnCurrentBranch(id) { return id }
+        if let upstream = repository.status.upstream, repository.status.ahead > 0 { return upstream }
+        return nil
     }
 
     /// The current branch's pull request page on its host.

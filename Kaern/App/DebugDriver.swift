@@ -451,18 +451,12 @@ final class DebugDriver {
         case "rename":
             // rename <old> <new>
             if args.count == 2 {
-                repository.askRename(branch: args[0])
-                let commit = repository.nameRequest?.commit
-                repository.nameRequest = nil
-                commit?(args[1])
+                repository.from("Debug") { repository.renameBranch(args[0], to: args[1], alsoOn: nil) }
             }
         case "tag":
             // tag <index> <name>
             if args.count == 2, let id = commitID(args[0]) {
-                repository.askCreateTag(at: id)
-                let commit = repository.nameRequest?.commit
-                repository.nameRequest = nil
-                commit?(args[1])
+                repository.from("Debug") { repository.createTag(args[1], at: id, message: nil, push: false) }
             }
         case "discard":
             // discard <path> [unstaged]
@@ -871,6 +865,7 @@ final class DebugDriver {
                 "stashes": repository.stashes.map(\.message),
                 "upstream": repository.status.upstream ?? "",
                 "ahead": repository.status.ahead, "behind": repository.status.behind,
+                "phase4": phase4Dump(repository),
                 "commandLog": CommandLog.shared.entries.suffix(12).map { entry in
                     "\(entry.record.isBackground ? "bg" : "ui") \(entry.record.status.map(String.init) ?? "…") \(entry.record.trigger?.action ?? "-") :: \(entry.record.commandLine)"
                 },

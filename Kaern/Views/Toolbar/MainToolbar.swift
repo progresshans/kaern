@@ -1,3 +1,4 @@
+import AppKit
 import KaernKit
 import SwiftUI
 
@@ -11,12 +12,11 @@ struct MainToolbar: View {
     let repository: RepositoryModel
 
     @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
-    @State private var newBranchName = ""
-    @State private var asksNewBranch = false
 
     var body: some View {
         let ready = repository.isReady
-        let busy = repository.activity != nil
+        // While a merge, rebase or stopped stash waits, Pull, Push, Stash and the like are locked.
+        let busy = repository.activity != nil || repository.isMidOperation
         HStack(spacing: 6) {
             ToolbarCap {
                 ToolbarButton(icon: Icons.sidebar, iconSize: 17, name: "Sidebar", shortcut: "⌃⌘S", tip: .leading,
@@ -42,7 +42,7 @@ struct MainToolbar: View {
                 ToolbarButton(icon: Icons.fetch, name: "Fetch", shortcut: "⌥⌘F") { repository.from("Toolbar") { repository.fetch() } }
                     .disabled(!ready || busy || repository.remotes.isEmpty)
                 ToolbarButton(icon: Icons.pull, name: "Pull", shortcut: "⌥⌘↓", badge: repository.status.behind) {
-                    repository.from("Toolbar") { repository.pull(pullStrategy.strategy) }
+                    repository.from("Toolbar") { repository.pull(repository.pullChoice.strategy) }
                 }
                 .disabled(!ready || busy || repository.status.upstream == nil)
                 PullMenu(repository: repository, choice: $pullStrategy)
@@ -104,22 +104,10 @@ struct MainToolbar: View {
         .onReceive(NotificationCenter.default.publisher(for: .kaernNewBranch)) { note in
             if (note.object as? UUID) == window.id { askNewBranch() }
         }
-        .alert("New Branch", isPresented: $asksNewBranch) {
-            TextField("Branch name", text: $newBranchName)
-            Button("Create Branch") {
-                let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !name.isEmpty { repository.from("New Branch") { repository.createBranch(name) } }
-            }
-            .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(repository.currentBranch.map { "The branch starts at \($0) and is checked out." } ?? "The branch starts at the current commit and is checked out.")
-        }
     }
 
     private func askNewBranch() {
-        newBranchName = ""
-        asksNewBranch = true
+        repository.from("New Branch") { repository.askCreateBranch(at: nil) }
     }
 }
 
@@ -186,22 +174,19 @@ private struct PullMenu: View {
     }
 }
 
-/// The branch capsule: branch glyph, name, ⌃⌄. Opens the list of local branches.
+/// The branch capsule: branch glyph, name, ⌃⌄. Opens the branch menu (ScreenSheets' 브랜치 메뉴):
+/// recent branches, New Branch…, Merge into…, Rebase onto…, Rename…, Delete.
 private struct BranchButton: View {
     let repository: RepositoryModel
     let onNewBranch: () -> Void
     @State private var hovering = false
+    @State private var anchor = MenuAnchor()
 
     var body: some View {
-        Menu {
-            let locals = repository.refs.localBranches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            ForEach(locals) { ref in
-                Toggle(ref.name, isOn: Binding(get: { ref.isHead }, set: { _ in
-                    if !ref.isHead { repository.from("Toolbar › Branch menu") { repository.switchBranch(ref.name) } }
-                }))
-            }
-            if !locals.isEmpty { Divider() }
-            Button("New Branch…", action: onNewBranch)
+        Button {
+            guard let view = anchor.view else { return }
+            let menu = ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
         } label: {
             HStack(spacing: 6) {
                 Icon(Icons.branchToolbar, size: 15)
@@ -219,14 +204,17 @@ private struct BranchButton: View {
             .frame(maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
+            .background(MenuAnchorView(anchor: anchor))
         }
-        .menuStyle(.button)
         .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .fixedSize()
         .disabled(!repository.isReady)
         .toolbarTooltip(name: "Switch Branch", shortcut: "⇧⌘B", hovering: $hovering)
         .accessibilityLabel("Switch branch, current branch \(title)")
+        .onReceive(NotificationCenter.default.publisher(for: .kaernShowBranchMenu)) { note in
+            guard (note.object as? String) == repository.id, let view = anchor.view else { return }
+            ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
+        }
     }
 
     private var title: String {
@@ -239,5 +227,31 @@ private struct BranchButton: View {
             if repository.operation?.kind == .rebase, let branch = repository.operation?.branch { return branch }
             return id.isEmpty ? "No commits" : "Detached at \(id.prefix(7))"
         }
+    }
+}
+
+extension Notification.Name {
+    /// Opens the toolbar's branch menu of the repository whose id is the object (Branch › Switch Branch…).
+    static let kaernShowBranchMenu = Notification.Name("KaernShowBranchMenu")
+}
+
+/// Holds the AppKit view a menu pops up from.
+@MainActor
+final class MenuAnchor {
+    weak var view: NSView?
+}
+
+/// An empty AppKit view that tells its anchor where it is.
+struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        anchor.view = nsView
     }
 }

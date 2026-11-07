@@ -55,7 +55,11 @@ struct RepositoryScreen: View {
         VStack(spacing: 0) {
             MainToolbar(window: window, repository: repository)
                 .zIndex(2)
-            if repository.search.isOpen, repository.isReady {
+            if repository.isReady, repository.isMidOperation || repository.operationFinish != nil {
+                OperationBar(repository: repository)
+                    .zIndex(1)
+            }
+            if repository.search.isOpen, repository.isReady, repository.screen == nil {
                 FindBar(repository: repository)
                     .zIndex(1)
             }
@@ -75,8 +79,14 @@ struct RepositoryScreen: View {
                 }
                 .layoutPriority(-1)
                 if showsDetails {
-                    DetailsPanel(repository: repository)
-                        .transition(.move(edge: .trailing))
+                    Group {
+                        switch repository.screen {
+                        case .conflicts: ResolveConflictsPanel(repository: repository)
+                        case .stash: StashPanel(repository: repository)
+                        case nil: DetailsPanel(repository: repository)
+                        }
+                    }
+                    .transition(.move(edge: .trailing))
                 }
             }
             .frame(maxHeight: .infinity)
@@ -98,6 +108,10 @@ struct RepositoryScreen: View {
                 .padding(.bottom, 44)
                 .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
         }
+        .overlay {
+            RepositorySheetHost(repository: repository)
+        }
+        .animation(.easeOut(duration: 0.15), value: repository.sheet?.id)
         .overlay {
             if repository.confirmation != nil || repository.hookFailure != nil {
                 // The shade covers the window below the tab row; the card sits near the top.
@@ -126,14 +140,17 @@ struct RepositoryScreen: View {
                 Alert(title: Text(alert.title), message: Text(alert.message))
             }
         }
-        .modifier(NameRequestAlert(repository: repository))
     }
 
     @ViewBuilder
     private var center: some View {
         switch repository.phase {
         case .ready:
-            if repository.review != nil {
+            if repository.screen == .conflicts {
+                ConflictEditor(repository: repository)
+            } else if case .stash = repository.screen {
+                StashView(repository: repository)
+            } else if repository.review != nil {
                 ReviewView(repository: repository)
             } else {
                 HistoryView(repository: repository, isFocused: window.isFocused) {
@@ -203,33 +220,5 @@ private struct MessageView: View {
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.content)
-    }
-}
-
-/// Create Branch Here…, Rename…, Create Tag Here…: a name in a small alert.
-private struct NameRequestAlert: ViewModifier {
-    @Bindable var repository: RepositoryModel
-    @State private var name = ""
-
-    func body(content: Content) -> some View {
-        let request = repository.nameRequest
-        content
-            .alert(request?.title ?? "", isPresented: Binding(get: { repository.nameRequest != nil },
-                                                               set: { if !$0 { repository.nameRequest = nil } })) {
-                TextField(request?.kind == .tag ? "Tag name" : "Branch name", text: $name)
-                Button(request?.confirmTitle ?? "OK") {
-                    let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let commit = repository.nameRequest?.commit
-                    repository.nameRequest = nil
-                    if !value.isEmpty { commit?(value) }
-                }
-                .keyboardShortcut(.defaultAction)
-                Button("Cancel", role: .cancel) { repository.nameRequest = nil }
-            } message: {
-                Text(request?.message ?? "")
-            }
-            .onChange(of: repository.nameRequest?.id) {
-                name = repository.nameRequest?.initial ?? ""
-            }
     }
 }

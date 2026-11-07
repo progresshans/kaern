@@ -154,6 +154,7 @@ final class RepositoryModel: Identifiable {
     /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
     var review: ReviewState? {
         didSet {
+            if review != nil, screen != nil { screen = nil }
             if review?.compare != oldValue?.compare {
                 diffsAreStale = true
                 refreshDiffsIfNeeded()
@@ -203,8 +204,34 @@ final class RepositoryModel: Identifiable {
     var publishDraft: PublishDraft?
     /// A confirmation (Reset Hard, Delete on origin, Force Push).
     var confirmation: Confirmation?
-    /// Names asked for in a small sheet (Create Branch Here…, Rename…, Create Tag Here…).
-    var nameRequest: NameRequest?
+    /// The sheet over the window (New Branch, New Tag, the branch pickers, Repository Settings…).
+    var sheet: RepositorySheet?
+
+    // Phase 4: the stash view, the conflict editor and the operation bar.
+    /// What the center shows instead of the graph (a stash, the conflict editor); `nil`: graph or Review.
+    var screen: CenterScreen? {
+        didSet {
+            guard screen != oldValue else { return }
+            if case .stash(let id) = screen { loadStashDetails(id) } else { stashTask?.cancel() }
+        }
+    }
+    /// The conflict editor's files, picks and message.
+    var conflictSession: ConflictSession?
+    /// A stash apply or pop that stopped on conflicts (Undo Pop · Resolve Conflict).
+    var stashConflict: StashApplyConflict?
+    /// The stash the stash view shows.
+    var stashDetails: StashDetails?
+    /// The green bar after a merge, rebase, cherry-pick or revert finished.
+    var operationFinish: OperationFinish?
+    /// Where the stopped operation began (⌘Z once it's finished).
+    var operationStart: OperationStart?
+    /// Branches switched to in this session, newest first (the branch menu's Recent Branches).
+    var switchedBranches: [String] = []
+    /// Repository Settings › Run hooks when committing from Kaern (`kaern.runHooks` in .git/config).
+    var runsHooks = true
+    /// Repository Settings › Pull, when this repository sets its own (pull.rebase / pull.ff).
+    var pullOverride: PullChoice?
+    @ObservationIgnored var stashTask: Task<Void, Never>?
     /// Commits reachable from HEAD among the loaded ones ("on this branch").
     @ObservationIgnored private(set) var headAncestors: Set<String> = []
     /// Where the action that's about to run was started from ("Commit menu"), for the Command Log.
@@ -364,6 +391,8 @@ final class RepositoryModel: Identifiable {
         self.remotes = await remotes
         operation = repository.operationState()
         lastFetch = repository.lastFetchDate
+        await refreshPullOverride()
+        runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
         if let loadedHistory {
             commits = loadedHistory
             hasMoreHistory = loadedHistory.count == limit
@@ -447,9 +476,11 @@ final class RepositoryModel: Identifiable {
                 self.status = status
                 statusIsFull = true
             }
+            operation = repository.operationState()
             rebuildGraph()
             await refreshLineStats()
         }
+        screenStateChanged()
         diffsAreStale = true
         refreshDiffsIfNeeded()
     }
@@ -507,6 +538,7 @@ final class RepositoryModel: Identifiable {
         await refreshLineStats()
         diffsAreStale = true
         refreshDiffsIfNeeded()
+        screenStateChanged()
         Self.log.debug("Refreshed \(self.name, privacy: .public) \(scope.rawValue) in \(ContinuousClock.now - start, privacy: .public)")
     }
 
@@ -560,6 +592,32 @@ final class RepositoryModel: Identifiable {
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
         lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
     }
+
+    /// Remotes again (Repository Settings added, edited or removed one).
+    func refreshRemotes() async {
+        guard let repository else { return }
+        remotes = await repository.remoteInfos()
+        pendingScope.insert(.refs)
+        if isVisible, phase == .ready { runPendingRefresh(trigger: "Repository Settings") }
+    }
+
+    /// This repository's own pull setting, if any (Repository Settings › Pull).
+    func refreshPullOverride() async {
+        guard let repository else { return }
+        async let rebase = repository.localConfig("pull.rebase")
+        async let ff = repository.localConfig("pull.ff")
+        let ffValue = await ff, rebaseValue = await rebase
+        if ffValue == "only" {
+            pullOverride = .fastForwardOnly
+        } else if let rebaseValue {
+            pullOverride = rebaseValue == "false" ? .fastForwardIfPossible : .rebase
+        } else {
+            pullOverride = nil
+        }
+    }
+
+    /// How Pull pulls here: the repository's own setting, else Settings › General › Pull.
+    var pullChoice: PullChoice { pullOverride ?? .app }
 
     func loadMoreHistory() {
         guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready else { return }

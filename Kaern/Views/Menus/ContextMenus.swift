@@ -194,7 +194,11 @@ enum ContextMenus {
             subItem("Hard…", note: "Throw the changes away (Kaern stashes them first)") { r.from(source) { r.reset(to: id, mode: .hard) } },
         ])
         menu.addItem(reset)
-        menu.addItem(item("Interactively Rebase from Here…", hint: "Coming soon", enabled: false) {})
+        let rebaseHint: String? = r.operation.map { "Finish the \($0.kind.title.lowercased()) first" }
+            ?? (branch == nil ? "HEAD is detached" : isHead ? "Nothing above it" : onBranch ? nil : "Not on this branch")
+        menu.addItem(item("Interactively Rebase from Here…", hint: rebaseHint, enabled: idle && rebaseHint == nil) {
+            r.from(source) { r.askInteractiveRebase(onto: id) }
+        })
         menu.addItem(.separator())
         menu.addItem(item("Compare with Working Copy", enabled: true) { r.compareWithWorkingCopy(id) })
         menu.addItem(item("Compare with HEAD", hint: isHead ? "This is HEAD" : nil, enabled: !isHead && r.status.headID != nil) {
@@ -377,11 +381,69 @@ enum ContextMenus {
         let source = "Stash menu"
         let idle = r.activity == nil
         menu.addItem(header(RepositoryModel.stashTitle(stash), "\(stash.reference) · \(Formatters.shortDate(stash.date))"))
+        menu.addItem(item("Show Stash") { r.openStash(stash.id) })
+        menu.addItem(.separator())
         menu.addItem(item("Apply", enabled: idle) { r.from(source) { r.applyStash(stash, pop: false) } })
         menu.addItem(item("Pop", enabled: idle) { r.from(source) { r.applyStash(stash, pop: true) } })
+        menu.addItem(item("Create Branch from Stash…", enabled: idle) { r.askBranchFromStash(stash) })
+        menu.addItem(item("Rename…", enabled: idle) { r.sheet = .renameStash(stash) })
         menu.addItem(item("Drop", key: "\u{8}", enabled: idle) { r.from(source) { r.dropStash(stash) } })
         menu.addItem(.separator())
-        menu.addItem(item("Copy Reference") { r.copy(stash.reference, toast: "Copied \(stash.reference)") })
+        menu.addItem(item("Copy Stash Name") { r.copyStashName(stash) })
+        return menu
+    }
+
+    // MARK: Toolbar branch menu
+
+    /// The toolbar's branch button (ScreenSheets 브랜치 메뉴): recent branches with ↑↓, Other
+    /// Branches ▸, New Branch…, Merge into…, Rebase onto…, Rename…, Delete.
+    static func toolbarBranchMenu(_ r: RepositoryModel, onNewBranch: @escaping () -> Void) -> NSMenu {
+        let menu = NSMenu(title: "Branches")
+        menu.autoenablesItems = false
+        let source = "Toolbar › Branch menu"
+        let idle = r.activity == nil && !r.isMidOperation
+        let current = r.status.branch
+        let cur = current ?? "HEAD"
+        let locals = r.refs.localBranches
+        let recent = r.recentBranches.compactMap { name in locals.first { $0.name == name } }
+        let others = locals.filter { ref in !recent.contains(where: { $0.name == ref.name }) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        menu.addItem(.sectionHeader(title: "Recent Branches"))
+        for ref in recent {
+            let counts = [ref.ahead > 0 ? "↑\(ref.ahead)" : nil, ref.behind > 0 ? "↓\(ref.behind)" : nil].compactMap { $0 }.joined(separator: " ")
+            let menuItem = item(ref.name, hint: counts.isEmpty ? nil : counts, enabled: idle || ref.isHead) {
+                if !ref.isHead { r.from(source) { r.checkout(branch: ref.name) } }
+            }
+            menuItem.state = ref.isHead ? .on : .off
+            menu.addItem(menuItem)
+        }
+        if !others.isEmpty || !r.refs.remoteBranches.isEmpty {
+            var otherItems: [NSMenuItem] = others.map { ref in
+                item(ref.name, enabled: idle) { r.from(source) { r.checkout(branch: ref.name) } }
+            }
+            let remotes = r.refs.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
+            if !remotes.isEmpty {
+                if !otherItems.isEmpty { otherItems.append(.separator()) }
+                otherItems += remotes.map { ref in
+                    item(ref.name, enabled: idle) { r.from(source) { r.checkoutRemoteBranch(ref) } }
+                }
+            }
+            menu.addItem(submenu("Other Branches", enabled: true, items: otherItems))
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("New Branch…", key: "n", modifiers: [.shift, .command], enabled: idle) { onNewBranch() })
+        let noBranch = current == nil
+        menu.addItem(item("Merge into “\(cur)”…", hint: noBranch ? "Not on a branch" : nil, enabled: idle && !noBranch) {
+            r.from(source) { r.askMerge() }
+        })
+        menu.addItem(item("Rebase “\(cur)” onto…", hint: noBranch ? "Not on a branch" : nil, enabled: idle && !noBranch) {
+            r.from(source) { r.askRebase() }
+        })
+        menu.addItem(.separator())
+        menu.addItem(item("Rename “\(cur)”…", enabled: idle && !noBranch) { if let current { r.askRename(branch: current) } })
+        let delete = item("Delete “\(cur)”", enabled: false) {}
+        delete.subtitle = noBranch ? "HEAD is detached." : "The checked-out branch can’t be deleted. Switch first."
+        menu.addItem(delete)
         return menu
     }
 
