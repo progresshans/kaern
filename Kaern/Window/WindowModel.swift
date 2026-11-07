@@ -56,6 +56,8 @@ final class WindowModel: Identifiable {
     var showsDrawer = true
     /// Quick Open (⇧⌘O). Not saved.
     var showsQuickOpen = false
+    /// Clone, Create New Repository or Publish over the window. Not saved.
+    var sheet: WindowSheet?
 
     /// Sidebar on the toolbar or ⌃⌘S. In Focus it leaves Focus and shows the sidebar.
     func toggleSidebar() {

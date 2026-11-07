@@ -45,12 +45,12 @@ struct EmptyStateView: View {
                 WelcomeAction(title: "Open Repository…", shortcut: "⌘O", symbol: "folder") {
                     app.showOpenPanel(for: window)
                 }
-                WelcomeAction(title: "Clone Repository…", shortcut: "⇧⌘C", symbol: "arrow.down.circle") {}
-                    .disabled(true)
-                    .help("Clone comes in a later phase")
-                WelcomeAction(title: "Create New Repository…", shortcut: "⌥⌘N", symbol: "plus.square") {}
-                    .disabled(true)
-                    .help("Create New Repository comes in a later phase")
+                WelcomeAction(title: "Clone Repository…", shortcut: "⇧⌘C", symbol: "arrow.down.circle") {
+                    app.showClone(in: window)
+                }
+                WelcomeAction(title: "Create New Repository…", shortcut: "⌥⌘N", symbol: "plus.square") {
+                    app.showCreate(in: window)
+                }
             }
             .padding(.top, 14)
             Spacer(minLength: 0)

@@ -104,9 +104,17 @@ final class RepositoryModel: Identifiable {
         case ready
         case failed(String)
         case missing
+        /// The folder is there but isn't a Git repository (yet): ScreenInit's empty state.
+        case notRepository
     }
 
     private(set) var phase: Phase = .waiting
+    /// What's in the folder when it isn't a repository yet.
+    private(set) var folderSurvey: FolderSurvey?
+    /// "Created travel-blog · 1 commit · 7 files": the status bar after Create New Repository.
+    var createdNote: String?
+    /// The banner over a repository Kaern just made that's only on this Mac (Publish to GitHub…).
+    var showsPublishBanner = false
     private(set) var repository: GitRepository?
     private(set) var status: WorkingTreeStatus = .empty
     /// `false` while `status` comes from the light check (untracked folders folded).
@@ -317,6 +325,7 @@ final class RepositoryModel: Identifiable {
         switch phase {
         case .missing: return .missing
         case .failed: return .error
+        case .notRepository: return .none
         default: break
         }
         if activity?.isNetwork == true { return .busy }
@@ -343,7 +352,7 @@ final class RepositoryModel: Identifiable {
 
     private var isFailedOrMissing: Bool {
         if case .failed = phase { return true }
-        return phase == .missing
+        return phase == .missing || phase == .notRepository
     }
 
     private func open() async {
@@ -366,6 +375,10 @@ final class RepositoryModel: Identifiable {
                 await lightRefresh()
                 if phase == .opening { phase = .light }
             }
+        } catch is NotARepositoryError {
+            phase = .notRepository
+            let folder = URL(filePath: path, directoryHint: .isDirectory)
+            folderSurvey = await Task.detached { FolderSurvey.survey(folder) }.value
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -743,8 +756,14 @@ final class RepositoryModel: Identifiable {
             // Wait for staging that's still running (git locks the index).
             await previousIndexChange?.value
             do {
-                try await GitCommandTrigger.$current.withValue(command) {
-                    try await work(repository)
+                // Network commands report git's progress lines to Activity (determinate bars).
+                let reporter: @Sendable (GitProgress) -> Void = { progress in
+                    Task { @MainActor in center.update(taskID, progress: progress) }
+                }
+                try await GitProgressReporter.$current.withValue(reporter) {
+                    try await GitCommandTrigger.$current.withValue(command) {
+                        try await work(repository)
+                    }
                 }
                 onSuccess?()
                 center.finish(taskID, result: toast?.id != toastBefore ? toast?.message : nil)

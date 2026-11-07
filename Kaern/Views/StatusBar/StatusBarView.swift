@@ -81,6 +81,9 @@ struct StatusBarView: View {
     }
 
     private var summary: String {
+        if repository.phase == .notRepository, let survey = repository.folderSurvey {
+            return "\(Formatters.abbreviatedPath(repository.path)) · \(Formatters.count(survey.files, "file", "files"))"
+        }
         guard repository.phase == .ready || repository.phase == .light || repository.phase == .loading else { return "" }
         if let explore = repository.exploreSummary { return explore }
         // During a rebase the right side says where it is (ScreenConflicts).
@@ -89,6 +92,10 @@ struct StatusBarView: View {
         }
         let status = repository.status
         var parts: [String] = []
+        if status.isClean, repository.remotes.isEmpty, repository.phase == .ready, let branch = status.branch {
+            // ScreenInit: "main · only on this Mac".
+            return "\(branch) · only on this Mac"
+        }
         if status.isClean {
             parts.append("No changes")
         } else {
@@ -155,6 +162,10 @@ private struct StatusState {
 
     init(repository: RepositoryModel, now: Date) {
         switch repository.phase {
+        case .notRepository:
+            icon = .idle
+            text = "Not a Git repository"
+            return
         case .missing:
             icon = .warning
             text = "Folder not found at \(Formatters.abbreviatedPath(repository.path))"
@@ -235,6 +246,12 @@ private struct StatusState {
             return
         }
         if repository.remotes.isEmpty, repository.phase == .ready {
+            // Right after Create New Repository: what was made.
+            if let note = repository.createdNote {
+                icon = .ok
+                text = note
+                return
+            }
             icon = .idle
             text = "No remote — this repository is only on this Mac"
             return
@@ -385,8 +402,16 @@ private struct RunningRow: View {
         HStack(alignment: .center, spacing: 10) {
             Spinner(size: 14)
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                ProgressView().progressViewStyle(.linear).controlSize(.small)
+                HStack {
+                    Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: 6)
+                    // git's own percentage, once it gives one (Receiving objects: 62%).
+                    if let fraction = item.fraction {
+                        Text("\(Int((fraction * 100).rounded()))%").font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
+                            .foregroundStyle(K.label2)
+                    }
+                }
+                ProgressBar(fraction: item.fraction)
                 if let detail = item.detail {
                     Text(detail).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
                 }

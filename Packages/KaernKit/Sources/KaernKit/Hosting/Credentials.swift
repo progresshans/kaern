@@ -64,4 +64,57 @@ public enum GitLabClient {
         let user = try JSONDecoder().decode(User.self, from: data)
         return HostingUser(login: user.username, name: user.name, id: nil, email: user.publicEmail ?? user.email)
     }
+
+    /// Projects the token's user is a member of, most recently active first (Clone › GitLab).
+    public static func projects(host: String, token: String, baseURL: URL? = nil, session: URLSession = .shared) async throws -> [HostedRepository] {
+        var components = URLComponents(url: (baseURL ?? URL(string: "https://\(host)/api/v4")!).appending(path: "projects"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "membership", value: "true"),
+            URLQueryItem(name: "order_by", value: "last_activity_at"),
+            URLQueryItem(name: "per_page", value: "100"),
+            URLQueryItem(name: "simple", value: "true"),
+        ]
+        var request = URLRequest(url: components.url!, timeoutInterval: 20)
+        request.setValue(token, forHTTPHeaderField: "PRIVATE-TOKEN")
+        request.setValue("Kaern", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200 ..< 300).contains(status) else {
+            throw HostingError(status: status, message: HTTPURLResponse.localizedString(forStatusCode: status))
+        }
+        struct Project: Decodable {
+            var id: Int
+            var name: String
+            var pathWithNamespace: String
+            var visibility: String?
+            var description: String?
+            var httpURL: String
+            var sshURL: String
+            var webURL: String?
+            var lastActivity: Date?
+            enum CodingKeys: String, CodingKey {
+                case id, name, visibility, description
+                case pathWithNamespace = "path_with_namespace"
+                case httpURL = "http_url_to_repo"
+                case sshURL = "ssh_url_to_repo"
+                case webURL = "web_url"
+                case lastActivity = "last_activity_at"
+            }
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let text = try decoder.singleValueContainer().decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: text) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: text) ?? .distantPast
+        }
+        return try decoder.decode([Project].self, from: data).map { project in
+            HostedRepository(id: project.id, fullName: project.pathWithNamespace, name: project.name,
+                             isPrivate: project.visibility != "public", summary: project.description, httpsURL: project.httpURL,
+                             sshURL: project.sshURL, webURL: project.webURL, updated: project.lastActivity)
+        }
+    }
 }

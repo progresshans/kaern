@@ -133,7 +133,11 @@ struct SidebarView: View {
                 }
             }
             if names.isEmpty, repository.isReady {
-                SidebarRow(title: "No remotes", isPlaceholder: true)
+                // ScreenInit: a repository that's only on this Mac.
+                SidebarRow(title: "No remotes yet", flat: true, isPlaceholder: true)
+                SidebarRow(title: "Add Remote…", flat: true, isLink: true)
+                    .onTapGesture { repository.sheet = .repositorySettings }
+                    .accessibilityAddTraits(.isButton)
             }
         }
     }

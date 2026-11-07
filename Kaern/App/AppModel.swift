@@ -272,6 +272,10 @@ final class AppModel {
         }
     }
 
+    func releaseUnusedRepositoriesNow() {
+        releaseUnusedRepositories()
+    }
+
     private func releaseUnusedRepositories() {
         let used = Set(windows.flatMap { $0.model.tabs.map(\.path) })
         for (path, model) in repositories where !used.contains(path) {
@@ -280,46 +284,10 @@ final class AppModel {
         }
     }
 
-    /// Opens folders as tabs. Any folder inside a repository opens that repository.
+    /// Opens folders as tabs. Any folder inside a repository opens that repository; a folder
+    /// that isn't in one opens as a tab that offers to create it (`openNow`).
     func open(_ urls: [URL], in window: WindowModel) {
-        Task {
-            guard let runner = await waitForRunner() else { return }
-            var paths: [String] = []
-            var failures: [String] = []
-            for url in urls {
-                do {
-                    let repository = try await GitRepository.open(url, runner: runner)
-                    paths.append(repository.root.path(percentEncoded: false).trimmingTrailingSlash)
-                } catch {
-                    failures.append(error.localizedDescription)
-                }
-            }
-            if !paths.isEmpty {
-                for path in paths { _ = repository(for: path) }
-                window.open(paths: paths)
-                for path in paths.reversed() { noteRecent(path: path, in: window) }
-                releaseUnusedRepositories()
-                updateVisibility()
-            }
-            if !failures.isEmpty {
-                let alert = NSAlert()
-                alert.messageText = failures.count == 1 ? "Couldn't open the folder" : "Couldn't open \(failures.count) folders"
-                alert.informativeText = failures.joined(separator: "\n")
-                if let window = windows.first(where: { $0.model === window })?.window {
-                    alert.beginSheetModal(for: window) { _ in }
-                } else {
-                    alert.runModal()
-                }
-            }
-        }
-    }
-
-    private func waitForRunner() async -> GitRunner? {
-        for _ in 0..<100 {
-            if let runner { return runner }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return runner
+        Task { await openNow(urls, in: window) }
     }
 
     func showOpenPanel(for window: WindowModel) {
@@ -399,7 +367,15 @@ final class AppModel {
         noteRecent(path: tab.path, in: window)
     }
 
-    private func noteRecent(path: String, in window: WindowModel) {
+    /// A repository that isn't open in any window (a clone that didn't open a tab).
+    func noteRecent(path: String, name: String) {
+        recent.removeAll { $0.path == path }
+        recent.insert(Session.RecentRepository(path: path, name: name, groupName: nil, groupColor: nil, lastOpened: .now), at: 0)
+        if recent.count > 30 { recent.removeLast(recent.count - 30) }
+        scheduleSave()
+    }
+
+    func noteRecent(path: String, in window: WindowModel) {
         guard let tab = window.tabs.first(where: { $0.path == path }) else { return }
         let group = tab.group.flatMap { window.group($0) }
         recent.removeAll { $0.path == tab.path }

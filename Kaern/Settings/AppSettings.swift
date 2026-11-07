@@ -17,6 +17,8 @@ nonisolated enum SettingsKey {
     static let theme = "KaernTheme"
     /// Icon Only or Icon and Text (right-click the toolbar).
     static let toolbarStyle = "KaernToolbarStyle"
+    /// Where Clone and Create New Repository put new folders (the last one used).
+    static let projectsFolder = "KaernProjectsFolder"
     // Accounts
     static let accounts = "KaernAccounts"
     // Diff

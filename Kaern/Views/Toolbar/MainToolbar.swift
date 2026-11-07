@@ -250,6 +250,7 @@ private struct BranchButton: View {
     }
 
     private var title: String {
+        if repository.phase == .notRepository { return "No Repository" }
         guard repository.hasContent else { return repository.name }
         switch repository.status.head {
         case .branch(let name), .unborn(let name):

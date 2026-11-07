@@ -207,6 +207,15 @@ public struct GitRunner: Sendable {
                 hasInput: input != nil
             )
         }
+        // A task that asked for progress (Activity's bars) hears every progress line too.
+        var onProgress = onProgress
+        if let reporter = GitProgressReporter.current {
+            let given = onProgress
+            onProgress = { line in
+                given?(line)
+                if let progress = GitProgress.parse(line) { reporter(progress) }
+            }
+        }
         let progress: (@Sendable (String) -> Void)?
         if let onProgress, let onCommand, let id = record?.id {
             progress = { line in

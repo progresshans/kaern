@@ -18,6 +18,8 @@ final class ActivityCenter {
         var title: String
         /// A second line while it runs ("9 of 11 · godj next").
         var detail: String?
+        /// How far it is (0…1), when git says (Receiving objects: 62%); `nil` draws a moving bar.
+        var fraction: Double?
         var started: Date
         var finished: Date?
         /// What it did ("Pulled 3 commits") or why it failed.
@@ -45,9 +47,10 @@ final class ActivityCenter {
         return task.id
     }
 
-    func update(_ id: UUID, detail: String?) {
+    func update(_ id: UUID, detail: String?, fraction: Double? = nil) {
         guard let index = running.firstIndex(where: { $0.id == id }) else { return }
         running[index].detail = detail
+        if let fraction { running[index].fraction = fraction }
     }
 
     func finish(_ id: UUID, result: String?, failure: GitFailure? = nil, failed: Bool = false) {

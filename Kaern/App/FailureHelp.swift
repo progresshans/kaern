@@ -75,6 +75,20 @@ struct FailureHelp {
         }
     }
 
+    /// One sentence for a failure where there's no repository yet (Clone).
+    static func sentence(for failure: GitFailure?) -> String? {
+        switch failure {
+        case .signIn(let host)?:
+            "\(serviceName(host)) turned down the sign-in, or the repository is private. Sign in, then clone again."
+        case .sshKey(let host)?:
+            "\(host ?? "The server") didn’t accept your SSH key. Add it to your account there, or clone with the HTTPS URL."
+        case .network(let host)?:
+            "Kaern couldn’t reach \(host ?? "the server"). Check the connection or VPN, then try again."
+        default:
+            nil
+        }
+    }
+
     /// "GitHub", "GitLab", or the host.
     static func serviceName(_ host: String?) -> String {
         guard let host = host?.lowercased() else { return "the server" }

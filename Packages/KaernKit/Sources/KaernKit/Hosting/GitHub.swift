@@ -236,16 +236,80 @@ struct CommitAuthors: Decodable {
     }
 }
 
+/// A repository on GitHub or GitLab (Clone's lists, Publish to GitHub).
+public struct HostedRepository: Sendable, Hashable, Identifiable {
+    public var id: Int
+    /// "owner/name"
+    public var fullName: String
+    public var name: String
+    public var isPrivate: Bool
+    public var summary: String?
+    public var httpsURL: String
+    public var sshURL: String
+    public var webURL: String?
+    public var updated: Date?
+
+    public init(id: Int, fullName: String, name: String, isPrivate: Bool, summary: String? = nil, httpsURL: String, sshURL: String,
+                webURL: String? = nil, updated: Date? = nil) {
+        self.id = id
+        self.fullName = fullName
+        self.name = name
+        self.isPrivate = isPrivate
+        self.summary = summary
+        self.httpsURL = httpsURL
+        self.sshURL = sshURL
+        self.webURL = webURL
+        self.updated = updated
+    }
+}
+
+/// GitHub's repository object.
+struct GitHubRepository: Decodable {
+    var id: Int
+    var name: String
+    var fullName: String
+    var isPrivate: Bool
+    var description: String?
+    var cloneURL: String
+    var sshURL: String
+    var htmlURL: String?
+    var pushedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description
+        case fullName = "full_name"
+        case isPrivate = "private"
+        case cloneURL = "clone_url"
+        case sshURL = "ssh_url"
+        case htmlURL = "html_url"
+        case pushedAt = "pushed_at"
+    }
+
+    var hosted: HostedRepository {
+        HostedRepository(id: id, fullName: fullName, name: name, isPrivate: isPrivate, summary: description, httpsURL: cloneURL,
+                         sshURL: sshURL, webURL: htmlURL, updated: pushedAt)
+    }
+}
+
 // MARK: - Client
 
 /// GitHub's error body: `{"message": "Bad credentials"}`.
 private struct APIMessage: Decodable {
+    struct Detail: Decodable {
+        var message: String?
+    }
     var message: String?
+    var errors: [Detail]?
 }
 
 public struct HostingError: Error, LocalizedError, Sendable {
     public var status: Int
     public var message: String
+
+    public init(status: Int, message: String) {
+        self.status = status
+        self.message = message
+    }
 
     public var errorDescription: String? { message }
     public var isUnauthorized: Bool { status == 401 }
@@ -256,6 +320,8 @@ public struct HostingError: Error, LocalizedError, Sendable {
 public struct GitHubClient: Sendable {
     public var baseURL: URL
     public var token: String
+    /// The session requests go through (tests pass one that answers without the network).
+    public var session: URLSession = .shared
 
     /// `https://api.github.com`, or `https://<host>/api/v3` for GitHub Enterprise.
     public static func apiURL(for host: String) -> URL {
@@ -276,9 +342,15 @@ public struct GitHubClient: Sendable {
     }()
 
     func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], as type: T.Type) async throws -> T {
+        try await send("GET", path, query: query, as: type)
+    }
+
+    func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil,
+                            as type: T.Type) async throws -> T {
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!, timeoutInterval: 20)
+        request.httpMethod = method
         // Without a token: public repositories only, 60 requests an hour.
         if !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -286,17 +358,42 @@ public struct GitHubClient: Sendable {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("Kaern", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200 ..< 300).contains(status) else {
-            let message = (try? JSONDecoder().decode(APIMessage.self, from: data))?.message
-            throw HostingError(status: status, message: message ?? HTTPURLResponse.localizedString(forStatusCode: status))
+            let decoded = try? JSONDecoder().decode(APIMessage.self, from: data)
+            // 422: "Repository creation failed." with the reason in `errors`.
+            let detail = decoded?.errors?.compactMap(\.message).first
+            let message = [decoded?.message, detail].compactMap { $0 }.joined(separator: " ")
+            throw HostingError(status: status, message: message.isEmpty ? HTTPURLResponse.localizedString(forStatusCode: status) : message)
         }
         return try Self.decoder.decode(T.self, from: data)
     }
 
     public func user() async throws -> HostingUser {
         try await get("user", as: HostingUser.self)
+    }
+
+    /// The repositories the signed-in user can push to, most recently pushed first (Clone ›
+    /// GitHub). One page of 100.
+    public func repositories() async throws -> [HostedRepository] {
+        try await get("user/repos", query: [
+            URLQueryItem(name: "sort", value: "pushed"),
+            URLQueryItem(name: "per_page", value: "100"),
+            URLQueryItem(name: "affiliation", value: "owner,collaborator,organization_member"),
+        ], as: [GitHubRepository].self).map(\.hosted)
+    }
+
+    /// Creates a repository under the signed-in user (Publish to GitHub). It starts empty, so
+    /// the first push fills it.
+    public func createRepository(name: String, isPrivate: Bool, description: String? = nil) async throws -> HostedRepository {
+        var body: [String: Any] = ["name": name, "private": isPrivate, "auto_init": false]
+        if let description, !description.isEmpty { body["description"] = description }
+        return try await send("POST", "user/repos", body: body, as: GitHubRepository.self).hosted
     }
 
     public func pullRequests(_ repository: String, state: String) async throws -> [PullRequest] {

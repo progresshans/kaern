@@ -69,6 +69,13 @@ enum MainMenu {
         recentItem.submenu = recent
         menu.addItem(recentItem)
         menu.addItem(.separator())
+        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command], enabled: { window != nil }) {
+            if let window { app.showCreate(in: window) }
+        })
+        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command], enabled: { window != nil }) {
+            if let window { app.showClone(in: window) }
+        })
+        menu.addItem(.separator())
         menu.addItem(MenuAction.item("Close Tab", key: "w", enabled: { app.activeWindow != nil }) {
             guard let controller = app.activeWindow else { return }
             if let id = controller.model.activeTabID {

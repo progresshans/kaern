@@ -41,8 +41,7 @@ public struct GitRepository: Sendable, Hashable {
             output = try await runner.run(["rev-parse", "--show-toplevel", "--absolute-git-dir"], in: url)
         } catch let error as GitError {
             if error.message.contains("not a git repository") {
-                throw GitError(arguments: error.arguments, status: error.status,
-                               message: "“\(url.lastPathComponent)” isn't a Git repository.")
+                throw NotARepositoryError(folder: url)
             }
             if error.message.contains("must be run in a work tree") {
                 throw GitError(arguments: error.arguments, status: error.status,

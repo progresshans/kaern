@@ -7,17 +7,23 @@ struct WindowRootView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
     @State private var isDropTarget = false
+    @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
 
     var body: some View {
         VStack(spacing: 0) {
             TabBar(window: window)
                 .zIndex(3)
-            if let tab = window.activeTab {
-                RepositoryScreen(window: window, repository: app.repository(for: tab.path))
-                    .id(tab.path)
-            } else {
-                EmptyStateView(window: window)
+            ZStack(alignment: .top) {
+                if let tab = window.activeTab {
+                    RepositoryScreen(window: window, repository: app.repository(for: tab.path))
+                        .id(tab.path)
+                } else {
+                    EmptyStateView(window: window)
+                }
+                // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
+                WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
             }
+            .animation(.easeOut(duration: 0.15), value: window.sheet?.id)
         }
         .frame(minWidth: 820, minHeight: 520)
         .background(K.win)
@@ -169,8 +175,14 @@ struct RepositoryScreen: View {
             } else if repository.review != nil {
                 ReviewView(repository: repository)
             } else {
-                HistoryView(repository: repository, isFocused: window.isFocused) {
-                    if window.isFocused { window.showsDrawer = true }
+                VStack(spacing: 0) {
+                    if repository.showsPublishBanner, repository.remotes.isEmpty {
+                        PublishBanner(repository: repository, window: window)
+                            .transition(.opacity)
+                    }
+                    HistoryView(repository: repository, isFocused: window.isFocused) {
+                        if window.isFocused { window.showsDrawer = true }
+                    }
                 }
             }
         case .waiting, .opening, .light, .loading:
@@ -182,6 +194,8 @@ struct RepositoryScreen: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(K.content)
+        case .notRepository:
+            NotRepositoryView(repository: repository, window: window)
         case .missing:
             MessageView(
                 icon: Icons.missingFolder,
