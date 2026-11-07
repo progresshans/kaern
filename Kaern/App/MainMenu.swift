@@ -225,6 +225,13 @@ enum MainMenu {
             repository?.openConflicts()
         })
         menu.addItem(.separator())
+        menu.addItem(MenuAction.item("File History…", enabled: { repository?.isReady == true }) {
+            repository?.askFileToExplore(.history)
+        })
+        menu.addItem(MenuAction.item("Blame…", enabled: { repository?.isReady == true }) {
+            repository?.askFileToExplore(.blame)
+        })
+        menu.addItem(.separator())
         menu.addItem(MenuAction.item("Repository Settings…", key: ",", modifiers: [.option, .command], enabled: { repository?.isReady == true }) {
             repository?.sheet = .repositorySettings
         })

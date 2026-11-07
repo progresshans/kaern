@@ -7,6 +7,8 @@ enum CenterScreen: Equatable {
     case stash(String)
     /// The conflict editor, with Resolve Conflicts on the right.
     case conflicts
+    /// File History or Blame of one file (`RepositoryModel.explore`).
+    case explore
 }
 
 /// The conflict editor's state: which files stopped, the one shown, and the blocks picked so far.

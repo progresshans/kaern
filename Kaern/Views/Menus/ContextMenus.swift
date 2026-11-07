@@ -12,6 +12,10 @@ enum ContextTarget: Hashable {
     /// A working-copy file in the Unstaged or Staged list.
     case file(path: String, staged: Bool)
     case stash(String)
+    /// A file in a commit's details.
+    case commitFile(path: String, commit: String)
+    /// A block of lines in Blame (its commit).
+    case blame(String)
 }
 
 /// Where the rows that have context menus are, in one window. Rows report their frames with
@@ -148,6 +152,8 @@ enum ContextMenus {
         case .tag(let name): menu = tagMenu(name, repository)
         case .file(let path, let staged): menu = fileMenu(path, staged: staged, repository)
         case .stash(let id): menu = stashMenu(id, repository)
+        case .commitFile(let path, let commit): menu = commitFileMenu(path, commit: commit, repository)
+        case .blame(let id): menu = blameMenu(id, repository)
         }
         return menu.map(fitHeader)
     }
@@ -367,8 +373,51 @@ enum ContextMenus {
         })
         menu.addItem(item("Copy Path") { r.copy(path, toast: "Copied \(path)") })
         menu.addItem(.separator())
-        menu.addItem(item("Show File History", hint: "Coming soon", enabled: false) {})
-        menu.addItem(item("Blame", hint: "Coming soon", enabled: false) {})
+        menu.addItem(item("Show File History", hint: entry.isUntracked ? "Not committed yet" : nil, enabled: !entry.isUntracked) {
+            r.showFileHistory(path)
+        })
+        menu.addItem(item("Blame", hint: entry.isUntracked ? "Not committed yet" : nil, enabled: !entry.isUntracked) {
+            r.showBlame(path)
+        })
+        return menu
+    }
+
+    /// A blame block (ScreenExplore's ⋯): the commit in the graph, blame before it, copy, web.
+    static func blameMenu(_ id: String, _ r: RepositoryModel) -> NSMenu? {
+        guard let blame = r.currentBlame, let commit = blame.commits[id], !commit.isUncommitted else { return nil }
+        let menu = NSMenu(title: commit.shortID)
+        menu.autoenablesItems = false
+        menu.addItem(header(commit.summary, "\(commit.shortID) · \(commit.author) · \(Formatters.historyDate(commit.date))"))
+        menu.addItem(item("Show Commit in History") { r.showCommitInHistory(id) })
+        menu.addItem(item("Blame Before This Commit", hint: commit.previousID == nil ? "It added these lines" : nil,
+                          enabled: commit.previousID != nil) { r.blameBefore(id) })
+        menu.addItem(.separator())
+        menu.addItem(item("Copy SHA", key: "c", modifiers: [.shift, .command]) { r.copySHAs([id]) })
+        menu.addItem(item("Copy Commit Message") { r.copyMessage(of: id) })
+        menu.addItem(.separator())
+        if let host = r.hostName, let page = r.remoteURL?.commitPage(id) {
+            menu.addItem(item("Open Commit on \(host)") { NSWorkspace.shared.open(page) })
+        } else {
+            menu.addItem(item("Open Commit on GitHub", hint: "No web remote", enabled: false) {})
+        }
+        return menu
+    }
+
+    /// A file in a commit's details: its history from there, blame as of that commit.
+    static func commitFileMenu(_ path: String, commit: String, _ r: RepositoryModel) -> NSMenu? {
+        let menu = NSMenu(title: path)
+        menu.autoenablesItems = false
+        let name = (path as NSString).lastPathComponent
+        let directory = (path as NSString).deletingLastPathComponent
+        menu.addItem(header(name, (directory.isEmpty ? "" : directory + "/ · ") + "in \(String(commit.prefix(7)))"))
+        menu.addItem(item("Show File History") { r.showFileHistory(path, at: commit) })
+        menu.addItem(item("Blame at \(String(commit.prefix(7)))") { r.showBlame(path, at: commit) })
+        menu.addItem(.separator())
+        let exists = r.fileURL(path).map { FileManager.default.fileExists(atPath: $0.path(percentEncoded: false)) } ?? false
+        menu.addItem(item("Show in Finder", enabled: exists) {
+            if let url = r.fileURL(path) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        })
+        menu.addItem(item("Copy Path") { r.copy(path, toast: "Copied \(path)") })
         return menu
     }
 

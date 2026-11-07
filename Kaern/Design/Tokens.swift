@@ -72,6 +72,12 @@ nonisolated enum K {
     static let cbText = dynamic(0x8a1f17, 0xffb4ab)
     static let oursBg = dynamic(rgba(40, 167, 69, 0.13), rgba(48, 209, 88, 0.14))
     static let theirsBg = dynamic(rgba(10, 108, 255, 0.12), rgba(10, 132, 255, 0.18))
+    // ScreenExplore: Blame's age stripe, older to newer (`.ag1` … `.ag5`).
+    static let blameAge1 = dynamic(0xcfe0fb, 0x2b3c57)
+    static let blameAge2 = dynamic(0x9cc0f6, 0x2f5288)
+    static let blameAge3 = dynamic(0x64a0f1, 0x326bbf)
+    static let blameAge4 = dynamic(0x2f7fe9, 0x3a86ec)
+    static let blameAge5 = dynamic(0x0a5fd8, 0x6aa8ff)
     static let hunkText = dynamic(0x36557f, 0x9db6d8)
     static let emptyA = dynamic(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.045))
 

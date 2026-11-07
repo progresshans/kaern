@@ -344,85 +344,107 @@ private struct CommitPanel: View {
 
     var body: some View {
         if let details = repository.selectedDetails {
-            let files = repository.selectedFiles
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 8) {
-                        Text("commit").foregroundStyle(K.label2)
-                        Text(details.commit.shortID).font(KFont.hash).foregroundStyle(K.label)
-                            .textSelection(.enabled)
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(details.commit.id, forType: .string)
-                        } label: {
-                            Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18).contentShape(Rectangle())
-                        }
-                        .buttonStyle(HoverPlateStyle(radius: 5))
-                        .help("Copy the full commit hash")
-                        ForEach(details.commit.parents, id: \.self) { parent in
-                            Text("parent").foregroundStyle(K.label2)
-                            Button {
-                                if repository.commits.contains(where: { $0.id == parent }) {
-                                    repository.selection = .commit(parent)
-                                    repository.scrollRequest = ScrollRequest(id: parent)
-                                }
-                            } label: {
-                                Text(parent.prefix(7)).font(KFont.hash).foregroundStyle(K.accentText)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .font(.system(size: 11.5))
-                    HStack(spacing: 9) {
-                        Text(details.commit.author.initials)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(AvatarPalette.color(for: details.commit.author.email.isEmpty
-                                ? details.commit.author.name : details.commit.author.email)))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(details.commit.author.name).font(.system(size: 13, weight: .semibold))
-                            Text("authored \(Formatters.authoredAt(details.commit.author.date))")
-                                .font(.system(size: 11.5)).foregroundStyle(K.label2)
-                        }
-                    }
-                    .padding(.top, 12)
-                    Text(details.commit.subject)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineSpacing(2)
-                        .padding(.top, 12)
-                        .textSelection(.enabled)
-                    if !details.body.isEmpty {
-                        Text(details.body)
-                            .font(.system(size: 13))
-                            .foregroundStyle(K.label2)
-                            .lineSpacing(2)
-                            .padding(.top, 5)
-                            .textSelection(.enabled)
-                    }
-                    HStack(spacing: 6) {
-                        Text(files.count == 1 ? "1 file changed" : "\(files.count.formatted()) files changed")
-                        LineCounts(additions: files.reduce(0) { $0 + ($1.stat?.additions ?? 0) },
-                                   deletions: files.reduce(0) { $0 + ($1.stat?.deletions ?? 0) })
-                        Spacer(minLength: 0)
-                        GhostButton(title: "Review All") { repository.review = ReviewState(showsAllFiles: true) }
-                            .disabled(files.isEmpty)
-                    }
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(K.label2)
-                    .padding(.top, 16)
-                    .padding(.bottom, 4)
-                    ForEach(files) { file in
-                        CommitFileRow(repository: repository, file: file)
-                    }
-                }
-                .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            CommitActions(repository: repository, commit: details.commit)
+            CommitInfoView(repository: repository, details: details, files: repository.selectedFiles,
+                           highlightedPath: repository.review.flatMap { $0.showsAllFiles ? nil : $0.path },
+                           openFile: { file in repository.review = ReviewState(showsAllFiles: false, path: file.path) },
+                           reviewAll: { repository.review = ReviewState(showsAllFiles: true) })
         } else {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// A commit's details (`.cd`): hash and parents, author, message, files, then Revert ·
+/// Create Branch… · ⋯. Used for the selected commit and while exploring a file.
+struct CommitInfoView: View {
+    let repository: RepositoryModel
+    let details: CommitDetails
+    let files: [FileChange]
+    var highlightedPath: String?
+    let openFile: (FileChange) -> Void
+    var reviewAll: (() -> Void)?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text("commit").foregroundStyle(K.label2)
+                    Text(details.commit.shortID).font(KFont.hash).foregroundStyle(K.label)
+                        .textSelection(.enabled)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(details.commit.id, forType: .string)
+                    } label: {
+                        Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18).contentShape(Rectangle())
+                    }
+                    .buttonStyle(HoverPlateStyle(radius: 5))
+                    .help("Copy the full commit hash")
+                    ForEach(details.commit.parents, id: \.self) { parent in
+                        Text("parent").foregroundStyle(K.label2)
+                        Button {
+                            if repository.commits.contains(where: { $0.id == parent }) {
+                                repository.screen = nil
+                                repository.selection = .commit(parent)
+                                repository.scrollRequest = ScrollRequest(id: parent)
+                            }
+                        } label: {
+                            Text(parent.prefix(7)).font(KFont.hash).foregroundStyle(K.accentText)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .font(.system(size: 11.5))
+                HStack(spacing: 9) {
+                    Text(details.commit.author.initials)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(AvatarPalette.color(for: details.commit.author.email.isEmpty
+                            ? details.commit.author.name : details.commit.author.email)))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(details.commit.author.name).font(.system(size: 13, weight: .semibold))
+                        Text("authored \(Formatters.authoredAt(details.commit.author.date))")
+                            .font(.system(size: 11.5)).foregroundStyle(K.label2)
+                    }
+                }
+                .padding(.top, 12)
+                Text(details.commit.subject)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineSpacing(2)
+                    .padding(.top, 12)
+                    .textSelection(.enabled)
+                if !details.body.isEmpty {
+                    Text(details.body)
+                        .font(.system(size: 13))
+                        .foregroundStyle(K.label2)
+                        .lineSpacing(2)
+                        .padding(.top, 5)
+                        .textSelection(.enabled)
+                }
+                HStack(spacing: 6) {
+                    Text(files.count == 1 ? "1 file changed" : "\(files.count.formatted()) files changed")
+                    LineCounts(additions: files.reduce(0) { $0 + ($1.stat?.additions ?? 0) },
+                               deletions: files.reduce(0) { $0 + ($1.stat?.deletions ?? 0) })
+                    Spacer(minLength: 0)
+                    if let reviewAll {
+                        GhostButton(title: "Review All", action: reviewAll)
+                            .disabled(files.isEmpty)
+                    }
+                }
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(K.label2)
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+                ForEach(files) { file in
+                    CommitFileRow(file: file, isHighlighted: file.path == highlightedPath) { openFile(file) }
+                        .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: 6, inset: 0))
+                }
+            }
+            .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contextClip()
+        CommitActions(repository: repository, commit: details.commit)
     }
 }
 
@@ -450,28 +472,26 @@ private struct CommitActions: View {
     }
 }
 
-/// A file of the selected commit; clicking it opens it in Review.
+/// A file of a commit; clicking it opens it (in Review, or its history while exploring).
 private struct CommitFileRow: View {
-    let repository: RepositoryModel
     let file: FileChange
+    let isHighlighted: Bool
+    let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        let isReviewed = repository.review.map { !$0.showsAllFiles && $0.path == file.path } ?? false
-        Button {
-            repository.review = ReviewState(showsAllFiles: false, path: file.path)
-        } label: {
+        Button(action: action) {
             HStack(spacing: 7) {
-                StatusTile(letter: file.kind.letter, selected: isReviewed)
-                FilePathText(path: file.path, selected: isReviewed)
+                StatusTile(letter: file.kind.letter, selected: isHighlighted)
+                FilePathText(path: file.path, selected: isHighlighted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                LineCounts(additions: file.stat?.additions, deletions: file.stat?.deletions, selected: isReviewed)
+                LineCounts(additions: file.stat?.additions, deletions: file.stat?.deletions, selected: isHighlighted)
             }
             .padding(.horizontal, 6)
             .frame(height: KMetric.fileRow)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isReviewed ? K.sel : (hovering ? K.hover : .clear))
+                    .fill(isHighlighted ? K.sel : (hovering ? K.hover : .clear))
             )
             .contentShape(Rectangle())
         }

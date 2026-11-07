@@ -59,6 +59,7 @@ struct StatusBarView: View {
 
     private var summary: String {
         guard repository.phase == .ready || repository.phase == .light || repository.phase == .loading else { return "" }
+        if let explore = repository.exploreSummary { return explore }
         let status = repository.status
         var parts: [String] = []
         if status.isClean {

@@ -83,6 +83,7 @@ struct RepositoryScreen: View {
                         switch repository.screen {
                         case .conflicts: ResolveConflictsPanel(repository: repository)
                         case .stash: StashPanel(repository: repository)
+                        case .explore: ExplorePanel(repository: repository)
                         case nil: DetailsPanel(repository: repository)
                         }
                     }
@@ -150,6 +151,8 @@ struct RepositoryScreen: View {
                 ConflictEditor(repository: repository)
             } else if case .stash = repository.screen {
                 StashView(repository: repository)
+            } else if repository.screen == .explore {
+                ExploreView(repository: repository)
             } else if repository.review != nil {
                 ReviewView(repository: repository)
             } else {

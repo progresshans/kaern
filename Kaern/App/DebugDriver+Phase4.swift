@@ -10,6 +10,7 @@ extension DebugDriver {
         "conflicts", "conflictShow", "conflictPick", "conflictKeep", "conflictEdit", "markResolved", "continueOp", "skipOp", "abortOp",
         "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose",
         "irAction", "irMove", "irStart", "squash", "type",
+        "history", "blame", "historySelect", "blameFocus", "blameBefore", "exploreMode", "blameOption", "showInHistory",
     ]
 
     func phase4(_ command: String, _ args: [String]) {
@@ -137,6 +138,33 @@ extension DebugDriver {
             }
         case "irStart":
             if case .interactiveRebase(let draft) = repository.sheet { repository.from("Debug") { repository.startInteractiveRebase(draft) } }
+        case "history":
+            // history <path> [commit row]
+            if let path = args.first { repository.showFileHistory(path, at: commitID(args.count > 1 ? args[1] : nil)) }
+        case "blame":
+            // blame <path> [commit row]
+            if let path = args.first { repository.showBlame(path, at: commitID(args.count > 1 ? args[1] : nil)) }
+        case "historySelect":
+            // historySelect <entry index>
+            if let index = args.first.flatMap(Int.init), let entries = repository.fileHistory?.entries, entries.indices.contains(index) {
+                repository.selectHistoryEntry(entries[index].commit.id)
+            }
+        case "blameFocus":
+            // blameFocus <chunk index>
+            if let index = args.first.flatMap(Int.init), let blame = repository.currentBlame, blame.chunks.indices.contains(index) {
+                repository.focusBlame(blame.chunks[index].commitID, chunk: blame.chunks[index].id)
+            }
+        case "blameBefore":
+            if let focused = repository.explore?.focused { repository.blameBefore(focused) }
+        case "exploreMode":
+            repository.setExploreMode(args.first == "blame" ? .blame : .history)
+        case "blameOption":
+            // blameOption ws|moves on|off
+            if args.count == 2 {
+                if args[0] == "ws" { repository.setBlameOptions(ignoreWhitespace: args[1] == "on") } else { repository.setBlameOptions(detectMoves: args[1] == "on") }
+            }
+        case "showInHistory":
+            if let id = repository.exploreCommitID { repository.showCommitInHistory(id) }
         case "squash":
             // squash <n> <n>…
             let ids = args.compactMap { commitID($0) }
@@ -191,6 +219,18 @@ extension DebugDriver {
                 "open": session.openBlocks, "choices": session.choices.map { "\($0.key):\($0.value)" }.sorted(),
                 "editing": session.editingText != nil, "message": session.message,
                 "ours": names.oursTitle, "theirs": names.theirsTitle,
+            ] as [String: Any]
+        }
+        if let state = repository.explore {
+            let blame = repository.currentBlame
+            result["explore"] = [
+                "path": state.path, "mode": "\(state.mode)", "selected": state.selected.map { String($0.prefix(7)) } ?? "",
+                "blameAt": state.blameAt.map { String($0.prefix(7)) } ?? "", "focused": state.focused.map { String($0.prefix(7)) } ?? "",
+                "history": (repository.fileHistory?.entries ?? []).map { "\($0.commit.shortID) \($0.path)\($0.oldPath.map { " <- " + $0 } ?? "")" },
+                "diffHunks": repository.historyReviewFile?.hunks.count ?? -1,
+                "chunks": blame.map { blame in blame.chunks.map { "\(String($0.commitID.prefix(7))):\($0.lines.count)" } } ?? [],
+                "panel": repository.exploreCommit.map { String($0.id.prefix(7)) } ?? "",
+                "summary": repository.exploreSummary ?? "",
             ] as [String: Any]
         }
         if case .interactiveRebase(let draft) = repository.sheet {

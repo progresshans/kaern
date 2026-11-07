@@ -225,6 +225,16 @@ final class RepositoryModel: Identifiable {
     var operationFinish: OperationFinish?
     /// Where the stopped operation began (⌘Z once it's finished).
     var operationStart: OperationStart?
+    /// File History and Blame: the file, the mode and what's picked.
+    var explore: ExploreState?
+    var fileHistory: (path: String, entries: [FileHistoryEntry])?
+    var fileHistoryDiff: (key: String, diff: FileDiff)?
+    var blame: (key: String, blame: Blame)?
+    /// The commit the right panel shows while exploring.
+    var exploreCommit: ExploreCommit?
+    @ObservationIgnored var exploreTask: Task<Void, Never>?
+    @ObservationIgnored var historyDiffTask: Task<Void, Never>?
+    @ObservationIgnored var exploreCommitTask: Task<Void, Never>?
     /// Branches switched to in this session, newest first (the branch menu's Recent Branches).
     var switchedBranches: [String] = []
     /// Repository Settings › Run hooks when committing from Kaern (`kaern.runHooks` in .git/config).
