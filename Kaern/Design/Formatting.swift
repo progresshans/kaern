@@ -46,6 +46,16 @@ enum Formatters {
         return monthDayYear.string(from: date)
     }
 
+    /// A narrow window's history dates (ScreenNarrow < 1,180 pt): "now", "5m", "2h", "1d", "Sep 27".
+    static func compactDate(_ date: Date, now: Date = .now) -> String {
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < 60 { return String(localized: "now") }
+        if elapsed < 3600 { return "\(Int(elapsed / 60))m" }
+        if elapsed < 86_400 { return "\(Int(elapsed / 3600))h" }
+        if elapsed < 7 * 86_400 { return "\(Int(elapsed / 86_400))d" }
+        return shortDate(date, now: now)
+    }
+
     /// Short dates for sidebar rows: "Sep 26", "Sep 26, 2025".
     static func shortDate(_ date: Date, now: Date = .now) -> String {
         if Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: now) {

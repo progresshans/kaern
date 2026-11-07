@@ -10,16 +10,30 @@ import SwiftUI
 struct MainToolbar: View {
     let window: WindowModel
     let repository: RepositoryModel
+    /// Sidebar and Toolbar switching: the toolbar is the title bar (room for the traffic lights).
+    var inTitleBar = false
 
     @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
     /// Icon Only or Icon and Text (right-click the toolbar).
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var style = ToolbarStyle.iconOnly
+    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.repositorySwitching) private var switching
+
+    /// The traffic lights' room when the toolbar is the title bar (`.titlebar .lights`).
+    static let lightsInset: CGFloat = 74
 
     var body: some View {
         let ready = repository.isReady
         // While a merge, rebase or stopped stash waits, Pull, Push, Stash and the like are locked.
         let busy = repository.activity != nil || repository.isMidOperation
-        HStack(spacing: 6) {
+        let tier = NarrowTier(width: windowWidth)
+        // ScreenNarrow: with names, New Branch · Stash · Pop go into » under 1,000 pt.
+        let foldsMake = style == .iconAndText && windowWidth > 0 && windowWidth < 1000
+        // Under 860 pt the groups sit closer (ScreenNarrow's 760 still fits every button).
+        HStack(spacing: tier >= .compact ? 2 : 6) {
+            if inTitleBar {
+                Color.clear.frame(width: Self.lightsInset - 10, height: 1)
+            }
             ToolbarCap {
                 ToolbarButton(icon: Icons.sidebar, iconSize: 17, name: "Sidebar", shortcut: "⌃⌘S", tip: .leading,
                               accessibilityLabel: "Show or hide the sidebar") {
@@ -28,7 +42,14 @@ struct MainToolbar: View {
             }
             ToolbarGroupSeparator()
             ToolbarCap {
-                BranchButton(repository: repository, onNewBranch: askNewBranch, onOtherBranches: { window.showsQuickOpen = true })
+                if switching == .toolbar {
+                    RepositoryButton(window: window, repository: repository)
+                    if style != .iconAndText {
+                        K.sepStrong.frame(width: 1).padding(.vertical, 7).padding(.horizontal, 1)
+                    }
+                }
+                BranchButton(repository: repository, maxWidth: tier >= .compact ? 128 : tier >= .panelOverlay ? 160 : tier >= .sidebarRail ? 200 : 252,
+                             onNewBranch: askNewBranch, onOtherBranches: { window.showsQuickOpen = true })
             }
             ToolbarGroupSeparator()
             ToolbarCap {
@@ -64,14 +85,16 @@ struct MainToolbar: View {
                     }
                 }
             }
-            ToolbarGroupSeparator()
-            ToolbarCap {
-                ToolbarButton(icon: Icons.newBranch, name: "New Branch", shortcut: "⇧⌘N") { askNewBranch() }
-                    .disabled(!ready || busy)
-                ToolbarButton(icon: Icons.stash(1.35), name: "Stash", shortcut: "⌥⌘S") { repository.from("Toolbar") { repository.stash() } }
-                    .disabled(!ready || busy || repository.status.isClean)
-                ToolbarButton(icon: Icons.pop, name: "Pop Stash", label: "Pop", shortcut: "⌥⇧⌘S") { repository.from("Toolbar") { repository.popStash() } }
-                    .disabled(!ready || busy || repository.stashes.isEmpty)
+            if !foldsMake {
+                ToolbarGroupSeparator()
+                ToolbarCap {
+                    ToolbarButton(icon: Icons.newBranch, name: "New Branch", shortcut: "⇧⌘N") { askNewBranch() }
+                        .disabled(!ready || busy)
+                    ToolbarButton(icon: Icons.stash(1.35), name: "Stash", shortcut: "⌥⌘S") { repository.from("Toolbar") { repository.stash() } }
+                        .disabled(!ready || busy || repository.status.isClean)
+                    ToolbarButton(icon: Icons.pop, name: "Pop Stash", label: "Pop", shortcut: "⌥⇧⌘S") { repository.from("Toolbar") { repository.popStash() } }
+                        .disabled(!ready || busy || repository.stashes.isEmpty)
+                }
             }
             Spacer(minLength: 6)
             ToolbarCap {
@@ -93,13 +116,18 @@ struct MainToolbar: View {
                 .disabled(!ready)
                 ToolbarButton(icon: Icons.details, iconSize: 17, name: "Details", shortcut: "⌥⌘I", tip: .trailing,
                               isOn: false, accessibilityLabel: "Show or hide the details panel") {
-                    window.toggleDetails()
+                    // A narrow window opens the panel over the graph instead.
+                    if tier >= .panelOverlay, !window.isFocused { window.overlayPanelOpen.toggle() } else { window.toggleDetails() }
                 }
+            }
+            if foldsMake {
+                ToolbarGroupSeparator()
+                MoreMenu(repository: repository, busy: busy, onNewBranch: askNewBranch)
             }
         }
         .environment(\.toolbarShowsText, style == .iconAndText)
         .padding(.horizontal, style == .iconAndText ? 8 : 10)
-        .frame(height: style.height)
+        .frame(height: inTitleBar ? style.titleBarHeight : style.height)
         .frame(maxWidth: .infinity)
         .background {
             ZStack(alignment: .bottom) {
@@ -191,10 +219,119 @@ private struct PullMenu: View {
     }
 }
 
+/// » (ScreenNarrow, Icon and Text under 1,000 pt): New Branch, Stash and Pop in a menu.
+private struct MoreMenu: View {
+    let repository: RepositoryModel
+    let busy: Bool
+    let onNewBranch: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let ready = repository.isReady
+        Menu {
+            Button("New Branch…") { onNewBranch() }
+                .disabled(!ready || busy)
+            Button("Stash Changes") { repository.from("Toolbar » menu") { repository.stash() } }
+                .disabled(!ready || busy || repository.status.isClean)
+            Button("Pop Stash") { repository.from("Toolbar » menu") { repository.popStash() } }
+                .disabled(!ready || busy || repository.stashes.isEmpty)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "chevron.right.2").font(.system(size: 14, weight: .medium))
+                Text("More").font(.system(size: 10)).lineLimit(1).fixedSize()
+            }
+            .foregroundStyle(K.label)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 46)
+            .frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(height: 46)
+        .onHover { hovering = $0 }
+        .toolbarTooltip(name: "More", shortcut: nil, placement: .trailing, hovering: $hovering)
+        .accessibilityLabel("More: New Branch, Stash, Pop")
+    }
+}
+
+/// Toolbar switching (WindowRepoToolbar): the repository in front of the branch — its initials,
+/// name and ⌄, a count when other repositories need you. Opens the repository list (⌘T).
+private struct RepositoryButton: View {
+    let window: WindowModel
+    let repository: RepositoryModel
+    @Environment(AppModel.self) private var app
+    @Environment(\.toolbarShowsText) private var showsText
+    @AppStorage(SettingsKey.toolbarMarksAttention, store: .kaern) private var marksAttention = true
+    @State private var hovering = false
+
+    var body: some View {
+        @Bindable var window = window
+        let attention = marksAttention ? otherAttention : 0
+        Button { window.showsRepositoryPopover.toggle() } label: {
+            VStack(spacing: 3) {
+                HStack(spacing: 7) {
+                    RepoAvatar(name: repository.name, size: 18, radius: 5, fontSize: 8.5)
+                    Text(repository.name)
+                        .font(KFont.weighted(12.5, 0.35))
+                        .foregroundStyle(K.label)
+                        .lineLimit(1)
+                        .frame(maxWidth: 180, alignment: .leading)
+                    Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
+                }
+                if showsText {
+                    Text("Repository").font(.system(size: 10)).foregroundStyle(K.label2)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(maxHeight: showsText ? 40 : .infinity)
+            .background {
+                if showsText {
+                    Color.clear.controlSurface(radius: 9)
+                } else {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering || window.showsRepositoryPopover ? K.hover : .clear)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if attention > 0 {
+                    Text("\(attention)")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 14, minHeight: 14)
+                        .background(Capsule().fill(K.badge))
+                        .background(Capsule().stroke(K.control, lineWidth: 3))
+                        .offset(x: 16, y: showsText ? -2 : 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .padding(.trailing, showsText ? 6 : 0)
+        .toolbarTooltip(name: "Switch Repository", shortcut: "⌘T", placement: .leading, hovering: $hovering)
+        .popover(isPresented: $window.showsRepositoryPopover, arrowEdge: .bottom) {
+            RepositoryPopover(window: window) { window.showsRepositoryPopover = false }
+        }
+        .accessibilityLabel("Switch repository, current repository \(repository.name)" + (attention > 0 ? ", \(attention) need attention" : ""))
+    }
+
+    /// Other open repositories in this window that need you.
+    private var otherAttention: Int {
+        RepoListItem.items(window, app: app).values.filter { $0.tab.path != repository.path && $0.needsAttention }.count
+    }
+}
+
 /// The branch capsule: branch glyph, name, ⌃⌄. Opens the branch menu (ScreenSheets' 브랜치 메뉴):
 /// recent branches, New Branch…, Merge into…, Rebase onto…, Rename…, Delete.
 private struct BranchButton: View {
     let repository: RepositoryModel
+    /// Narrow windows give the name less room (ScreenNarrow).
+    var maxWidth: CGFloat = 252
     let onNewBranch: () -> Void
     let onOtherBranches: () -> Void
     @State private var hovering = false
@@ -216,7 +353,7 @@ private struct BranchButton: View {
                         .foregroundStyle(K.label)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: 252, alignment: .leading)
+                        .frame(maxWidth: maxWidth, alignment: .leading)
                     Icon(Icons.upDown, size: 9, height: 12)
                         .foregroundStyle(K.label2)
                 }

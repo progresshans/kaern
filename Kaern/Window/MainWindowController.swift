@@ -28,7 +28,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.collectionBehavior.insert(.fullScreenPrimary)
-        window.minSize = NSSize(width: 820, height: 520)
+        // ScreenNarrow's narrowest window.
+        window.minSize = NSSize(width: 760, height: 520)
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x323232) : K.hex(0xececec) }
         window.isReleasedWhenClosed = false
 
@@ -52,6 +53,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         placeWindow(window)
         updateTitle()
         observeTitle()
+        applyChrome()
+        // Switching mode and toolbar style move the title bar: the lights follow.
+        settingsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: UserDefaults.kaern,
+                                                                  queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyChrome() }
+        }
+    }
+
+    private var settingsObserver: NSObjectProtocol?
+
+    isolated deinit {
+        if let settingsObserver { NotificationCenter.default.removeObserver(settingsObserver) }
+    }
+
+    /// Tabs: the lights sit in the 36 pt tab row. Sidebar and Toolbar: in the toolbar, which is
+    /// the title bar (52 pt, 58 with names).
+    private func applyChrome() {
+        let style = ToolbarStyle(rawValue: UserDefaults.kaern.string(forKey: SettingsKey.toolbarStyle) ?? "") ?? .iconOnly
+        let tabs = AppSettings.repositorySwitching == .tabs
+        let center = tabs ? KMetric.tabRow / 2 : style.titleBarHeight / 2
+        (window as? KaernWindow)?.chromeHeight = tabs ? KMetric.tabRow + style.height : style.titleBarHeight
+        guard lights?.centerFromTop != center else { return }
+        lights?.centerFromTop = center
+        lights?.apply()
     }
 
     @available(*, unavailable)
@@ -161,6 +186,8 @@ final class KaernWindow: NSWindow {
     /// where Kaern has none (the tab bar's own menus and text fields then get the click).
     var contextMenu: ((CGPoint) -> (NSMenu, UUID)?)?
     var contextTracker: ContextMenuTracker?
+    /// The tab row and toolbar (or the toolbar alone as the title bar): their own menus stay theirs.
+    var chromeHeight: CGFloat = KMetric.tabRow + KMetric.toolbar
     private var closingWindow = false
 
     override func sendEvent(_ event: NSEvent) {
@@ -168,7 +195,7 @@ final class KaernWindow: NSWindow {
             || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
         let point = CGPoint(x: event.locationInWindow.x, y: frame.height - event.locationInWindow.y)
         // Below the tab row and toolbar only: their own menus stay theirs.
-        if isContextClick, point.y > KMetric.tabRow + KMetric.toolbar,
+        if isContextClick, point.y > chromeHeight,
            let (menu, row) = contextMenu?(point), let view = contentView {
             showContextMenu(menu, for: row, event: event, in: view)
             return
@@ -217,7 +244,7 @@ final class KaernHostingView<Content: View>: NSHostingView<Content> {
 /// appearance changes).
 final class TrafficLights {
     private weak var window: NSWindow?
-    private let centerFromTop: CGFloat
+    var centerFromTop: CGFloat
     private var observers: [NSObjectProtocol] = []
     private var appearanceObservation: NSKeyValueObservation?
     private var isApplying = false

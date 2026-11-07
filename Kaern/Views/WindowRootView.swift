@@ -1,33 +1,32 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Everything inside a Kaern window: the tab row (in the title bar), then the selected
-/// repository, or the empty state when no tab is open.
+/// Everything inside a Kaern window. With Tabs (the default) the tab row sits in the title bar
+/// and each repository has its toolbar under it; with Sidebar or Toolbar switching the toolbar
+/// itself is the title bar, and Sidebar adds the repository list down the left.
 struct WindowRootView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
     @State private var isDropTarget = false
+    @State private var width: CGFloat = 0
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
+    @AppStorage(SettingsKey.repositorySwitching, store: .kaern) private var switching = RepositorySwitching.tabs
+    @AppStorage(SettingsKey.listFoldsNarrow, store: .kaern) private var listFoldsNarrow = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            TabBar(window: window)
-                .zIndex(3)
-            ZStack(alignment: .top) {
-                if let tab = window.activeTab {
-                    RepositoryScreen(window: window, repository: app.repository(for: tab.path))
-                        .id(tab.path)
-                } else {
-                    EmptyStateView(window: window)
-                }
-                // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
-                WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
+        Group {
+            if switching == .tabs {
+                tabsLayout
+            } else {
+                titleBarLayout
             }
-            .animation(.easeOut(duration: 0.15), value: window.sheet?.id)
         }
-        .frame(minWidth: 820, minHeight: 520)
+        .environment(\.windowWidth, width)
+        .environment(\.repositorySwitching, switching)
+        .frame(minWidth: 760, minHeight: 520)
         .background(K.win)
         .ignoresSafeArea()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .overlay {
             if isDropTarget {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -47,21 +46,158 @@ struct WindowRootView: View {
             return true
         } isTargeted: { isDropTarget = $0 }
     }
+
+    /// The tab row, then the repository (its toolbar first) or the welcome view.
+    private var tabsLayout: some View {
+        VStack(spacing: 0) {
+            TabBar(window: window)
+                .zIndex(3)
+            ZStack(alignment: .top) {
+                if let tab = window.activeTab {
+                    RepositoryScreen(window: window, repository: app.repository(for: tab.path))
+                        .id(tab.path)
+                } else {
+                    EmptyStateView(window: window)
+                }
+                // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
+                WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
+            }
+            .animation(.easeOut(duration: 0.15), value: window.sheet?.id)
+        }
+    }
+
+    /// Sidebar and Toolbar switching: the toolbar in the title bar, the list (Sidebar), then the
+    /// repository without a toolbar of its own.
+    private var titleBarLayout: some View {
+        let repository = window.activeTab.map { app.repository(for: $0.path) }
+        let railByWidth = listFoldsNarrow && width > 0 && width < 1100
+        return VStack(spacing: 0) {
+            Group {
+                if let repository {
+                    MainToolbar(window: window, repository: repository, inTitleBar: true)
+                        .id(repository.path)
+                } else {
+                    EmptyTitleBar(window: window)
+                }
+            }
+            .zIndex(3)
+            ZStack(alignment: .top) {
+                HStack(spacing: 0) {
+                    if switching == .sidebar {
+                        if window.listFolded || railByWidth {
+                            RepositoryRailView(window: window, isAutomatic: railByWidth && !window.listFolded)
+                                .transition(.move(edge: .leading))
+                        } else {
+                            RepositoryListView(window: window)
+                                .transition(.move(edge: .leading))
+                        }
+                    }
+                    Group {
+                        if let tab = window.activeTab {
+                            RepositoryScreen(window: window, repository: app.repository(for: tab.path), showsToolbar: false, showsStatusBar: false)
+                                .id(tab.path)
+                        } else {
+                            EmptyStateView(window: window)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .animation(.easeOut(duration: 0.18), value: window.listFolded || railByWidth)
+                WindowSheetHost(window: window, topInset: 0)
+            }
+            .animation(.easeOut(duration: 0.15), value: window.sheet?.id)
+            // The status bar runs under the list too (WindowRepoSidebar).
+            if let repository {
+                StatusBarView(repository: repository)
+                    .id(repository.path)
+            }
+        }
+    }
 }
 
-/// One repository: toolbar, sidebar | history | panel, status bar.
+/// The title bar when no repository is open in Sidebar or Toolbar mode: room for the traffic
+/// lights, and the window moves by it.
+private struct EmptyTitleBar: View {
+    let window: WindowModel
+    @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var style = ToolbarStyle.iconOnly
+
+    var body: some View {
+        HStack {
+            Spacer()
+        }
+        .frame(height: style.titleBarHeight)
+        .frame(maxWidth: .infinity)
+        .background {
+            ZStack(alignment: .bottom) {
+                K.win
+                K.sep.frame(height: 1)
+            }
+            .windowDragArea()
+        }
+    }
+}
+
+/// How far a narrow window folds (ScreenNarrow). Each step applies below its width.
+enum NarrowTier: Int, Comparable {
+    case wide
+    /// < 1,280: the Commit column hides.
+    case noHash
+    /// < 1,180: short dates ("2h", "1d").
+    case shortDates
+    /// < 1,100: the sidebar folds into its section icons; a section opens over the graph.
+    case sidebarRail
+    /// < 960: the details panel opens over the graph instead of beside it.
+    case panelOverlay
+    /// < 860: no dates or descriptions.
+    case compact
+
+    init(width: CGFloat) {
+        switch width {
+        case ..<1: self = .wide
+        case ..<860: self = .compact
+        case ..<960: self = .panelOverlay
+        case ..<1100: self = .sidebarRail
+        case ..<1180: self = .shortDates
+        case ..<1280: self = .noHash
+        default: self = .wide
+        }
+    }
+
+    static func < (lhs: NarrowTier, rhs: NarrowTier) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+extension EnvironmentValues {
+    /// The window's width, for the narrow-window folding.
+    @Entry var windowWidth: CGFloat = 0
+    @Entry var repositorySwitching: RepositorySwitching = .tabs
+}
+
+/// One repository: toolbar (unless the title bar has it), sidebar | history | panel, status bar.
 struct RepositoryScreen: View {
     let window: WindowModel
     @Bindable var repository: RepositoryModel
+    var showsToolbar = true
+    /// Sidebar and Toolbar switching put the status bar under the whole window instead.
+    var showsStatusBar = true
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
+    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.repositorySwitching) private var switching
+
+    /// Where cards and sheets start: under this screen's own toolbar, if it has one.
+    private var chromeTop: CGFloat { showsToolbar ? toolbarStyle.height : 0 }
 
     var body: some View {
+        let tier = NarrowTier(width: windowWidth)
         // Focus hides both side panels without changing what Sidebar and Details are set to.
         let showsSidebar = window.showsSidebar && !window.isFocused && repository.hasContent
-        let showsDetails = window.showsDetails && !window.isFocused && repository.isReady
+        let sidebarRail = showsSidebar && tier >= .sidebarRail
+        let panelOverlay = tier >= .panelOverlay
+        let showsDetails = (panelOverlay ? window.overlayPanelOpen : window.showsDetails) && !window.isFocused && repository.isReady
         VStack(spacing: 0) {
-            MainToolbar(window: window, repository: repository)
-                .zIndex(2)
+            if showsToolbar {
+                MainToolbar(window: window, repository: repository)
+                    .zIndex(2)
+            }
             if repository.isReady, repository.isMidOperation || repository.operationFinish != nil {
                 OperationBar(repository: repository)
                     .zIndex(1)
@@ -71,8 +207,11 @@ struct RepositoryScreen: View {
                     .zIndex(1)
             }
             HStack(spacing: 0) {
-                if showsSidebar {
-                    SidebarView(repository: repository)
+                if sidebarRail {
+                    SidebarRail(repository: repository, window: window)
+                        .transition(.move(edge: .leading))
+                } else if showsSidebar {
+                    SidebarView(repository: repository, showsHeader: switching != .tabs)
                         .transition(.move(edge: .leading))
                 }
                 VStack(spacing: 0) {
@@ -85,21 +224,48 @@ struct RepositoryScreen: View {
                     }
                 }
                 .layoutPriority(-1)
-                if showsDetails {
-                    Group {
-                        switch repository.screen {
-                        case .conflicts: ResolveConflictsPanel(repository: repository)
-                        case .stash: StashPanel(repository: repository)
-                        case .explore: ExplorePanel(repository: repository)
-                        case nil: DetailsPanel(repository: repository)
-                        }
-                    }
-                    .transition(.move(edge: .trailing))
+                if showsDetails, !panelOverlay {
+                    detailsPanel
+                        .transition(.move(edge: .trailing))
                 }
             }
             .frame(maxHeight: .infinity)
             .background(K.content)
             .clipped()
+            .overlay(alignment: .leading) {
+                // < 1,100 pt: a section picked in the rail opens the whole sidebar over the graph.
+                if sidebarRail, let section = window.sidebarFlyout {
+                    ZStack(alignment: .leading) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { window.sidebarFlyout = nil }
+                        SidebarView(repository: repository, showsHeader: switching != .tabs, focus: section)
+                            .shadow(color: .black.opacity(0.18), radius: 17, x: 14)
+                            .padding(.leading, SidebarRail.width)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                // < 960 pt: the panel opens over the graph, with × to put it away.
+                if panelOverlay, showsDetails {
+                    detailsPanel
+                        .shadow(color: .black.opacity(0.16), radius: 17, x: -14)
+                        .overlay(alignment: .topLeading) {
+                            Button { window.overlayPanelOpen = false } label: {
+                                Icon(Icons.closeLarge, size: 10)
+                                    .foregroundStyle(K.label2)
+                                    .frame(width: 26, height: 26)
+                                    .popSurface(radius: 13)
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: -13, y: 12)
+                            .accessibilityLabel("Hide the details panel")
+                        }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if let run = repository.hookRun {
                     // `.hookhud`: over the composer, 16 pt from the right edge.
@@ -109,11 +275,13 @@ struct RepositoryScreen: View {
                         .transition(.opacity)
                 }
             }
-            StatusBarView(repository: repository)
+            if showsStatusBar {
+                StatusBarView(repository: repository)
+            }
         }
         .overlay(alignment: .bottom) {
             ToastView(repository: repository)
-                .padding(.bottom, 44)
+                .padding(.bottom, showsStatusBar ? 44 : 18)
                 .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
         }
         .overlay {
@@ -123,13 +291,13 @@ struct RepositoryScreen: View {
                         .contentShape(Rectangle())
                         .onTapGesture { window.showsQuickOpen = false }
                     QuickOpenPanel(repository: repository, window: window)
-                        .padding(.top, toolbarStyle.height + 50)
+                        .padding(.top, chromeTop + 50)
                 }
                 .transition(.opacity)
             }
         }
         .overlay {
-            RepositorySheetHost(repository: repository, toolbarHeight: toolbarStyle.height)
+            RepositorySheetHost(repository: repository, toolbarHeight: chromeTop)
         }
         .animation(.easeOut(duration: 0.15), value: repository.sheet?.id)
         .overlay {
@@ -139,19 +307,23 @@ struct RepositoryScreen: View {
                     AlertShade()
                     if let confirmation = repository.confirmation {
                         ConfirmationCard(confirmation: confirmation) { repository.confirmation = nil }
-                            .padding(.top, toolbarStyle.height + 14)
+                            .padding(.top, chromeTop + 14)
                     } else if let failure = repository.hookFailure {
                         HookFailureCard(repository: repository, failure: failure)
-                            .padding(.top, toolbarStyle.height + 14)
+                            .padding(.top, chromeTop + 14)
                     }
                 }
                 .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.18), value: showsSidebar)
+        .animation(.easeOut(duration: 0.18), value: sidebarRail)
         .animation(.easeOut(duration: 0.18), value: showsDetails)
+        .animation(.easeOut(duration: 0.15), value: window.sidebarFlyout)
         .animation(.easeOut(duration: 0.18), value: window.isFocused && window.showsDrawer)
         .animation(.easeOut(duration: 0.15), value: repository.hookRun != nil)
+        .onChange(of: tier >= .sidebarRail) { _, folded in if !folded { window.sidebarFlyout = nil } }
+        .onChange(of: panelOverlay) { _, overlay in if !overlay { window.overlayPanelOpen = false } }
         .alert(item: $repository.alert) { alert in
             if let title = alert.actionTitle, let action = alert.action {
                 Alert(title: Text(alert.title), message: Text(alert.message),
@@ -159,6 +331,16 @@ struct RepositoryScreen: View {
             } else {
                 Alert(title: Text(alert.title), message: Text(alert.message))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var detailsPanel: some View {
+        switch repository.screen {
+        case .conflicts: ResolveConflictsPanel(repository: repository)
+        case .stash: StashPanel(repository: repository)
+        case .explore: ExplorePanel(repository: repository)
+        case nil: DetailsPanel(repository: repository)
         }
     }
 
@@ -182,6 +364,8 @@ struct RepositoryScreen: View {
                     }
                     HistoryView(repository: repository, isFocused: window.isFocused) {
                         if window.isFocused { window.showsDrawer = true }
+                        // A narrow window opens the panel over the graph when a row is picked.
+                        if NarrowTier(width: windowWidth) >= .panelOverlay, !window.isFocused { window.overlayPanelOpen = true }
                     }
                 }
             }
@@ -197,13 +381,10 @@ struct RepositoryScreen: View {
         case .notRepository:
             NotRepositoryView(repository: repository, window: window)
         case .missing:
-            MessageView(
-                icon: Icons.missingFolder,
-                title: "Folder not found",
-                message: "\(Formatters.abbreviatedPath(repository.path)) isn’t there anymore. It may have been moved, renamed or deleted, or its disk isn’t connected.",
-                primary: ("Try Again", { AppModel.shared.retry(repository) }),
-                secondary: ("Close Tab", { closeTab() })
-            )
+            // WindowRepoSidebar's 폴더 없음: Locate… points the tab at the folder's new place.
+            MissingFolderView(repository: repository, removeTitle: switching == .tabs ? "Close Tab" : "Remove from Sidebar") {
+                closeTab()
+            }
         case .failed(let message):
             MessageView(
                 icon: Icons.error,
@@ -223,6 +404,56 @@ struct RepositoryScreen: View {
 }
 
 /// A centered message with up to two buttons (missing folder, unreadable repository).
+/// `.mstate`: a repository whose folder isn't where it was — Locate… / Remove (or Try Again when
+/// the disk comes back).
+private struct MissingFolderView: View {
+    let repository: RepositoryModel
+    let removeTitle: String
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Icon(Icons.folderQuestion, size: 30)
+                .foregroundStyle(K.label2)
+                .frame(width: 68, height: 68)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(K.chip2))
+            Text("\(repository.name) isn’t where it used to be")
+                .font(.system(size: 17, weight: .bold))
+                .padding(.top, 8)
+            Text("Kaern can’t find \(Formatters.abbreviatedPath(repository.path)). It may have been moved, renamed or deleted. Your other repositories are fine.")
+                .font(.system(size: 13))
+                .lineSpacing(2)
+                .foregroundStyle(K.label2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            HStack(spacing: 8) {
+                PrimaryButton(title: "Locate…", height: 26, fontSize: 12.5) { locate() }
+                SheetActionButton(title: removeTitle, action: remove)
+                SheetActionButton(title: "Try Again") { AppModel.shared.retry(repository) }
+            }
+            .padding(.top, 8)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(K.content)
+    }
+
+    private func locate() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Use This Folder"
+        panel.message = "Where is \(repository.name) now? Choose its folder."
+        panel.directoryURL = URL(filePath: (repository.path as NSString).deletingLastPathComponent, directoryHint: .isDirectory)
+        let path = repository.path
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { _ = await AppModel.shared.relocate(path, to: url) }
+        }
+        if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: handler) } else { handler(panel.runModal()) }
+    }
+}
+
 private struct MessageView: View {
     let icon: SVGIcon
     let title: String

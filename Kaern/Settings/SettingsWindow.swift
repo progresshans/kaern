@@ -177,6 +177,10 @@ private struct Hint: View {
 private struct GeneralPane: View {
     @AppStorage(SettingsKey.onLaunch, store: .kaern) private var onLaunch = LaunchBehavior.reopen
     @AppStorage(SettingsKey.groupFolders, store: .kaern) private var groupFolders = true
+    @AppStorage(SettingsKey.repositorySwitching, store: .kaern) private var switching = RepositorySwitching.tabs
+    @AppStorage(SettingsKey.listShowsBranch, store: .kaern) private var listShowsBranch = true
+    @AppStorage(SettingsKey.listFoldsNarrow, store: .kaern) private var listFoldsNarrow = true
+    @AppStorage(SettingsKey.toolbarMarksAttention, store: .kaern) private var toolbarMarksAttention = true
     @AppStorage(SettingsKey.tabCharacters, store: .kaern) private var tabCharacters = 12
     @AppStorage(SettingsKey.autoFetch, store: .kaern) private var autoFetch = true
     @AppStorage(SettingsKey.autoFetchMinutes, store: .kaern) private var autoFetchMinutes = 5
@@ -187,38 +191,48 @@ private struct GeneralPane: View {
         SettingsGrid {
             SettingsRow(label: "On launch:") {
                 Picker("On launch", selection: $onLaunch) {
-                    Text("Reopen the tabs from last time").tag(LaunchBehavior.reopen)
+                    Text(switching == .tabs ? "Reopen the tabs from last time" : "Reopen the repositories from last time").tag(LaunchBehavior.reopen)
                     Text("Show the welcome window").tag(LaunchBehavior.welcome)
                     Text("Open nothing").tag(LaunchBehavior.nothing)
                 }
                 .labelsHidden()
                 .fixedSize()
                 Hint(onLaunch == .reopen
-                     ? "Kaern saves your tabs and groups itself, so they come back even when macOS doesn’t restore windows."
-                     : "Last time’s tabs wait behind the Reopen button of the welcome window.")
+                     ? (switching == .tabs ? "Kaern saves your tabs and groups itself" : "Kaern saves your open repositories and groups itself")
+                        + ", so they come back even when macOS doesn’t restore windows."
+                     : "Last time’s \(switching == .tabs ? "tabs wait" : "repositories wait") behind the Reopen button of the welcome window.")
             }
             SettingsRow(label: "Switch repositories:") {
                 HStack(spacing: 10) {
-                    SwitchingModeButton(mode: .tabs, isOn: true)
-                    SwitchingModeButton(mode: .sidebar, isOn: false).disabled(true)
-                    SwitchingModeButton(mode: .toolbar, isOn: false).disabled(true)
+                    ForEach(RepositorySwitching.allCases, id: \.self) { mode in
+                        SwitchingModeButton(mode: mode, isOn: switching == mode)
+                            .onTapGesture { switching = mode }
+                    }
                 }
                 .padding(.top, -2)
-                Hint("Every open repository is a tab at the top of the window, grouped by folder. Best when you move between a handful of repositories all day.", strong: true)
-                Hint("The Sidebar and Toolbar layouts come in a later version.")
+                Hint(switchingDescription, strong: true)
+                Hint("Quick Open (⇧⌘O) and Window › Repositories (⇧⌘R) work with every option. Changing it keeps your open repositories and groups.")
             }
-            SettingsRow(label: "Tabs:") {
+            SettingsRow(label: switching == .tabs ? "Tabs:" : "Repository list:") {
                 Checkbox("Group repositories from the same folder", isOn: $groupFolders)
-                HStack(spacing: 7) {
-                    Text("Shrink a tab until it shows")
-                    Picker("Characters kept", selection: $tabCharacters) {
-                        ForEach([8, 12, 16], id: \.self) { Text("\($0)").tag($0) }
+                switch switching {
+                case .tabs:
+                    HStack(spacing: 7) {
+                        Text("Shrink a tab until it shows")
+                        Picker("Characters kept", selection: $tabCharacters) {
+                            ForEach([8, 12, 16], id: \.self) { Text("\($0)").tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        Text("characters, then scroll")
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    Text("characters, then scroll")
+                    .font(.system(size: 13))
+                case .sidebar:
+                    Checkbox("Show the current branch under each name", isOn: $listShowsBranch)
+                    Checkbox("Fold into icons when the window is narrower than 1,100 pt", isOn: $listFoldsNarrow)
+                case .toolbar:
+                    Checkbox("Mark the button when another repository needs attention", isOn: $toolbarMarksAttention)
                 }
-                .font(.system(size: 13))
             }
             SettingsRow(label: "Fetch:") {
                 HStack(spacing: 7) {
@@ -249,8 +263,23 @@ private struct GeneralPane: View {
             }
         }
         .onChange(of: theme) { AppSettings.applyTheme() }
+        .onChange(of: switching) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.repositorySwitching) }
         .onChange(of: autoFetch) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.autoFetch) }
         .onChange(of: autoFetchMinutes) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.autoFetch) }
+    }
+}
+
+extension GeneralPane {
+    /// The line under the three layouts.
+    var switchingDescription: String {
+        switch switching {
+        case .tabs:
+            "Every open repository is a tab at the top of the window, grouped by folder. Best when you move between a handful of repositories all day."
+        case .sidebar:
+            "Repositories are listed down the left with their branch and status, so you can see every repository’s state at once. Press ‹ to fold the list into colored icons when you need the width."
+        case .toolbar:
+            "One clean row: a repository button sits next to the branch and opens the list. Gives the graph the most room; other repositories are one click away."
+        }
     }
 }
 

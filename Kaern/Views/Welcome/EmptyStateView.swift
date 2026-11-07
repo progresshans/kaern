@@ -81,7 +81,8 @@ struct EmptyStateView: View {
             Button {
                 app.reopenLastSession(in: window)
             } label: {
-                Text(tabs.count == 1 ? "Reopen 1 Tab" : "Reopen \(tabs.count) Tabs")
+                Text(AppSettings.repositorySwitching == .tabs ? (tabs.count == 1 ? "Reopen 1 Tab" : "Reopen \(tabs.count) Tabs")
+                     : (tabs.count == 1 ? "Reopen 1 Repository" : "Reopen \(tabs.count) Repositories"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -323,6 +324,8 @@ struct FlowLayout: Layout {
 /// + / ⌘T: recent repositories that aren't open, a filter, and Open Repository….
 struct NewTabPopover: View {
     let window: WindowModel
+    /// Sidebar mode's Add Repository…: Clone and Create too.
+    var showsMore = false
     @Environment(AppModel.self) private var app
     @State private var filter = ""
     @State private var highlighted = 0
@@ -386,24 +389,40 @@ struct NewTabPopover: View {
                 .frame(maxHeight: 300)
             }
             Divider()
-            Button {
-                openPanel()
-            } label: {
-                HStack {
-                    Text("Open Repository…")
-                    Spacer()
-                    Text("⌘O").foregroundStyle(K.label2)
+            footerButton("Open Repository…", "⌘O") { openPanel() }
+            if showsMore {
+                footerButton("Clone Repository…", "⇧⌘C") {
+                    window.showsNewTab = false
+                    app.showClone(in: window)
                 }
-                .font(.system(size: 13))
-                .padding(.horizontal, 8)
-                .frame(height: 26)
-                .contentShape(Rectangle())
+                footerButton("Create New Repository…", "⌥⌘N") {
+                    window.showsNewTab = false
+                    app.showCreate(in: window)
+                }
+                footerButton("Repositories Window", "⇧⌘R") {
+                    window.showsNewTab = false
+                    RepositoriesWindowController.shared.show()
+                }
             }
-            .buttonStyle(.plain)
         }
         .padding(10)
         .frame(width: 340)
         .onAppear { focused = true }
+    }
+
+    private func footerButton(_ title: String, _ shortcut: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(shortcut).foregroundStyle(K.label2)
+            }
+            .font(.system(size: 13))
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func open(_ item: Session.RecentRepository) {

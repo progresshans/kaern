@@ -142,6 +142,12 @@ enum Icons {
         .path("M7 6.2v4", width: 1.6, cap: .round, stroke: .white),
         .circle(7, 4.1, 0.9, fill: .white),
     ])
+    /// WindowRepoSidebar's missing folder: a folder with a question mark.
+    static let folderQuestion = SVGIcon(16, [
+        .path("M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z", width: 1.3, join: .round),
+        .path("M6.9 7.4a1.2 1.2 0 1 1 1.6 1.1c-.4.2-.5.4-.5.8", width: 1.2, cap: .round),
+        .circle(8, 11, 0.6, fill: .current),
+    ])
     /// ScreenRepos: a filled folder (the repository column).
     static let folderFilled = SVGIcon(16, [.filled("M2.2 5a1 1 0 0 1 1-1h3.1l1.3 1.4h5.2a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1z")])
     /// ScreenInit's banner: a cloud (the repository is only on this Mac).

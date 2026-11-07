@@ -27,6 +27,8 @@ struct Session: Codable, Equatable {
         var activeTab: UUID?
         var showsSidebar = true
         var showsDetails = true
+        /// Sidebar mode: the repository list folded into icons (‹). Absent in older files.
+        var listFolded: Bool?
     }
 
     struct TabState: Codable, Equatable, Identifiable {

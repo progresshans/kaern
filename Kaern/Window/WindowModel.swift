@@ -58,6 +58,15 @@ final class WindowModel: Identifiable {
     var showsQuickOpen = false
     /// Clone, Create New Repository or Publish over the window. Not saved.
     var sheet: WindowSheet?
+    /// Sidebar mode: the repository list folded into the icon rail with ‹.
+    var listFolded = false { didSet { if listFolded != oldValue { changed() } } }
+    /// Toolbar mode: the repository list under the repository button (⌘T). Not saved.
+    var showsRepositoryPopover = false
+    /// A narrow window (< 960 pt) opens the details panel over the graph instead of beside it.
+    /// Not saved.
+    var overlayPanelOpen = false
+    /// A narrow window (< 1,100 pt): the sidebar section shown over the graph from the rail.
+    var sidebarFlyout: SidebarSection?
 
     /// Sidebar on the toolbar or ⌃⌘S. In Focus it leaves Focus and shows the sidebar.
     func toggleSidebar() {
@@ -100,6 +109,7 @@ final class WindowModel: Identifiable {
         isFullScreen = state.isFullScreen
         showsSidebar = state.showsSidebar
         showsDetails = state.showsDetails
+        listFolded = state.listFolded ?? false
         groups = state.groups.map { TabGroup(id: $0.id, name: $0.name, color: $0.color, collapsed: $0.collapsed) }
         let groupIDs = Set(groups.map(\.id))
         var seen = Set<String>()
@@ -121,7 +131,8 @@ final class WindowModel: Identifiable {
             groups: groups.map { Session.GroupState(id: $0.id, name: $0.name, color: $0.color, collapsed: $0.collapsed) },
             activeTab: activeTabID,
             showsSidebar: showsSidebar,
-            showsDetails: showsDetails
+            showsDetails: showsDetails,
+            listFolded: listFolded ? true : nil
         )
     }
 

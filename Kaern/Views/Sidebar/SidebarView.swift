@@ -6,18 +6,46 @@ import SwiftUI
 /// icons; a row's icon sits in the tile column and its name lines up with the section title.
 struct SidebarView: View {
     @Bindable var repository: RepositoryModel
+    /// Sidebar and Toolbar switching: the repository's name and folder on top (no tab names it).
+    var showsHeader = false
+    /// Opened from the narrow window's rail: this section, unfolded and scrolled to.
+    var focus: SidebarSection?
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    localSection
-                    remoteSection
-                    tagSection
-                    stashSection
-                    worktreeSection
+            if showsHeader {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(repository.name).font(.system(size: 15, weight: .bold)).lineLimit(1)
+                    Text(Formatters.abbreviatedPath(repository.path))
+                        .font(.system(size: 11))
+                        .foregroundStyle(K.label2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
+            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        localSection.id(SidebarSection.local)
+                        remoteSection.id(SidebarSection.remote)
+                        tagSection.id(SidebarSection.tags)
+                        stashSection.id(SidebarSection.stashes)
+                        worktreeSection.id(SidebarSection.worktrees)
+                    }
+                    .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
+                }
+                .onAppear {
+                    guard let focus else { return }
+                    repository.sidebar.collapsed.remove(focus)
+                    DispatchQueue.main.async { proxy.scrollTo(focus, anchor: .top) }
+                }
+                .onChange(of: focus) { _, section in
+                    guard let section else { return }
+                    repository.sidebar.collapsed.remove(section)
+                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(section, anchor: .top) }
+                }
             }
             .scrollIndicators(.automatic)
             .contextClip()

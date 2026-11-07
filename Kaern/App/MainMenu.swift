@@ -58,7 +58,21 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
-        menu.addItem(MenuAction.item("New Tab", key: "t", enabled: { window != nil }) { window?.showsNewTab = true })
+        // ⌘T: a new tab (Tabs), Add Repository (Sidebar), the repository list (Toolbar).
+        menu.addItem(MenuAction.item("New Tab", key: "t", enabled: { window != nil }, title: {
+            switch AppSettings.repositorySwitching {
+            case .tabs: "New Tab"
+            case .sidebar: "Add Repository…"
+            case .toolbar: "Switch Repository…"
+            }
+        }) {
+            guard let window else { return }
+            if AppSettings.repositorySwitching == .toolbar, window.activeTab != nil {
+                window.showsRepositoryPopover = true
+            } else {
+                window.showsNewTab = true
+            }
+        })
         menu.addItem(MenuAction.item("New Window", key: "n") { app.newWindow() })
         menu.addItem(MenuAction.item("Open Repository…", key: "o", enabled: { window != nil }) {
             if let window { app.showOpenPanel(for: window) }

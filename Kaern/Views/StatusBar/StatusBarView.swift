@@ -7,6 +7,7 @@ import SwiftUI
 struct StatusBarView: View {
     let repository: RepositoryModel
     @State private var showsActivity = false
+    @Environment(\.windowWidth) private var windowWidth
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -91,6 +92,13 @@ struct StatusBarView: View {
             return "Rebase in progress · commit \(step) of \(total)"
         }
         let status = repository.status
+        // ScreenNarrow < 960 pt: "13 changes · ↑2".
+        if NarrowTier(width: windowWidth) >= .panelOverlay {
+            var short: [String] = [status.isClean ? "No changes" : Formatters.count(status.entries.count, "change", "changes")]
+            if status.upstream != nil { short.append("↑\(status.ahead)") }
+            if status.behind > 0 { short.append("↓\(status.behind)") }
+            return short.joined(separator: " · ")
+        }
         var parts: [String] = []
         if status.isClean, repository.remotes.isEmpty, repository.phase == .ready, let branch = status.branch {
             // ScreenInit: "main · only on this Mac".
@@ -168,7 +176,7 @@ private struct StatusState {
             return
         case .missing:
             icon = .warning
-            text = "Folder not found at \(Formatters.abbreviatedPath(repository.path))"
+            text = "Folder not found"
             return
         case .failed(let message):
             icon = .warning

@@ -9,6 +9,7 @@ extension DebugDriver {
         "clone", "cloneField", "cloneSource", "cloneStart", "fakeHosted", "fakeCloneProgress",
         "create", "createField", "createStart", "publishSheet", "windowSheetClose",
         "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
+        "listFold", "repoPopover", "flyout", "overlayPanel",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -62,6 +63,15 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
+        case "listFold":
+            window.listFolded = args.first != "off"
+        case "repoPopover":
+            window.showsRepositoryPopover = args.first != "off"
+        case "flyout":
+            // flyout local|remote|tags|stashes|worktrees|off — a narrow window's sidebar section.
+            window.sidebarFlyout = SidebarSection(rawValue: args.first ?? "")
+        case "overlayPanel":
+            window.overlayPanelOpen = args.first != "off"
         case "clone":
             // clone [url…] — File › Clone Repository…, with the URL filled in.
             app.showClone(in: window, url: args.joined(separator: " "))
@@ -175,6 +185,15 @@ extension DebugDriver {
             },
         ] as [String: Any]
         result["lastFetchAll"] = AutoFetcher.shared.lastFetchAll.map { "\($0)" } ?? ""
+        result["layout"] = [
+            "switching": AppSettings.repositorySwitching.rawValue,
+            "listFolded": window?.listFolded ?? false,
+            "repoPopover": window?.showsRepositoryPopover ?? false,
+            "flyout": window?.sidebarFlyout?.rawValue ?? "",
+            "overlayPanel": window?.overlayPanelOpen ?? false,
+            "width": controller?.window?.frame.width ?? 0,
+            "chromeHeight": (controller?.window as? KaernWindow)?.chromeHeight ?? 0,
+        ] as [String: Any]
         result["activity"] = ActivityCenter.shared.running.map { "\($0.title) \($0.detail ?? "") \($0.fraction.map { String(format: "%.2f", $0) } ?? "-")" }
         result["recentActivity"] = ActivityCenter.shared.recent.prefix(4).map { "\($0.title): \($0.result ?? "")" }
         return result

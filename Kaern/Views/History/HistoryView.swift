@@ -12,6 +12,7 @@ struct HistoryView: View {
     var onPick: () -> Void = {}
 
     @State private var width: CGFloat = 0
+    @Environment(\.windowWidth) private var windowWidth
     @FocusState private var listFocused: Bool
     @AppStorage("KaernColumnRef", store: .kaern) private var storedRef: Double = ColumnWidths.defaultRef
     @AppStorage("KaernColumnGraph", store: .kaern) private var storedGraph: Double = 0
@@ -22,7 +23,8 @@ struct HistoryView: View {
         HistoryColumns(
             width: width,
             stored: ColumnWidths(ref: storedRef, graph: storedGraph, date: storedDate, sha: storedSHA),
-            automaticGraph: GraphMetrics.automaticWidth(for: repository.graph.prefix(300))
+            automaticGraph: GraphMetrics.automaticWidth(for: repository.graph.prefix(300)),
+            tier: NarrowTier(width: windowWidth)
         )
     }
 
@@ -174,15 +176,29 @@ struct HistoryColumns: Equatable {
     var sha: CGFloat
     var showsDate = true
     var showsSHA = true
+    /// "2h", "1d" (ScreenNarrow < 1,180 pt).
+    var compactDates = false
+    /// The gray description after the subject (hidden under 860 pt).
+    var showsDescriptions = true
 
-    init(width: CGFloat, stored: ColumnWidths, automaticGraph: CGFloat) {
+    init(width: CGFloat, stored: ColumnWidths, automaticGraph: CGFloat, tier: NarrowTier = .wide) {
         ref = stored.ref
         graph = stored.graph > 0 ? stored.graph : automaticGraph
         date = stored.date
         sha = stored.sha
+        // The window folds in the Narrow board's order; the history's own width still decides
+        // when panels leave it little room.
+        if tier >= .shortDates {
+            compactDates = true
+            date = min(date, 58)
+        }
+        if tier >= .panelOverlay { ref = min(ref, 132) }
+        if tier >= .compact { showsDescriptions = false }
+        showsSHA = tier < .noHash
+        showsDate = tier < .compact
         guard width > 0 else { return }
-        showsSHA = width >= 734
-        showsDate = width >= 560
+        showsSHA = showsSHA && width >= 734
+        showsDate = showsDate && width >= 560
         if width < 520 { ref = min(ref, 124) }
     }
 }
@@ -318,7 +334,7 @@ private struct WorkingCopyRow: View {
                 .padding(.trailing, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if columns.showsDate {
-                    Text("Now")
+                    Text(columns.compactDates ? "now" : "Now")
                         .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
                         .frame(width: columns.date, alignment: .leading)
                 }
@@ -470,7 +486,7 @@ private struct CommitRow: View {
             HStack(spacing: 6) {
                 Text(commit.subject)
                     .layoutPriority(1)
-                if !commit.bodyPreview.isEmpty {
+                if columns.showsDescriptions, !commit.bodyPreview.isEmpty {
                     Text(commit.bodyPreview)
                         .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -487,7 +503,7 @@ private struct CommitRow: View {
                     .padding(.vertical, 5)
             }
             if columns.showsDate {
-                Text(Formatters.historyDate(commit.author.date))
+                Text(columns.compactDates ? Formatters.compactDate(commit.author.date) : Formatters.historyDate(commit.author.date))
                     .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
                     .frame(width: columns.date, alignment: .leading)
             }

@@ -11,6 +11,12 @@ nonisolated enum SettingsKey {
     static let onLaunch = "KaernOnLaunch"
     static let repositorySwitching = "KaernRepositorySwitching"
     static let groupFolders = "KaernGroupFolders"
+    /// Sidebar mode: the current branch under each repository's name.
+    static let listShowsBranch = "KaernListShowsBranch"
+    /// Sidebar mode: the list folds into icons under 1,100 pt.
+    static let listFoldsNarrow = "KaernListFoldsNarrow"
+    /// Toolbar mode: a count on the repository button when another repository needs you.
+    static let toolbarMarksAttention = "KaernToolbarMarksAttention"
     static let tabCharacters = "KaernTabCharacters"
     static let autoFetch = "KaernAutoFetch"
     static let autoFetchMinutes = "KaernAutoFetchMinutes"
@@ -67,6 +73,8 @@ enum ToolbarStyle: String, CaseIterable {
 
     /// The toolbar's height (`--chromeH` 44 / `.tb-text` 54).
     var height: CGFloat { self == .iconAndText ? 54 : 44 }
+    /// The toolbar as the title bar (Sidebar and Toolbar switching: `.titlebar .tool` 52 / 58).
+    var titleBarHeight: CGFloat { self == .iconAndText ? 58 : 52 }
 }
 
 /// How history loads (Advanced › Large repositories).
@@ -87,6 +95,11 @@ enum AppSettings {
     }
 
     static var groupsFolders: Bool { store.object(forKey: SettingsKey.groupFolders) as? Bool ?? true }
+
+    /// Tabs, a Sidebar list, or a repository button in the Toolbar (General › Switch repositories).
+    static var repositorySwitching: RepositorySwitching {
+        RepositorySwitching(rawValue: store.string(forKey: SettingsKey.repositorySwitching) ?? "") ?? .tabs
+    }
 
     /// Tabs shrink until about this many characters show (8, 12 or 16).
     static var tabCharacters: Int {
