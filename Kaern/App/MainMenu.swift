@@ -155,7 +155,9 @@ enum MainMenu {
             repository.openSearch()
             NotificationCenter.default.post(name: .kaernFocusSearch, object: repository.id)
         })
-        find.addItem(MenuAction.item("Find Next", key: "g", enabled: { repository?.search.matches.isEmpty == false }) {
+        find.addItem(MenuAction.item("Find Next", key: "g", enabled: {
+            repository?.search.matches.isEmpty == false || (repository?.search.olderMatches ?? 0) > 0
+        }) {
             repository?.stepSearch(1)
         })
         find.addItem(MenuAction.item("Find Previous", key: "g", modifiers: [.shift, .command],
@@ -210,6 +212,17 @@ enum MainMenu {
         let diffItem = NSMenuItem(title: "Diff Layout", action: nil, keyEquivalent: "")
         diffItem.submenu = diff
         menu.addItem(diffItem)
+        // ScreenBigRepo: runs of bot commits fold into one row.
+        let bots = NSMenu(title: "Bot Commits")
+        for (title, mode) in [("Collapse Runs", BotCommits.collapse), ("Show All", .show), ("Hide", .hide)] {
+            bots.addItem(MenuAction.item(title, checked: { AppSettings.botCommits == mode }) {
+                UserDefaults.kaern.set(mode.rawValue, forKey: SettingsKey.botCommits)
+                for model in AppModel.shared.openRepositories { model.rebuildGraph() }
+            })
+        }
+        let botsItem = NSMenuItem(title: "Bot Commits", action: nil, keyEquivalent: "")
+        botsItem.submenu = bots
+        menu.addItem(botsItem)
         menu.addItem(.separator())
         menu.addItem(system("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.control, .command]))
         return menu

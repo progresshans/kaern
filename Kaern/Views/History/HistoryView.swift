@@ -34,6 +34,9 @@ struct HistoryView: View {
             if !repository.picked.isEmpty {
                 SelectionBar(repository: repository)
             }
+            if repository.hasBotCommits {
+                BotBar(repository: repository)
+            }
             HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -51,24 +54,36 @@ struct HistoryView: View {
                         let headBranch = repository.status.branch
                         let picked = Set(repository.picked)
                         let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
-                        ForEach(Array(repository.commits.enumerated()), id: \.element.id) { index, commit in
+                        let shown = repository.displayCommits
+                        ForEach(Array(shown.enumerated()), id: \.element.id) { index, commit in
                             let graphIndex = index + offset
-                            CommitRow(
-                                commit: commit,
-                                graph: repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil,
-                                labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
-                                isAlternate: index % 2 == 1,
-                                isSelected: picked.isEmpty
-                                    ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
-                                    : picked.contains(commit.id),
-                                isDimmed: repository.search.isDimmed(commit.id),
-                                tint: CommitRow.Tint(comparison: comparison, id: commit.id),
-                                columns: columns
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture { click(commit.id) }
+                            let row = repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil
+                            Group {
+                                if let run = repository.botRuns[commit.id] {
+                                    // ScreenBigRepo: a run of bot commits as one row; the chevron opens it.
+                                    BotRunRow(run: run, graph: row, isAlternate: index % 2 == 1,
+                                              isDimmed: repository.search.isFiltering, columns: columns)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { repository.expandedRuns.insert(run.id) }
+                                } else {
+                                    CommitRow(
+                                        commit: commit,
+                                        graph: row,
+                                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
+                                        isAlternate: index % 2 == 1,
+                                        isSelected: picked.isEmpty
+                                            ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
+                                            : picked.contains(commit.id),
+                                        isDimmed: repository.search.isDimmed(commit.id),
+                                        tint: CommitRow.Tint(comparison: comparison, id: commit.id),
+                                        columns: columns
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { click(commit.id) }
+                                }
+                            }
                             .onAppear {
-                                if index >= repository.commits.count - 40 { repository.loadMoreHistory() }
+                                if index >= shown.count - 40 { repository.loadMoreHistory() }
                             }
                             .id(commit.id)
                         }
@@ -130,10 +145,11 @@ struct HistoryView: View {
         if !command, !shift { onPick() }
     }
 
-    /// ↑ / ↓ move the selection through the working copy and the commits.
+    /// ↑ / ↓ move the selection through the working copy and the commits (a folded run is
+    /// stepped over).
     private func move(_ step: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
         var ids: [HistorySelection] = repository.showsWorkingCopy ? [.workingCopy] : []
-        ids += repository.commits.map { .commit($0.id) }
+        ids += repository.displayCommits.filter { repository.botRuns[$0.id] == nil }.map { .commit($0.id) }
         guard !ids.isEmpty else { return .ignored }
         let current = ids.firstIndex(of: repository.selection) ?? (step > 0 ? -1 : ids.count)
         let next = min(max(current + step, 0), ids.count - 1)
@@ -617,5 +633,151 @@ extension RefLabelItem {
         case .remote: .remoteBranch(title)
         case .tag: .tag(title)
         }
+    }
+}
+
+// MARK: - Bot commits (ScreenBigRepo)
+
+/// `.bgbar`: Bots: Collapsed ▾, and how much was folded.
+private struct BotBar: View {
+    let repository: RepositoryModel
+    @AppStorage(SettingsKey.botCommits, store: .kaern) private var mode = BotCommits.collapse
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Menu {
+                Picker("Bot Commits", selection: $mode) {
+                    Text("Collapse Runs").tag(BotCommits.collapse)
+                    Text("Show All").tag(BotCommits.show)
+                    Text("Hide").tag(BotCommits.hide)
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Bots:").foregroundStyle(K.label2)
+                    Text(title).fontWeight(.semibold).foregroundStyle(K.label)
+                    Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
+                }
+                .font(.system(size: 11.5))
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(Capsule().fill(K.hover))
+                .contentShape(Capsule())
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            Spacer()
+            Text(summary).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(K.content)
+        .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
+        .onChange(of: mode) {
+            for model in AppModel.shared.openRepositories { model.rebuildGraph() }
+        }
+    }
+
+    private var title: String {
+        switch mode {
+        case .collapse: "Collapsed"
+        case .show: "Shown"
+        case .hide: "Hidden"
+        }
+    }
+
+    /// "212,408 commits · 207 bot commits folded into 13 rows".
+    private var summary: String {
+        let total = repository.totalCommitCount.map { Formatters.count($0, "commit", "commits") }
+            ?? "\(Formatters.count(repository.commits.count, "commit", "commits")) loaded"
+        switch mode {
+        case .collapse where repository.foldedBotCount > 0:
+            return "\(total) · \(repository.foldedBotCount.formatted()) bot commits folded into \(Formatters.count(repository.botRuns.count, "row", "rows"))"
+        case .hide where repository.hiddenBotCount > 0:
+            return "\(total) · \(Formatters.count(repository.hiddenBotCount, "bot commit", "bot commits")) hidden"
+        default:
+            return total
+        }
+    }
+}
+
+/// A folded run (`.row.grp`): the lane runs through a pill node, › and the title in the message
+/// column, the time it spans, and ×N where the hash goes.
+private struct BotRunRow: View {
+    let run: BotRun
+    let graph: GraphRow?
+    let isAlternate: Bool
+    let isDimmed: Bool
+    let columns: HistoryColumns
+    @State private var hovering = false
+
+    var body: some View {
+        let lane = graph?.lane ?? 0
+        HStack(spacing: 0) {
+            Color.clear.frame(width: columns.ref, height: KMetric.graphRow)
+            ZStack(alignment: .topLeading) {
+                if let graph { GraphLines(row: graph, height: KMetric.graphRow) }
+                // `.node.gnode`: a 20 × 12 pill with two dots, ringed in the lane color.
+                Capsule()
+                    .fill(K.content)
+                    .frame(width: 20, height: 12)
+                    .overlay(Capsule().strokeBorder(K.lane(lane), lineWidth: 1.5))
+                    .overlay {
+                        HStack(spacing: 4) {
+                            Circle().fill(K.lane(lane)).frame(width: 3, height: 3)
+                            Circle().fill(K.lane(lane)).frame(width: 3, height: 3)
+                        }
+                    }
+                    .background(Capsule().fill(isAlternate ? K.alt : K.content).padding(-3))
+                    .offset(x: GraphMetrics.x(lane: lane) - 10, y: KMetric.graphRow / 2 - 6)
+            }
+            .frame(width: columns.graph, height: KMetric.graphRow, alignment: .topLeading)
+            .clipped()
+            HStack(spacing: 7) {
+                Icon(Icons.arrowRight, size: 10).foregroundStyle(K.label2)
+                Text(run.title).fontWeight(.semibold).layoutPriority(1)
+                if columns.showsDescriptions {
+                    Text(run.detail).foregroundStyle(K.label2).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .truncationMode(.tail)
+            .padding(.leading, 12)
+            .padding(.trailing, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if columns.showsDate {
+                Text(dateRange)
+                    .foregroundStyle(K.label2)
+                    .frame(width: columns.date, alignment: .leading)
+            }
+            if columns.showsSHA {
+                Text("×\(run.count)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(K.label2)
+                    .padding(.horizontal, 6)
+                    .frame(height: 17)
+                    .background(Capsule().fill(K.hover))
+                    .frame(width: columns.sha, alignment: .leading)
+            }
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(K.label)
+        .lineLimit(1)
+        .frame(height: KMetric.graphRow)
+        .background { if hovering { ZStack { K.content; K.hover } } else { isAlternate ? K.alt : K.content } }
+        .onHover { hovering = $0 }
+        .opacity(isDimmed ? 0.3 : 1)
+        .help("\(run.title) — click to show each commit")
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows the \(run.count) commits")
+    }
+
+    /// "9m – 2h" (newest – oldest), one date when they're the same.
+    private var dateRange: String {
+        let newest = Formatters.compactDate(run.newest)
+        let oldest = Formatters.compactDate(run.oldest)
+        return newest == oldest ? newest : "\(newest) – \(oldest)"
     }
 }

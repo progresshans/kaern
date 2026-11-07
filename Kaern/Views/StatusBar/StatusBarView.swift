@@ -121,6 +121,11 @@ struct StatusBarView: View {
         } else if let branch = status.branch, !repository.remotes.isEmpty {
             parts.append("\(branch) isn’t published yet")
         }
+        // ScreenBigRepo: a slow status says so.
+        if repository.isStatusSlow, repository.fsmonitorOn == false, let duration = repository.statusDuration {
+            let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+            parts.append(String(format: "git status %.1f s", value))
+        }
         return parts.joined(separator: " · ")
     }
 }

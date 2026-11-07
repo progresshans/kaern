@@ -59,6 +59,10 @@ struct HistorySearch: Equatable {
     /// Matching loaded commits, newest first.
     private(set) var matches: [String] = []
     private(set) var matchSet: Set<String> = []
+    /// Matches git found in history that isn't loaded yet (stepping on loads it).
+    private(set) var olderMatches = 0
+    /// Loading older history toward the next match.
+    var isPaging = false
 
     var trimmedQuery: String { query.trimmingCharacters(in: .whitespaces) }
     /// The find bar is open with something typed: rows that don't match are dimmed.
@@ -71,6 +75,7 @@ struct HistorySearch: Equatable {
         guard isFiltering else {
             matches = []
             matchSet = []
+            olderMatches = 0
             return
         }
         let query = trimmedQuery
@@ -78,6 +83,7 @@ struct HistorySearch: Equatable {
         let git = gitKey == key ? gitMatches : []
         matches = commits.filter { Self.matches($0, query: query, scope: scope) || git.contains($0.id) }.map(\.id)
         matchSet = Set(matches)
+        olderMatches = git.subtracting(matchSet).count
     }
 
     /// What a loaded row shows is enough for these; full messages and paths come from git.
@@ -428,11 +434,25 @@ extension RepositoryModel {
         scheduleGitSearch()
     }
 
-    /// Return / ⇧Return: the next or previous match after the selection, wrapping around.
+    /// Return / ⇧Return: the next or previous match after the selection, wrapping around. Past
+    /// the last loaded match, older history loads until the next one git found.
     func stepSearch(_ direction: Int) {
         let matches = search.matches
-        guard !matches.isEmpty else { return }
+        guard !matches.isEmpty || search.olderMatches > 0 else { return }
         let order = commits.map(\.id)
+        if direction > 0, search.olderMatches > 0, hasMoreHistory {
+            let atEnd: Bool
+            if case .commit(let id) = selection, let at = matches.firstIndex(of: id) {
+                atEnd = at == matches.count - 1
+            } else {
+                atEnd = matches.isEmpty
+            }
+            if atEnd {
+                pageToNextMatch()
+                return
+            }
+        }
+        guard !matches.isEmpty else { return }
         let next: String
         if case .commit(let id) = selection, let at = matches.firstIndex(of: id) {
             next = matches[(at + direction + matches.count) % matches.count]
@@ -448,6 +468,24 @@ extension RepositoryModel {
         }
         selection = .commit(next)
         scrollRequest = ScrollRequest(id: next)
+    }
+
+    /// Loads older history (bigger pages) until a match git found shows up, then selects it.
+    func pageToNextMatch() {
+        guard !search.isPaging, search.gitKey == search.key else { return }
+        let before = search.matchSet
+        let targets = search.gitMatches.subtracting(before)
+        search.isPaging = true
+        Task {
+            defer { search.isPaging = false }
+            // Wait for a page that's loading anyway, then read on to the next match.
+            for _ in 0 ..< 100 where isLoadingMoreHistory { try? await Task.sleep(for: .milliseconds(20)) }
+            _ = await loadHistory(until: targets)
+            if let found = search.matches.first(where: { !before.contains($0) }) {
+                selection = .commit(found)
+                scrollRequest = ScrollRequest(id: found)
+            }
+        }
     }
 
     /// The position of the selected match ("3 of 12"), or `nil`.

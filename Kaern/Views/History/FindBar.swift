@@ -49,7 +49,7 @@ struct FindBar: View {
                 StepButton(icon: Icons.arrowLeft, label: "Previous match") { repository.stepSearch(-1) }
                 StepButton(icon: Icons.arrowRight, label: "Next match") { repository.stepSearch(1) }
             }
-            .disabled(search.matches.isEmpty)
+            .disabled(search.matches.isEmpty && search.olderMatches == 0)
             Text(countText)
                 .font(.system(size: 12))
                 .foregroundStyle(K.label2)
@@ -80,9 +80,12 @@ struct FindBar: View {
     private var countText: String {
         let search = repository.search
         guard search.isFiltering else { return "Type to search" }
-        if search.matches.isEmpty { return search.gitKey == search.key || !search.needsGit ? "No matches" : "Searching…" }
-        if let position = repository.searchPosition { return "\(position) of \(search.matches.count)" }
-        return search.matches.count == 1 ? "1 match" : "\(search.matches.count) matches"
+        if search.isPaging { return "Searching older history…" }
+        // Matches git found in history that isn't loaded yet count too; stepping on loads them.
+        let total = search.matches.count + search.olderMatches
+        if total == 0 { return search.gitKey == search.key || !search.needsGit ? "No matches" : "Searching…" }
+        if let position = repository.searchPosition { return "\(position) of \(total)" }
+        return total == 1 ? "1 match" : "\(total) matches"
     }
 }
 

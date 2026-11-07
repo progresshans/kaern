@@ -304,3 +304,153 @@ struct HostedRepositoryTests {
         #expect(projects.first?.updated != nil)
     }
 }
+
+@Suite("Big repositories")
+struct BigRepositoryTests {
+    static func repository(commits: Int) async throws -> GitRepository {
+        let repository = try await TestRepositories.make()
+        for index in 0 ..< commits {
+            try repository.write("\(index)\n", to: "f.txt")
+            try await repository.git(["add", "-A"])
+            // Commit dates one minute apart, so date order is unambiguous.
+            let date = "2026-01-01T00:\(String(format: "%02d", index / 60)):\(String(format: "%02d", index % 60))Z"
+            try await repository.git(["commit", "-q", "-m", "commit \(index)"], environment: ["GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date])
+        }
+        return repository
+    }
+
+    @Test func readsHistoryFromOneStreamAsItIsNeeded() async throws {
+        let repository = try await Self.repository(commits: 50)
+        defer { TestRepositories.remove(repository) }
+        let all = try await repository.log(skip: 0, limit: 1000, includeHEAD: true)
+        #expect(all.count == 50)
+
+        let events = EventLog()
+        let runner = GitRunner(executableURL: repository.runner.executableURL, extraEnvironment: [
+            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
+        ], onCommand: { events.append($0) })
+        let watched = GitRepository(root: repository.root, gitDirectory: repository.gitDirectory, runner: runner)
+        let stream = watched.historyStream()
+        let first = try await stream.next(10)
+        let second = try await stream.next(25)
+        #expect(first.map(\.id) == Array(all.prefix(10)).map(\.id))
+        #expect(second.map(\.id) == Array(all.dropFirst(10).prefix(25)).map(\.id))
+        // Between pages git waits on the pipe: one command, still running.
+        #expect(events.started == 1 && events.finished == 0)
+        #expect(!stream.isFinished)
+        let rest = try await stream.next(1000)
+        #expect(rest.map(\.id) == Array(all.dropFirst(35)).map(\.id))
+        #expect(stream.isFinished)
+        #expect(try await stream.next(10).isEmpty)
+        #expect(stream.count == 50)
+        #expect(events.started == 1 && events.finished == 1)
+        #expect(events.lastOutput == "50 commits read")
+
+        // A stream picks up where another stopped.
+        let resumed = repository.historyStream(skip: 40)
+        #expect(try await resumed.next(5).map(\.id) == Array(all.dropFirst(40).prefix(5)).map(\.id))
+        resumed.cancel()
+        #expect(resumed.isFinished)
+        #expect(try await resumed.next(5).isEmpty)
+    }
+}
+
+final class EventLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var startedCount = 0
+    private var finishedCount = 0
+    private var output = ""
+    func append(_ event: GitCommandEvent) {
+        lock.withLock {
+            switch event {
+            case .started: startedCount += 1
+            case .finished(let record): finishedCount += 1; output = record.output
+            case .progress: break
+            }
+        }
+    }
+    var started: Int { lock.withLock { startedCount } }
+    var finished: Int { lock.withLock { finishedCount } }
+    var lastOutput: String { lock.withLock { output } }
+}
+
+@Suite("Bot folding")
+struct BotFoldingTests {
+    static func commit(_ id: String, _ parents: [String], by author: String, _ subject: String, minutes: Int) -> Commit {
+        Commit(id: id + String(repeating: "0", count: 40 - id.count), parents: parents.map { $0 + String(repeating: "0", count: 40 - $0.count) },
+               author: Signature(name: author, email: author.hasSuffix("[bot]") ? "\(author)@users.noreply.github.com" : "x@kaern.invalid",
+                                 date: Date(timeIntervalSince1970: 1_800_000_000 - Double(minutes) * 60)),
+               subject: subject)
+    }
+
+    /// h1 ← b1 ← b2 ← b3 ← b4 ← h2 ← r1 ← r2 ← h3 (newest first; b = deployer bot, r = renovate)
+    static var history: [Commit] {
+        [
+            commit("aa01", ["bb01"], by: "Han Hyeonjin", "feat: staging overlay", minutes: 1),
+            commit("bb01", ["bb02"], by: "deployer[bot]", "build: automatic update of orders-api to 1.42.3", minutes: 2),
+            commit("bb02", ["bb03"], by: "deployer[bot]", "build: automatic update of orders-web to 2.0.1", minutes: 3),
+            commit("bb03", ["bb04"], by: "deployer[bot]", "build: automatic update of orders-api to 1.42.2", minutes: 4),
+            commit("bb04", ["aa02"], by: "deployer[bot]", "build: automatic update of powerlens-feed to 0.9", minutes: 5),
+            commit("aa02", ["cc01"], by: "Mina Park", "fix: gateway memory", minutes: 6),
+            commit("cc01", ["cc02"], by: "renovate[bot]", "chore(deps): update dependency ingress-nginx to v4.9", minutes: 7),
+            commit("cc02", ["aa03"], by: "renovate[bot]", "chore(deps): update helm release loki to v5", minutes: 8),
+            commit("aa03", [], by: "Han Hyeonjin", "first", minutes: 9),
+        ]
+    }
+
+    @Test func foldsARunOfOneBotIntoOneRow() throws {
+        let folded = BotFolding.fold(Self.history, mode: .collapse, keep: [])
+        #expect(folded.commits.map { String($0.id.prefix(4)) } == ["aa01", "bb01", "aa02", "cc01", "cc02", "aa03"])
+        let run = try #require(folded.runs[Self.history[1].id])
+        #expect(run.count == 4)
+        #expect(run.title == "4 updates by deployer[bot]")
+        #expect(run.detail == "orders-api · orders-web · powerlens-feed")
+        // The row stands for the run: the oldest one's parent, so the lane runs on to aa02.
+        #expect(folded.commits[1].parents == [Self.history[5].id])
+        #expect(folded.insideRun[Self.history[3].id] == Self.history[1].id)
+        #expect(folded.foldedCount == 4)
+        // Two renovate commits are under the minimum of three.
+        #expect(folded.runs.count == 1)
+        #expect(BotRun(commits: Array(Self.history[6...7]), bot: "renovate[bot]").title == "2 dependency updates by renovate[bot]")
+        #expect(BotRun(commits: Array(Self.history[6...7]), bot: "renovate[bot]").detail == "ingress-nginx · loki")
+    }
+
+    @Test func keepsRefsBranchPointsAndOpenRuns() {
+        // A ref on bb03 ends the run before it: bb01 bb02 are only two.
+        let withRef = BotFolding.fold(Self.history, mode: .collapse, keep: [Self.history[3].id])
+        #expect(withRef.runs.isEmpty)
+        // A branch that grew from bb03 splits the run there (its line needs bb03 to show):
+        // bb01 bb02 and bb03 bb04, each under three.
+        var branched = Self.history
+        branched.insert(Self.commit("dd01", ["bb03"], by: "Mina Park", "feat: from the middle", minutes: 0), at: 0)
+        #expect(BotFolding.fold(branched, mode: .collapse, keep: []).runs.isEmpty)
+        let pairs = BotFolding.fold(branched, mode: .collapse, keep: [], minimumRun: 2)
+        #expect(pairs.runs[Self.history[1].id]?.count == 2)
+        #expect(pairs.runs[Self.history[3].id]?.count == 2)
+        #expect(pairs.commits.contains { $0.id == Self.history[3].id })
+        // An opened run shows every commit.
+        let open = BotFolding.fold(Self.history, mode: .collapse, keep: [], expanded: [Self.history[1].id])
+        #expect(open.commits.count == Self.history.count)
+        #expect(BotFolding.fold(Self.history, mode: .show, keep: []).commits.count == Self.history.count)
+    }
+
+    @Test func hideLeavesBotsOutAndJoinsTheLines() {
+        let hidden = BotFolding.fold(Self.history, mode: .hide, keep: [])
+        #expect(hidden.commits.map { String($0.id.prefix(4)) } == ["aa01", "aa02", "aa03"])
+        #expect(hidden.commits[0].parents == [Self.history[5].id])
+        #expect(hidden.commits[1].parents == [Self.history[8].id])
+        #expect(hidden.hiddenCount == 6)
+        // The graph still has one lane from top to bottom.
+        var builder = CommitGraphBuilder()
+        builder.append(hidden.commits)
+        #expect(builder.rows.map(\.lane) == [0, 0, 0])
+    }
+
+    @Test func recognizesBots() {
+        func signature(_ name: String, _ email: String = "x@y") -> Signature { Signature(name: name, email: email, date: .now) }
+        #expect(BotFolding.isBot(signature("dependabot[bot]")))
+        #expect(BotFolding.isBot(signature("ci", "41898282+github-actions[bot]@users.noreply.github.com")))
+        #expect(BotFolding.isBot(signature("renovate")))
+        #expect(!BotFolding.isBot(signature("Robot Kim")))
+    }
+}

@@ -23,6 +23,12 @@ nonisolated enum SettingsKey {
     static let theme = "KaernTheme"
     /// Icon Only or Icon and Text (right-click the toolbar).
     static let toolbarStyle = "KaernToolbarStyle"
+    /// View › Bot Commits: collapse runs, show all, or hide (ScreenBigRepo).
+    static let botCommits = "KaernBotCommits"
+    /// How long `git status` may take before Kaern suggests Git's file system monitor (seconds).
+    static let slowStatusSeconds = "KaernSlowStatusSeconds"
+    /// Repositories where the fsmonitor suggestion was put away with Not Now.
+    static let fsmonitorDismissed = "KaernFSMonitorDismissed"
     /// Where Clone and Create New Repository put new folders (the last one used).
     static let projectsFolder = "KaernProjectsFolder"
     // Accounts
@@ -108,6 +114,14 @@ enum AppSettings {
     }
 
     static var autoFetch: Bool { store.object(forKey: SettingsKey.autoFetch) as? Bool ?? true }
+
+    static var botCommits: BotCommits { BotCommits(rawValue: store.string(forKey: SettingsKey.botCommits) ?? "") ?? .collapse }
+
+    /// `git status` slower than this suggests the file system monitor (1 s unless set).
+    static var slowStatus: Duration {
+        let value = store.double(forKey: SettingsKey.slowStatusSeconds)
+        return .milliseconds(Int((value > 0 ? value : 1.0) * 1000))
+    }
 
     /// 1, 5 or 15 minutes.
     static var autoFetchMinutes: Int {

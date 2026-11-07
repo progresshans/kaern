@@ -31,6 +31,37 @@ struct DetailsPanel: View {
 
 // MARK: - Working copy
 
+/// `.fstip` (ScreenBigRepo): git status is slow here; Git's file system monitor makes it quick.
+private struct FSMonitorCard: View {
+    let repository: RepositoryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(Text("git status takes \(seconds) in this repository.").bold()) Git’s file system monitor makes it close to instant.")
+                .font(.system(size: 12.5))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                PrimaryButton(title: "Turn On") { repository.from("File system monitor tip") { repository.turnOnFSMonitor() } }
+                    .disabled(repository.activity != nil)
+                GhostButton(title: "Not Now") { repository.dismissFSMonitorSuggestion() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.accentSoft)
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
+        .padding(EdgeInsets(top: 10, leading: 10, bottom: 0, trailing: 10))
+    }
+
+    private var seconds: String {
+        let duration = repository.statusDuration ?? .zero
+        let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        return String(format: "%.1f s", value)
+    }
+}
+
 private struct WorkingCopyPanel: View {
     @Bindable var repository: RepositoryModel
     @AppStorage(DiffPreferences.treeKey, store: .kaern) private var tree = false
@@ -40,6 +71,9 @@ private struct WorkingCopyPanel: View {
         let unstaged = entries.filter(\.hasUnstagedChanges)
         let staged = entries.filter(\.hasStagedChanges)
         VStack(alignment: .leading, spacing: 0) {
+            if repository.suggestsFSMonitor {
+                FSMonitorCard(repository: repository)
+            }
             header(count: entries.count)
             if entries.isEmpty {
                 VStack(spacing: 6) {

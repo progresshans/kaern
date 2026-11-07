@@ -122,6 +122,21 @@ final class RepositoryModel: Identifiable {
     private(set) var refs: RefSnapshot = .empty
     private(set) var tags: [TagInfo] = []
     private(set) var commits: [Commit] = []
+    /// What the graph shows: `commits` with runs of bot commits folded or left out (View › Bot
+    /// Commits). `graph` lines up with it.
+    private(set) var displayCommits: [Commit] = []
+    /// Folded runs by the id of their row, and which commits are inside one.
+    private(set) var botRuns: [String: BotRun] = [:]
+    private(set) var insideRun: [String: String] = [:]
+    private(set) var foldedBotCount = 0
+    private(set) var hiddenBotCount = 0
+    private(set) var hasBotCommits = false
+    /// Runs opened with their chevron.
+    var expandedRuns: Set<String> = [] {
+        didSet { if expandedRuns != oldValue { rebuildGraph() } }
+    }
+    /// Every commit in history (the bot bar's count), read when the bar shows.
+    var totalCommitCount: Int?
     private(set) var graph: [GraphRow] = []
     /// The history has a working-copy row on top (`graph[0]` is it).
     private(set) var showsWorkingCopy = false
@@ -144,6 +159,8 @@ final class RepositoryModel: Identifiable {
     var selection: HistorySelection = .workingCopy {
         didSet {
             guard selection != oldValue else { return }
+            // A commit inside a folded run of bot commits: the run opens.
+            if case .commit(let id) = selection, let run = insideRun[id] { expandedRuns.insert(run) }
             loadSelectionDetails()
             drawerPath = nil
             if review != nil { review?.path = nil }
@@ -293,11 +310,18 @@ final class RepositoryModel: Identifiable {
 
     static let pageSize = 400
 
-    /// The first history load: one page, or everything (Settings › Advanced › Large repositories).
-    static var firstLoadLimit: Int { AppSettings.historyLoading == .all ? 5_000_000 : pageSize }
 
     @ObservationIgnored private var runner: GitRunner?
     @ObservationIgnored private var watcher: FileSystemWatcher?
+    /// The `git log` the history reads more from as you scroll (one per visible repository).
+    @ObservationIgnored var historyStream: CommitStream?
+    @ObservationIgnored var allHistoryTask: Task<Void, Never>?
+    /// How long the last full `git status` took (the fsmonitor suggestion, the status bar).
+    var statusDuration: Duration?
+    /// `core.fsmonitor` is on here (read once a slow status makes it matter).
+    var fsmonitorOn: Bool?
+    /// Not Now on the fsmonitor suggestion (kept in the settings by folder).
+    private(set) var fsmonitorDismissed = false
     @ObservationIgnored private var pendingScope: ChangeScope = []
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lightTask: Task<Void, Never>?
@@ -309,10 +333,18 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private(set) var debugFullLoads = 0
     @ObservationIgnored private(set) var debugRefreshes = 0
     @ObservationIgnored private(set) var debugLightRefreshes = 0
+    /// How long loading steps took, in seconds (the debug dump's measurements).
+    @ObservationIgnored var debugTimings: [String: Double] = [:]
+
+    func noteTiming(_ name: String, since start: ContinuousClock.Instant) {
+        let elapsed = ContinuousClock.now - start
+        debugTimings[name] = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+    }
 
     init(path: String) {
         self.id = path
         self.path = path
+        fsmonitorDismissed = (UserDefaults.kaern.stringArray(forKey: SettingsKey.fsmonitorDismissed) ?? []).contains(path)
     }
 
     // MARK: Derived state
@@ -395,12 +427,14 @@ final class RepositoryModel: Identifiable {
     private func loadEverythingNow() async {
         guard let repository else { return }
         debugFullLoads += 1
+        let loadStart = ContinuousClock.now
         if phase != .ready { phase = .loading }
-        async let status = try? repository.status()
+        async let status = timedStatus(repository)
         async let refs = try? repository.refs()
         async let tags = try? repository.tags()
-        let limit = Self.firstLoadLimit
-        async let history = try? repository.log(skip: 0, limit: limit, includeHEAD: true)
+        let limit = Self.pageSize
+        let stream = restartHistoryStream(repository)
+        async let history = try? stream.next(limit)
         async let stashes = try? repository.stashes()
         async let worktrees = repository.worktrees()
         async let remotes = repository.remoteInfos()
@@ -422,10 +456,12 @@ final class RepositoryModel: Identifiable {
         runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
         if let loadedHistory {
             commits = loadedHistory
-            hasMoreHistory = loadedHistory.count == limit
+            hasMoreHistory = !stream.isFinished
         }
         rebuildGraph()
         phase = .ready
+        noteTiming("firstLoad", since: loadStart)
+        loadAllHistoryIfAsked()
         pendingScope = []
         await refreshBranchFacts()
         await refreshLineStats()
@@ -491,7 +527,13 @@ final class RepositoryModel: Identifiable {
     }
 
     private func visibilityChanged() {
-        guard isVisible else { return }
+        guard isVisible else {
+            // A tab in the background lets go of its git log; scrolling later starts a new one.
+            historyStream?.cancel()
+            historyStream = nil
+            allHistoryTask?.cancel()
+            return
+        }
         if noticeMissingFolder() { return }
         switch phase {
         case .light:
@@ -546,12 +588,14 @@ final class RepositoryModel: Identifiable {
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
-            let limit = AppSettings.historyLoading == .all ? Self.firstLoadLimit : max(Self.pageSize, min(commits.count, 4000))
-            async let history = try? repository.log(skip: 0, limit: limit, includeHEAD: true)
+            // As much history as was loaded (a refresh shouldn't shrink what you scrolled to).
+            let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
+            let stream = restartHistoryStream(repository)
+            async let history = try? stream.next(limit)
             async let stashes = try? repository.stashes()
             async let worktrees = repository.worktrees()
             async let remotes = repository.remoteInfos()
-            async let status = try? repository.status()
+            async let status = timedStatus(repository)
             if let status = await status {
                 self.status = status
                 statusIsFull = true
@@ -560,18 +604,20 @@ final class RepositoryModel: Identifiable {
             self.tags = await tags ?? self.tags
             if let history = await history {
                 commits = history
-                hasMoreHistory = history.count == limit
+                hasMoreHistory = !stream.isFinished
+                totalCommitCount = nil
             }
             self.stashes = await stashes ?? self.stashes
             self.worktrees = await worktrees
             self.remotes = await remotes
             lastFetch = repository.lastFetchDate
-        } else if let status = try? await repository.status() {
+        } else if let status = await timedStatus(repository) {
             self.status = status
             statusIsFull = true
         }
         operation = repository.operationState()
         rebuildGraph()
+        if scope.contains(.refs) { loadAllHistoryIfAsked() }
         await refreshBranchFacts()
         await refreshLineStats()
         diffsAreStale = true
@@ -657,34 +703,150 @@ final class RepositoryModel: Identifiable {
     /// How Pull pulls here: the repository's own setting, else Settings › General › Pull.
     var pullChoice: PullChoice { pullOverride ?? .app }
 
-    func loadMoreHistory() {
-        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready else { return }
+    /// The next page of history from the stream (a new one picks up where the last stopped).
+    @discardableResult
+    func loadMoreHistory(count: Int = RepositoryModel.pageSize) -> Task<Void, Never>? {
+        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready else { return nil }
         isLoadingMoreHistory = true
-        Task {
+        let task = Task {
             defer { isLoadingMoreHistory = false }
+            let start = ContinuousClock.now
+            let stream = historyStream ?? GitCommandTrigger.$current.withValue(.background("Scrolling the history")) {
+                repository.historyStream(skip: commits.count)
+            }
+            historyStream = stream
+            guard let page = try? await stream.next(count), historyStream === stream else { return }
+            noteTiming("pageRead", since: start)
+            appendHistory(page, finished: stream.isFinished)
+            noteTiming("page", since: start)
+        }
+        return task
+    }
+
+    private func appendHistory(_ page: [Commit], finished: Bool) {
+        let known = Set(commits.map(\.id))
+        commits.append(contentsOf: page.filter { !known.contains($0.id) })
+        hasMoreHistory = !finished
+        rebuildGraph()
+    }
+
+    /// Reads older history until one of `targets` is loaded (Search stepping past the loaded
+    /// commits): one read, one graph rebuild, however far it goes.
+    func loadHistory(until targets: Set<String>) async -> Bool {
+        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready, !targets.isEmpty else { return false }
+        isLoadingMoreHistory = true
+        defer { isLoadingMoreHistory = false }
+        let start = ContinuousClock.now
+        let stream: CommitStream
+        if let existing = historyStream {
+            stream = existing
+        } else {
             let skip = commits.count
-            guard let page = try? await GitCommandTrigger.$current.withValue(.background("Scrolling the history"), operation: {
-                try await repository.log(skip: skip, limit: Self.pageSize, includeHEAD: true)
-            }) else { return }
-            let known = Set(commits.map(\.id))
-            commits.append(contentsOf: page.filter { !known.contains($0.id) })
-            hasMoreHistory = page.count == Self.pageSize
-            rebuildGraph()
+            stream = GitCommandTrigger.$current.withValue(.background("Searching older history")) {
+                repository.historyStream(skip: skip)
+            }
+            historyStream = stream
+        }
+        var read: [Commit] = []
+        var found = false
+        while !found, !stream.isFinished, !Task.isCancelled {
+            guard let page = try? await stream.next(5_000), historyStream === stream else { break }
+            if page.isEmpty { break }
+            read += page
+            found = page.contains { targets.contains($0.id) }
+        }
+        appendHistory(read, finished: stream.isFinished)
+        noteTiming("searchPaging", since: start)
+        return found
+    }
+
+    /// A new `git log` stream for a first load or a refresh (the old one ends).
+    private func restartHistoryStream(_ repository: GitRepository) -> CommitStream {
+        historyStream?.cancel()
+        allHistoryTask?.cancel()
+        let stream = repository.historyStream()
+        historyStream = stream
+        return stream
+    }
+
+    /// Settings › Advanced › Load all history: the rest comes in the background, 5,000 at a time.
+    private func loadAllHistoryIfAsked() {
+        guard AppSettings.historyLoading == .all, hasMoreHistory else { return }
+        allHistoryTask?.cancel()
+        allHistoryTask = Task {
+            while !Task.isCancelled, hasMoreHistory, phase == .ready {
+                guard let task = loadMoreHistory(count: 5_000) else {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    continue
+                }
+                await task.value
+            }
         }
     }
 
-    private func rebuildGraph() {
+    /// `git status`, timed (a slow one suggests Git's file system monitor).
+    private func timedStatus(_ repository: GitRepository) async -> WorkingTreeStatus? {
+        let start = ContinuousClock.now
+        guard let status = try? await repository.status() else { return nil }
+        statusDuration = ContinuousClock.now - start
+        if fsmonitorOn == nil, isStatusSlow {
+            let value = await repository.config("core.fsmonitor")?.lowercased()
+            fsmonitorOn = value != nil && value != "false"
+        }
+        return status
+    }
+
+    /// `git status` took longer than it should (ScreenBigRepo's 2.8 s).
+    var isStatusSlow: Bool { (statusDuration ?? .zero) >= AppSettings.slowStatus }
+
+    /// The card that suggests Git's file system monitor: slow status, monitor off, not put away.
+    var suggestsFSMonitor: Bool { isStatusSlow && fsmonitorOn == false && !fsmonitorDismissed }
+
+    /// Turn On: `core.fsmonitor` and `core.untrackedCache` in this repository's config.
+    func turnOnFSMonitor() {
+        perform(.working("Turning on the file system monitor…"), trigger: "Turn On File System Monitor") { [weak self] repository in
+            try await repository.setLocalConfig("core.fsmonitor", "true")
+            try await repository.setLocalConfig("core.untrackedCache", "true")
+            self?.fsmonitorOn = true
+            self?.showToast("File system monitor on — git status gets quick after the next change")
+        }
+    }
+
+    /// Not Now: the card doesn't come back for this repository.
+    func dismissFSMonitorSuggestion() {
+        var dismissed = UserDefaults.kaern.stringArray(forKey: SettingsKey.fsmonitorDismissed) ?? []
+        if !dismissed.contains(path) { dismissed.append(path) }
+        UserDefaults.kaern.set(dismissed, forKey: SettingsKey.fsmonitorDismissed)
+        fsmonitorDismissed = true
+    }
+
+    func rebuildGraph() {
+        let rebuildStart = ContinuousClock.now
+        defer { noteTiming("rebuild", since: rebuildStart) }
         var builder = CommitGraphBuilder()
         showsWorkingCopy = !status.isClean
         if showsWorkingCopy {
             builder.appendWorkingCopy(head: status.headID)
         }
-        builder.append(commits)
+        // Bot runs fold around what must show: refs, HEAD and the selected commit.
+        var keep = Set(refs.refs.map(\.target))
+        if let head = status.headID { keep.insert(head) }
+        if case .commit(let id) = selection { keep.insert(id) }
+        let folded = BotFolding.fold(commits, mode: AppSettings.botCommits, keep: keep, expanded: expandedRuns)
+        displayCommits = folded.commits
+        botRuns = folded.runs
+        insideRun = folded.insideRun
+        foldedBotCount = folded.foldedCount
+        hiddenBotCount = folded.hiddenCount
+        if hasBotCommits != folded.hasBotCommits { hasBotCommits = folded.hasBotCommits }
+        if hasBotCommits, totalCommitCount == nil { countAllCommits() }
+        builder.append(displayCommits)
         graph = builder.rows
         if case .commit(let id) = selection, !commits.contains(where: { $0.id == id }) {
             selection = .workingCopy
         }
-        search.refreshLocalMatches(in: commits)
+        // Hide leaves bot commits out of the search too.
+        search.refreshLocalMatches(in: hiddenBotCount > 0 ? displayCommits : commits)
         headAncestors = Self.ancestors(of: status.headID, in: commits)
         let known = Set(commits.map(\.id))
         if picked.contains(where: { !known.contains($0) }) {
@@ -704,6 +866,17 @@ final class RepositoryModel: Identifiable {
             stack.append(contentsOf: commit.parents)
         }
         return seen.intersection(byID.keys)
+    }
+
+    /// The bot bar's "212,408 commits": once per load, in the background.
+    private func countAllCommits() {
+        guard let repository else { return }
+        Task {
+            let count = try? await GitCommandTrigger.$current.withValue(.background("Counting commits")) {
+                try await repository.commitCount("--all")
+            }
+            totalCommitCount = count
+        }
     }
 
     /// The loaded commit with `id`.
@@ -896,6 +1069,9 @@ final class RepositoryModel: Identifiable {
 
     /// Stops watching (the last tab showing this repository closed).
     func close() {
+        historyStream?.cancel()
+        historyStream = nil
+        allHistoryTask?.cancel()
         watcher?.stop()
         watcher = nil
         refreshTask?.cancel()

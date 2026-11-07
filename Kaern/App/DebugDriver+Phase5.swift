@@ -10,6 +10,7 @@ extension DebugDriver {
         "create", "createField", "createStart", "publishSheet", "windowSheetClose",
         "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
         "listFold", "repoPopover", "flyout", "overlayPanel",
+        "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -63,6 +64,25 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
+        case "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow":
+            guard let tab = window.activeTab else { return }
+            let repository = app.repository(for: tab.path)
+            switch command {
+            case "loadMore":
+                repository.loadMoreHistory(count: Int(args.first ?? "") ?? RepositoryModel.pageSize)
+            case "expandRun":
+                // expandRun <row index among the shown rows>
+                if let index = args.first.flatMap(Int.init), repository.displayCommits.indices.contains(index) {
+                    repository.expandedRuns.insert(repository.displayCommits[index].id)
+                }
+            case "botMode":
+                UserDefaults.kaern.set(args.first ?? "collapse", forKey: SettingsKey.botCommits)
+                for model in app.openRepositories { model.rebuildGraph() }
+            case "fsmonitorOn":
+                repository.turnOnFSMonitor()
+            default:
+                repository.dismissFSMonitorSuggestion()
+            }
         case "listFold":
             window.listFolded = args.first != "off"
         case "repoPopover":
@@ -174,6 +194,25 @@ extension DebugDriver {
             result["createdNote"] = repository.createdNote ?? ""
             result["publishBanner"] = repository.showsPublishBanner
             result["remotes"] = repository.remotes.map(\.name)
+            result["history"] = [
+                "commits": repository.commits.count,
+                "shown": repository.displayCommits.count,
+                "hasMore": repository.hasMoreHistory,
+                "loadingMore": repository.isLoadingMoreHistory,
+                "stream": repository.historyStream.map { "skip \($0.skipped) read \($0.count) finished \($0.isFinished)" } ?? "none",
+                "runs": repository.displayCommits.enumerated().compactMap { index, commit in
+                    repository.botRuns[commit.id].map { "\(index): \($0.title) — \($0.detail)" }
+                },
+                "folded": repository.foldedBotCount, "hidden": repository.hiddenBotCount, "hasBots": repository.hasBotCommits,
+                "total": repository.totalCommitCount ?? -1,
+                "statusSeconds": repository.statusDuration.map { Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 } ?? -1,
+                "fsmonitorOn": repository.fsmonitorOn.map { $0 ? "on" : "off" } ?? "unknown",
+                "suggestsFSMonitor": repository.suggestsFSMonitor,
+                "searchOlder": repository.search.olderMatches, "searchPaging": repository.search.isPaging,
+                "searchMatches": repository.search.matches.count,
+                "timings": repository.debugTimings,
+                "selection": { if case .commit(let id) = repository.selection { return repository.commits.first { $0.id == id }?.subject ?? id } else { return "wip" } }(),
+            ] as [String: Any]
         }
         let reposState = RepositoriesWindowController.shared.state
         result["repositories"] = [

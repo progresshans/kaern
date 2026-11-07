@@ -168,22 +168,7 @@ public struct GitRepository: Sendable, Hashable {
             "log", "--date-order", "-z", "--format=\(LogParser.format)",
             "--max-count=\(limit)", "--skip=\(skip)",
         ]
-        switch scope {
-        case .all(let hidden):
-            // `--exclude` applies to the `--branches` / `--remotes` that follows it, with names
-            // relative to refs/heads/ and refs/remotes/.
-            for ref in hidden where ref.hasPrefix("refs/heads/") {
-                arguments.append("--exclude=" + ref.dropFirst("refs/heads/".count))
-            }
-            arguments.append("--branches")
-            for ref in hidden where ref.hasPrefix("refs/remotes/") {
-                arguments.append("--exclude=" + ref.dropFirst("refs/remotes/".count))
-            }
-            arguments += ["--remotes", "--tags"]
-            if includeHEAD { arguments.append("HEAD") }
-        case .only(let ref):
-            arguments.append(ref)
-        }
+        arguments += Self.revisionArguments(for: scope, includeHEAD: includeHEAD)
         arguments.append("--")
         let output = try await git(arguments)
         return LogParser.parse(output.stdout)
