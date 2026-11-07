@@ -127,6 +127,54 @@ struct ConflictStashTests {
         #expect(after.map(\.date) == before.map(\.date))
     }
 
+    @Test func undoPopKeepsStagedAndUnstagedWork() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\ntwo\nthree\n", to: "a.txt")
+        try repository.write("c\n", to: "c.txt")
+        try await repository.commitAll("base")
+        try repository.write("one\nTWO (stash)\nthree\n", to: "a.txt")
+        try repository.write("C\n", to: "c.txt")
+        try await repository.git(["stash", "push", "-q", "-m", "work in progress"])
+        // Staged work in the file the stash changes: git still pops and stops on the conflict.
+        try repository.write("one\nTWO (staged)\nthree\n", to: "a.txt")
+        // The stash's change to c.txt staged as well, plus more not staged: git pops without touching it.
+        try repository.write("C\n", to: "c.txt")
+        try await repository.git(["add", "a.txt", "c.txt"])
+        try repository.write("C, not staged\n", to: "c.txt")
+        let stash = try #require(try await repository.stashes().first)
+        var caught: StashApplyConflict?
+        do { _ = try await repository.applyStashReportingConflicts(stash, pop: true) } catch let conflict as StashApplyConflict { caught = conflict }
+        let conflict = try #require(caught)
+        #expect(conflict.conflicted == ["a.txt"])
+        try await repository.takeBack(conflict)
+        #expect(await repository.unmergedPaths().isEmpty)
+        #expect(repository.read("a.txt") == "one\nTWO (staged)\nthree\n")
+        #expect(try await repository.git(["show", ":a.txt"]).text == "one\nTWO (staged)\nthree\n")
+        #expect(repository.read("c.txt") == "C, not staged\n")
+        #expect(try await repository.git(["show", ":c.txt"]).text == "C\n")
+        #expect(try await repository.stashes().count == 1)
+    }
+
+    @Test func aRenameThatStopsHalfwayPutsTheStashesBack() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("a\n", to: "a.txt")
+        try await repository.commitAll("base")
+        for name in ["first", "second", "third"] {
+            try repository.write("\(name)\n", to: "a.txt")
+            try await repository.git(["stash", "push", "-q", "-m", name])
+        }
+        let before = try await repository.stashes()
+        // git dropped the top two entries, then failed.
+        try await repository.git(["stash", "drop", "-q", "stash@{0}"])
+        try await repository.git(["stash", "drop", "-q", "stash@{0}"])
+        await repository.restoreMissingStashes(Array(before[...1]))
+        let after = try await repository.stashes()
+        #expect(after.map(\.id) == before.map(\.id))
+        #expect(after.map(\.message) == before.map(\.message))
+    }
+
     @Test func remoteAddressCanChange() async throws {
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }
