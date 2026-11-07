@@ -1,15 +1,37 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    /// Icon and Text toolbar (`.tb-text`): names under the icons, no pills.
+    @Entry var toolbarShowsText = false
+}
+
 /// A toolbar group (`.cap`): 30 pt tall, 9 pt corners, control fill with a hairline and the
-/// small control shadow.
+/// small control shadow. With names (`.tb-text .cap`): 46 pt, no fill.
 struct ToolbarCap<Content: View>: View {
     @ViewBuilder var content: Content
+    @Environment(\.toolbarShowsText) private var showsText
 
     var body: some View {
-        HStack(spacing: 0) { content }
-            .padding(.horizontal, 2)
-            .frame(height: 30)
-            .controlSurface(radius: 9)
+        if showsText {
+            HStack(spacing: 0) { content }
+                .frame(height: 46)
+        } else {
+            HStack(spacing: 0) { content }
+                .padding(.horizontal, 2)
+                .frame(height: 30)
+                .controlSurface(radius: 9)
+        }
+    }
+}
+
+/// `.tb-text .cap + .cap::before`: the hairline between groups when names show.
+struct ToolbarGroupSeparator: View {
+    @Environment(\.toolbarShowsText) private var showsText
+
+    var body: some View {
+        if showsText {
+            K.sepStrong.frame(width: 1, height: 22).padding(.horizontal, 2)
+        }
     }
 }
 
@@ -31,6 +53,8 @@ struct ToolbarButton: View {
     let icon: SVGIcon
     var iconSize: CGFloat = 16
     let name: String
+    /// The name under the icon in Icon and Text ("Undo" where the tooltip says "Undo Checkout develop").
+    var label: String?
     var shortcut: String?
     var tip: TipPlacement = .center
     var isOn = false
@@ -39,14 +63,23 @@ struct ToolbarButton: View {
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.toolbarShowsText) private var showsText
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Icon(icon, size: iconSize)
+            VStack(spacing: 4) {
+                Icon(icon, size: iconSize)
+                if showsText {
+                    Text(label ?? name)
+                        .font(.system(size: 10))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
                 .foregroundStyle(isOn ? K.accentText : K.label)
-                .padding(.horizontal, 8)
-                .frame(minWidth: 34)
+                .padding(.horizontal, showsText ? 6 : 8)
+                .frame(minWidth: showsText ? 46 : 34)
                 .frame(maxHeight: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)

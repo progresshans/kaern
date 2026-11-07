@@ -12,6 +12,8 @@ struct MainToolbar: View {
     let repository: RepositoryModel
 
     @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
+    /// Icon Only or Icon and Text (right-click the toolbar).
+    @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var style = ToolbarStyle.iconOnly
 
     var body: some View {
         let ready = repository.isReady
@@ -24,20 +26,23 @@ struct MainToolbar: View {
                     window.toggleSidebar()
                 }
             }
+            ToolbarGroupSeparator()
             ToolbarCap {
                 BranchButton(repository: repository, onNewBranch: askNewBranch, onOtherBranches: { window.showsQuickOpen = true })
             }
+            ToolbarGroupSeparator()
             ToolbarCap {
                 // Their tooltips say what they'd take back ("Undo Checkout develop").
-                ToolbarButton(icon: Icons.undo, name: repository.undoTitle, shortcut: "⌘Z", accessibilityLabel: repository.undoTitle) {
+                ToolbarButton(icon: Icons.undo, name: repository.undoTitle, label: "Undo", shortcut: "⌘Z", accessibilityLabel: repository.undoTitle) {
                     repository.from("Toolbar") { repository.undo() }
                 }
                 .disabled(!repository.canUndo)
-                ToolbarButton(icon: Icons.redo, name: repository.redoTitle, shortcut: "⇧⌘Z", accessibilityLabel: repository.redoTitle) {
+                ToolbarButton(icon: Icons.redo, name: repository.redoTitle, label: "Redo", shortcut: "⇧⌘Z", accessibilityLabel: repository.redoTitle) {
                     repository.from("Toolbar") { repository.redo() }
                 }
                 .disabled(!repository.canRedo)
             }
+            ToolbarGroupSeparator()
             ToolbarCap {
                 ToolbarButton(icon: Icons.fetch, name: "Fetch", shortcut: "⌥⌘F") { repository.from("Toolbar") { repository.fetch() } }
                     .disabled(!ready || busy || repository.remotes.isEmpty)
@@ -59,12 +64,13 @@ struct MainToolbar: View {
                     }
                 }
             }
+            ToolbarGroupSeparator()
             ToolbarCap {
                 ToolbarButton(icon: Icons.newBranch, name: "New Branch", shortcut: "⇧⌘N") { askNewBranch() }
                     .disabled(!ready || busy)
                 ToolbarButton(icon: Icons.stash(1.35), name: "Stash", shortcut: "⌥⌘S") { repository.from("Toolbar") { repository.stash() } }
                     .disabled(!ready || busy || repository.status.isClean)
-                ToolbarButton(icon: Icons.pop, name: "Pop Stash", shortcut: "⌥⇧⌘S") { repository.from("Toolbar") { repository.popStash() } }
+                ToolbarButton(icon: Icons.pop, name: "Pop Stash", label: "Pop", shortcut: "⌥⇧⌘S") { repository.from("Toolbar") { repository.popStash() } }
                     .disabled(!ready || busy || repository.stashes.isEmpty)
             }
             Spacer(minLength: 6)
@@ -79,6 +85,7 @@ struct MainToolbar: View {
                 }
                 .disabled(!ready)
             }
+            ToolbarGroupSeparator()
             ToolbarCap {
                 ToolbarButton(icon: Icons.search(1.3), name: "Search", shortcut: "⌘F", tip: .trailing, isOn: repository.search.isOpen) {
                     if repository.search.isOpen { repository.closeSearch() } else { repository.openSearch() }
@@ -90,8 +97,9 @@ struct MainToolbar: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: KMetric.toolbar)
+        .environment(\.toolbarShowsText, style == .iconAndText)
+        .padding(.horizontal, style == .iconAndText ? 8 : 10)
+        .frame(height: style.height)
         .frame(maxWidth: .infinity)
         .background {
             ZStack(alignment: .bottom) {
@@ -100,6 +108,15 @@ struct MainToolbar: View {
             }
             // The bar is window chrome: its empty space moves the window, like a title bar.
             .windowDragArea()
+            // Like any Mac app: right-click the toolbar to show names under the icons.
+            .contextMenu {
+                Picker("Toolbar", selection: $style) {
+                    Text("Icon Only").tag(ToolbarStyle.iconOnly)
+                    Text("Icon and Text").tag(ToolbarStyle.iconAndText)
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .kaernNewBranch)) { note in
             if (note.object as? UUID) == window.id { askNewBranch() }
@@ -182,6 +199,7 @@ private struct BranchButton: View {
     let onOtherBranches: () -> Void
     @State private var hovering = false
     @State private var anchor = MenuAnchor()
+    @Environment(\.toolbarShowsText) private var showsText
 
     var body: some View {
         Button {
@@ -189,21 +207,33 @@ private struct BranchButton: View {
             let menu = ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch, onOtherBranches: onOtherBranches)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
         } label: {
-            HStack(spacing: 6) {
-                Icon(Icons.branchToolbar, size: 15)
-                    .foregroundStyle(K.accent)
-                Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(K.label)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 252, alignment: .leading)
-                Icon(Icons.upDown, size: 9, height: 12)
-                    .foregroundStyle(K.label2)
+            VStack(spacing: 3) {
+                HStack(spacing: 6) {
+                    Icon(Icons.branchToolbar, size: 15)
+                        .foregroundStyle(K.accent)
+                    Text(title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(K.label)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 252, alignment: .leading)
+                    Icon(Icons.upDown, size: 9, height: 12)
+                        .foregroundStyle(K.label2)
+                }
+                if showsText {
+                    Text("Branch").font(.system(size: 10)).foregroundStyle(K.label2)
+                }
             }
             .padding(.horizontal, 10)
-            .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+            .frame(maxHeight: showsText ? 40 : .infinity)
+            .background {
+                // `.tb-text .cb.wide`: the branch keeps its pill when names show.
+                if showsText {
+                    Color.clear.controlSurface(radius: 9)
+                } else {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear)
+                }
+            }
             .contentShape(Rectangle())
             .background(MenuAnchorView(anchor: anchor))
         }

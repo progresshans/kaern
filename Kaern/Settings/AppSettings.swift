@@ -15,6 +15,8 @@ nonisolated enum SettingsKey {
     static let autoFetch = "KaernAutoFetch"
     static let autoFetchMinutes = "KaernAutoFetchMinutes"
     static let theme = "KaernTheme"
+    /// Icon Only or Icon and Text (right-click the toolbar).
+    static let toolbarStyle = "KaernToolbarStyle"
     // Accounts
     static let accounts = "KaernAccounts"
     // Diff
@@ -55,6 +57,14 @@ enum AppTheme: String, CaseIterable {
         case .dark: NSAppearance(named: .darkAqua)
         }
     }
+}
+
+/// The toolbar's look: icons in pills, or GitKraken-style icons with their names under them.
+enum ToolbarStyle: String, CaseIterable {
+    case iconOnly, iconAndText
+
+    /// The toolbar's height (`--chromeH` 44 / `.tb-text` 54).
+    var height: CGFloat { self == .iconAndText ? 54 : 44 }
 }
 
 /// How history loads (Advanced › Large repositories).

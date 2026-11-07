@@ -6,6 +6,7 @@ import SwiftUI
 /// on a shade, 14 pt under the toolbar, like the alerts.
 struct RepositorySheetHost: View {
     @Bindable var repository: RepositoryModel
+    var toolbarHeight: CGFloat = KMetric.toolbar
 
     var body: some View {
         if let sheet = repository.sheet {
@@ -29,7 +30,7 @@ struct RepositorySheetHost: View {
                     }
                 }
                 .id(sheet.id)
-                .padding(.top, sheet.isAttached ? KMetric.toolbar : KMetric.toolbar + 14)
+                .padding(.top, sheet.isAttached ? toolbarHeight : toolbarHeight + 14)
             }
             .transition(.opacity)
         }

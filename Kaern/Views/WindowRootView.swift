@@ -47,6 +47,7 @@ struct WindowRootView: View {
 struct RepositoryScreen: View {
     let window: WindowModel
     @Bindable var repository: RepositoryModel
+    @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
 
     var body: some View {
         // Focus hides both side panels without changing what Sidebar and Details are set to.
@@ -116,13 +117,13 @@ struct RepositoryScreen: View {
                         .contentShape(Rectangle())
                         .onTapGesture { window.showsQuickOpen = false }
                     QuickOpenPanel(repository: repository, window: window)
-                        .padding(.top, KMetric.toolbar + 50)
+                        .padding(.top, toolbarStyle.height + 50)
                 }
                 .transition(.opacity)
             }
         }
         .overlay {
-            RepositorySheetHost(repository: repository)
+            RepositorySheetHost(repository: repository, toolbarHeight: toolbarStyle.height)
         }
         .animation(.easeOut(duration: 0.15), value: repository.sheet?.id)
         .overlay {
@@ -132,10 +133,10 @@ struct RepositoryScreen: View {
                     AlertShade()
                     if let confirmation = repository.confirmation {
                         ConfirmationCard(confirmation: confirmation) { repository.confirmation = nil }
-                            .padding(.top, 58)
+                            .padding(.top, toolbarStyle.height + 14)
                     } else if let failure = repository.hookFailure {
                         HookFailureCard(repository: repository, failure: failure)
-                            .padding(.top, 58)
+                            .padding(.top, toolbarStyle.height + 14)
                     }
                 }
                 .transition(.opacity)
