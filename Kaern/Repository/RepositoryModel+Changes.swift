@@ -336,19 +336,20 @@ extension RepositoryModel {
     /// Loads the selection's diffs when a view shows them and they're out of date.
     func refreshDiffsIfNeeded() {
         let ignoreWhitespace = DiffPreferences.ignoresWhitespace
+        let context = AppSettings.diffContext
         if workingDiffsIgnoreWhitespace != ignoreWhitespace { diffsAreStale = true }
         guard diffViewers > 0, diffsAreStale, phase == .ready, let repository else { return }
         diffsAreStale = false
         diffTask?.cancel()
         if let compare = review?.compare {
-            let key = "\(compare.base):\(compare.target ?? "worktree"):\(ignoreWhitespace)"
+            let key = compareKey(compare)
             if compareDiffs?.key == key, compare.target != nil { return }
             diffTask = Task {
                 let diffs = await GitCommandTrigger.$current.withValue(.background("Review › Compare")) { () async -> [FileDiff] in
                     if let target = compare.target {
-                        return (try? await repository.diffs(from: compare.base, to: target, ignoringWhitespace: ignoreWhitespace)) ?? []
+                        return (try? await repository.diffs(from: compare.base, to: target, ignoringWhitespace: ignoreWhitespace, contextLines: context)) ?? []
                     }
-                    return (try? await repository.diffsToWorkingTree(from: compare.base, ignoringWhitespace: ignoreWhitespace)) ?? []
+                    return (try? await repository.diffsToWorkingTree(from: compare.base, ignoringWhitespace: ignoreWhitespace, contextLines: context)) ?? []
                 }
                 guard !Task.isCancelled else { return }
                 compareDiffs = (key, diffs)
@@ -357,17 +358,17 @@ extension RepositoryModel {
         }
         // Tasks made here keep the trigger, so the Command Log files these under Review.
         GitCommandTrigger.$current.withValue(.background(review == nil ? "Diff drawer" : "Review")) {
-            loadSelectionDiffs(repository: repository, ignoreWhitespace: ignoreWhitespace)
+            loadSelectionDiffs(repository: repository, ignoreWhitespace: ignoreWhitespace, context: context)
         }
     }
 
-    private func loadSelectionDiffs(repository: GitRepository, ignoreWhitespace: Bool) {
+    private func loadSelectionDiffs(repository: GitRepository, ignoreWhitespace: Bool, context: Int) {
         switch selection {
         case .workingCopy:
             let untracked = Array(status.entries.filter(\.isUntracked).prefix(300).map(\.path))
             diffTask = Task {
-                async let staged = try? repository.workingDiffs(staged: true, ignoringWhitespace: ignoreWhitespace)
-                async let unstaged = try? repository.workingDiffs(staged: false, ignoringWhitespace: ignoreWhitespace)
+                async let staged = try? repository.workingDiffs(staged: true, ignoringWhitespace: ignoreWhitespace, contextLines: context)
+                async let unstaged = try? repository.workingDiffs(staged: false, ignoringWhitespace: ignoreWhitespace, contextLines: context)
                 // Untracked files are read from disk, off the main thread.
                 let newFiles = await Task.detached { untracked.map { repository.untrackedFileDiff(path: $0) } }.value
                 var result: [String: WorkingFileDiff] = [:]
@@ -383,7 +384,7 @@ extension RepositoryModel {
             if commitDiffs?.id == id, commitDiffsIgnoreWhitespace == ignoreWhitespace { return }
             guard let commit = commits.first(where: { $0.id == id }) else { return }
             diffTask = Task {
-                let diffs = (try? await repository.diffs(of: commit, ignoringWhitespace: ignoreWhitespace)) ?? []
+                let diffs = (try? await repository.diffs(of: commit, ignoringWhitespace: ignoreWhitespace, contextLines: context)) ?? []
                 guard !Task.isCancelled else { return }
                 commitDiffs = (id, diffs)
                 commitDiffsIgnoreWhitespace = ignoreWhitespace
@@ -391,10 +392,11 @@ extension RepositoryModel {
         }
     }
 
-    /// Reloads the diffs (the white-space setting changed).
+    /// Reloads the diffs (the white-space or context setting changed).
     func reloadDiffs() {
         diffsAreStale = true
         commitDiffs = nil
+        compareDiffs = nil
         refreshDiffsIfNeeded()
     }
 

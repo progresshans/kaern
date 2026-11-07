@@ -33,7 +33,7 @@ struct FocusDrawer: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 let limit = expanded.contains(current.path) ? Int.max : 2_000
-                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit)) { item in
+                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit, words: AppSettings.diffWords)) { item in
                                     DiffRowView(item: item, repository: repository) { expanded.insert(current.path) }
                                 }
                             }
@@ -53,6 +53,7 @@ struct FocusDrawer: View {
         .background(K.inspector)
         .overlay(alignment: .top) { K.sepStrong.frame(height: 1) }
         .shadow(color: .black.opacity(0.06), radius: 9, y: -6)
+        .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
     }

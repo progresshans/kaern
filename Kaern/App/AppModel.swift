@@ -19,6 +19,8 @@ final class AppModel {
     private(set) var recent: [Session.RecentRepository] = []
     /// The window whose menu commands apply (the key window, or the last one that was).
     private(set) var activeWindow: MainWindowController?
+    /// Settings › Advanced › Use the SSH agent as this launch started git (changes apply next launch).
+    private(set) var launchUsesSSHAgent = true
 
     @ObservationIgnored private var repositories: [String: RepositoryModel] = [:]
     @ObservationIgnored private let store = SessionStore()
@@ -38,16 +40,26 @@ final class AppModel {
 
     /// Restores the last session (or opens one empty window) and locates git.
     func launch() {
-        let session = store.load()
+        var session = store.load()
         lastClosed = session.lastClosed
         recent = session.recent
 
+        // General › On launch: anything but "Reopen" keeps last time's front window behind the
+        // empty window's Reopen button instead of opening it.
+        let behavior = AppSettings.onLaunch
+        if behavior != .reopen, let front = session.windows.first(where: { !$0.tabs.isEmpty }) {
+            lastClosed = Session.ClosedWindow(window: front, date: .now)
+            session.windows = []
+        }
+
         // Back to front, so the first saved window ends up in front and key.
-        let states = session.windows.isEmpty ? [Session.WindowState(id: UUID())] : session.windows
-        for state in states.reversed() {
-            let model = WindowModel(state: state)
-            for tab in model.tabs { _ = repository(for: tab.path) }
-            addWindow(model)
+        if behavior != .nothing || !session.windows.isEmpty {
+            let states = session.windows.isEmpty ? [Session.WindowState(id: UUID())] : session.windows
+            for state in states.reversed() {
+                let model = WindowModel(state: state)
+                for tab in model.tabs { _ = repository(for: tab.path) }
+                addWindow(model)
+            }
         }
         updateVisibility()
         // Repositories open in the session belong in the recent list too.
@@ -58,15 +70,41 @@ final class AppModel {
                                                        groupColor: group?.color, lastOpened: .now))
             }
         }
+        observeSettings()
 
         Task {
             let userPath = UserDefaults.kaern.string(forKey: GitLocator.userPathKey)
             let resolution = await GitLocator.resolve(userPath: userPath)
             git = resolution
-            // Every command goes to Window › Command Log (secrets masked by KaernKit).
-            runner = GitRunner(executableURL: resolution.url, onCommand: { CommandLog.receive($0) })
+            launchUsesSSHAgent = AppSettings.usesSSHAgent
+            // Every command goes to Window › Command Log (secrets masked by KaernKit). Without the
+            // SSH agent (Settings › Advanced), git and ssh don't see SSH_AUTH_SOCK.
+            runner = GitRunner(executableURL: resolution.url,
+                               removedEnvironment: launchUsesSSHAgent ? [] : ["SSH_AUTH_SOCK"],
+                               onCommand: { CommandLog.receive($0) })
             Self.log.info("Using git at \(resolution.url.path(percentEncoded: false), privacy: .public) (\(resolution.source.rawValue, privacy: .public)), version \(resolution.version ?? "unknown", privacy: .public)")
             startRepositories()
+        }
+    }
+
+    /// Settings that running parts of Kaern pick up right away.
+    private func observeSettings() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: .kaernSettingsChanged, object: nil, queue: .main) { [weak self] note in
+            let key = note.object as? String
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if key == SettingsKey.watchFiles {
+                    for model in self.repositories.values { model.updateWatching() }
+                }
+            }
+        }
+        // Without the file watcher (Settings › Advanced), coming back to Kaern refreshes.
+        center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !AppSettings.watchesFiles else { return }
+                for model in self.repositories.values where model.isVisible { model.refreshAfterActivation() }
+            }
         }
     }
 
@@ -115,9 +153,17 @@ final class AppModel {
     }
 
     func newWindow() {
-        let controller = addWindow(WindowModel())
+        _ = newWindowModel()
+    }
+
+    /// Opens an empty window in front and returns its model.
+    @discardableResult
+    func newWindowModel() -> WindowModel {
+        let model = WindowModel()
+        let controller = addWindow(model)
         controller.window?.makeKeyAndOrderFront(nil)
         scheduleSave()
+        return model
     }
 
     func windowBecameKey(_ controller: MainWindowController) {

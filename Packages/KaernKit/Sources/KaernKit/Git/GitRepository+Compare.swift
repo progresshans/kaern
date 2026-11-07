@@ -62,9 +62,10 @@ extension GitRepository {
 
     /// Every file's diff between `commit` and the working tree (`git diff <commit>`). Untracked
     /// files aren't in it.
-    public func diffsToWorkingTree(from commit: String, ignoringWhitespace: Bool = false) async throws -> [FileDiff] {
+    public func diffsToWorkingTree(from commit: String, ignoringWhitespace: Bool = false, contextLines: Int = 3) async throws -> [FileDiff] {
         var arguments = ["diff", "--no-ext-diff", "-M"]
         if ignoringWhitespace { arguments.append("-w") }
+        arguments += Self.contextArguments(contextLines)
         arguments += [commit, "--"]
         let output = try await git(arguments)
         return DiffParser.parse(output.stdout).map { diff in

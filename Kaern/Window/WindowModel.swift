@@ -165,9 +165,36 @@ final class WindowModel: Identifiable {
             let tab = RepoTab(id: UUID(), path: path, group: nil)
             tabs.append(tab)
             last = tab.id
+            if AppSettings.groupsFolders { groupWithFolderSiblings(tab.id) }
         }
         if select, let last { activate(last, notify: false) }
         changed()
+    }
+
+    /// Settings › General › Group repositories from the same folder: a new tab joins the group
+    /// that holds most tabs from its folder, or starts one named after the folder with the
+    /// other tabs from there.
+    private func groupWithFolderSiblings(_ id: UUID) {
+        guard let tab = tab(id) else { return }
+        let folder = (tab.path as NSString).deletingLastPathComponent
+        guard !Self.isHomeLevel(folder) else { return }
+        let siblings = tabs.filter { $0.id != id && ($0.path as NSString).deletingLastPathComponent == folder }
+        guard !siblings.isEmpty else { return }
+        let counts = Dictionary(grouping: siblings.compactMap(\.group), by: { $0 }).mapValues(\.count)
+        if let best = counts.max(by: { $0.value < $1.value })?.key, group(best) != nil {
+            add(id, to: best)
+        } else {
+            let used = Set(groups.map(\.color))
+            let color = GroupColor.allCases.first { !used.contains($0) } ?? GroupColor.allCases[groups.count % GroupColor.allCases.count]
+            newGroup(named: tab.parentName, color: color, with: siblings.map(\.id) + [id])
+        }
+    }
+
+    /// Folders that hold unrelated projects (~, ~/Developer, ~/Documents…) don't make groups.
+    private static func isHomeLevel(_ folder: String) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false).trimmingTrailingSlash
+        if folder == home || folder == "/" { return true }
+        return (folder as NSString).deletingLastPathComponent == home
     }
 
     func activate(_ id: UUID) {

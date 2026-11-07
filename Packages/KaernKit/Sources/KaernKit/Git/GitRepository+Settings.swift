@@ -128,4 +128,15 @@ extension GitRunner {
         let value = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
+
+    /// Writes `key` to the user's global config (`git config --global`), or removes it when
+    /// `value` is `nil` (Settings › Git).
+    public func setGlobalConfig(_ key: String, _ value: String?) async throws {
+        if let value {
+            try await run(["config", "--global", key, value], in: nil)
+        } else {
+            // Exit status 5: the key wasn't set.
+            try await run(["config", "--global", "--unset-all", key], in: nil, acceptedStatus: [0, 5])
+        }
+    }
 }

@@ -4,9 +4,10 @@ import Foundation
 
 extension GitRepository {
     /// Every file's diff between two commits in one git call (`base` `nil`: everything in
-    /// `target`, as for a root commit). `ignoringWhitespace` is `git diff -w`.
-    public func diffs(from base: String?, to target: String, ignoringWhitespace: Bool = false) async throws -> [FileDiff] {
-        let whitespace = ignoringWhitespace ? ["-w"] : []
+    /// `target`, as for a root commit). `ignoringWhitespace` is `git diff -w`; `contextLines`
+    /// is how many unchanged lines surround each change (`-U`, git's default 3).
+    public func diffs(from base: String?, to target: String, ignoringWhitespace: Bool = false, contextLines: Int = 3) async throws -> [FileDiff] {
+        let whitespace = (ignoringWhitespace ? ["-w"] : []) + Self.contextArguments(contextLines)
         let arguments: [String]
         if let base {
             arguments = ["diff", "--no-ext-diff", "-M"] + whitespace + [base, target, "--"]
@@ -22,17 +23,23 @@ extension GitRepository {
     }
 
     /// Every file's diff of `commit` against its first parent.
-    public func diffs(of commit: Commit, ignoringWhitespace: Bool = false) async throws -> [FileDiff] {
-        try await diffs(from: commit.parents.first, to: commit.id, ignoringWhitespace: ignoringWhitespace)
+    public func diffs(of commit: Commit, ignoringWhitespace: Bool = false, contextLines: Int = 3) async throws -> [FileDiff] {
+        try await diffs(from: commit.parents.first, to: commit.id, ignoringWhitespace: ignoringWhitespace, contextLines: contextLines)
+    }
+
+    /// `-U<n>` when `lines` isn't git's default.
+    static func contextArguments(_ lines: Int) -> [String] {
+        lines == 3 || lines < 0 ? [] : ["-U\(lines)"]
     }
 
     /// Staged (`git diff --cached`: HEAD → index) or unstaged (`git diff`: index → work tree)
     /// changes of every tracked file, in one git call. Untracked files aren't in it; see
     /// ``untrackedFileDiff(path:limit:)``.
-    public func workingDiffs(staged: Bool, ignoringWhitespace: Bool = false) async throws -> [FileDiff] {
+    public func workingDiffs(staged: Bool, ignoringWhitespace: Bool = false, contextLines: Int = 3) async throws -> [FileDiff] {
         var arguments = ["diff", "--no-ext-diff", "-M"]
         if staged { arguments.append("--cached") }
         if ignoringWhitespace { arguments.append("-w") }
+        arguments += Self.contextArguments(contextLines)
         arguments.append("--")
         let output = try await git(arguments)
         return DiffParser.parse(output.stdout).map { diff in

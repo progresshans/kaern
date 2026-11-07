@@ -60,6 +60,8 @@ nonisolated enum K {
     static let delGut = dynamic(rgba(255, 59, 48, 0.17), rgba(255, 69, 58, 0.22))
     static let mod = dynamic(0xa14d00, 0xffb340)
     static let modBg = dynamic(rgba(217, 119, 6, 0.15), rgba(255, 159, 10, 0.18))
+    static let addWord = dynamic(rgba(40, 167, 69, 0.28), rgba(48, 209, 88, 0.3))    // changed words
+    static let delWord = dynamic(rgba(255, 59, 48, 0.22), rgba(255, 69, 58, 0.32))
     static let hunk = dynamic(0xf0f4fa, 0x222b37)
     static let hunkText = dynamic(0x36557f, 0x9db6d8)
     static let emptyA = dynamic(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.045))

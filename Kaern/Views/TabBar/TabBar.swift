@@ -8,6 +8,8 @@ struct TabBar: View {
     @Environment(AppModel.self) private var app
 
     @State private var hovered: UUID?
+    /// Read so the strip lays out again when Settings changes how far tabs shrink.
+    @AppStorage(SettingsKey.tabCharacters, store: .kaern) private var tabCharacters = 12
     @State private var press: Press?
     @State private var drag: TabDrag?
     @State private var scrollPosition = ScrollPosition(x: 0)

@@ -5,12 +5,13 @@ import AppKit
 /// - A tab's natural width is its label at the selected tab's weight plus chrome, capped at
 ///   220 pt (200 pt inside a group).
 /// - When the strip is short, tabs shrink in proportion to their width (CSS `flex: 0 1 auto`),
-///   but never below the width that still shows about 12 characters (all of a short name).
+///   but never below the width that still shows about 12 characters (all of a short name;
+///   Settings › General › Tabs picks 8, 12 or 16).
 /// - When even that doesn't fit, tabs stay at that width and the strip scrolls, with ‹ ›.
 enum TabStripLayout {
     static let tabMax: CGFloat = 220
     static let memberMax: CGFloat = 200
-    static let readableCharacters: CGFloat = 12
+    @MainActor static var readableCharacters: CGFloat { CGFloat(AppSettings.tabCharacters) }
     /// Board: label padding 12 + 4, slot 18, tab padding 5.
     static let tabChrome: CGFloat = 39
     /// Free space kept at the end of the strip (also a place to drag the window).

@@ -63,7 +63,7 @@ struct ReviewFile: Identifiable, Equatable {
 extension RepositoryModel {
     /// Matches the key `refreshDiffsIfNeeded` stores the compare diffs under.
     func compareKey(_ compare: CompareRange) -> String {
-        "\(compare.base):\(compare.target ?? "worktree"):\(DiffPreferences.ignoresWhitespace)"
+        "\(compare.base):\(compare.target ?? "worktree"):\(DiffPreferences.ignoresWhitespace):\(AppSettings.diffContext)"
     }
 
     /// The files Review and the Focus drawer show for the selection, in order. `nil` while the
@@ -132,23 +132,27 @@ extension RepositoryModel {
     }
 }
 
+/// Changed character ranges of a line (Settings › Diff › Highlight the changed words).
+typealias WordMarks = [Range<Int>]
+
 /// One line of a rendered diff (flattened, so a long file scrolls lazily).
 enum DiffRowItem: Identifiable {
     case header(ReviewHunk)
-    case unified(String, DiffLine, ReviewHunk)
-    case split(String, left: DiffLine?, right: DiffLine?, hunk: ReviewHunk)
+    case unified(String, DiffLine, ReviewHunk, marks: WordMarks?)
+    case split(String, left: DiffLine?, right: DiffLine?, hunk: ReviewHunk, leftMarks: WordMarks?, rightMarks: WordMarks?)
     case note(String, String)
     case more(String, hidden: Int)
 
     var id: String {
         switch self {
         case .header(let hunk): "h:" + hunk.id
-        case .unified(let id, _, _), .split(let id, _, _, _), .note(let id, _), .more(let id, _): id
+        case .unified(let id, _, _, _), .split(let id, _, _, _, _, _), .note(let id, _), .more(let id, _): id
         }
     }
 
     /// Rows of one file: at most `limit` rows of lines, and a "Show More" row for the rest.
-    static func rows(for file: ReviewFile, layout: DiffLayout, limit: Int) -> [DiffRowItem] {
+    /// `words`: mark the changed words of edited lines.
+    static func rows(for file: ReviewFile, layout: DiffLayout, limit: Int, words: Bool = false) -> [DiffRowItem] {
         if let note = file.note { return [.note(file.path + ":note", note)] }
         var rows: [DiffRowItem] = []
         var budget = limit
@@ -158,11 +162,12 @@ enum DiffRowItem: Identifiable {
             guard budget > 0 else { break }
             rows.append(.header(hunk))
             let prefix = hunk.id + ":"
+            let marks = words ? InlineDiff.highlights(for: hunk.hunk.lines.map { ($0.id, $0.kind, $0.text) }) : [:]
             switch layout {
             case .unified:
                 for line in hunk.hunk.lines {
                     guard budget > 0 else { break hunks }
-                    rows.append(.unified(prefix + "\(line.id)", line, hunk))
+                    rows.append(.unified(prefix + "\(line.id)", line, hunk, marks: marks[line.id]))
                     budget -= 1
                     consumed += 1
                 }
@@ -175,7 +180,8 @@ enum DiffRowItem: Identifiable {
                     for row in 0..<max(deletions.count, additions.count) where budget > 0 {
                         let left = row < deletions.count ? deletions[row] : nil
                         let right = row < additions.count ? additions[row] : nil
-                        rows.append(.split(prefix + "p\(index)", left: left, right: right, hunk: hunk))
+                        rows.append(.split(prefix + "p\(index)", left: left, right: right, hunk: hunk,
+                                           leftMarks: left.flatMap { marks[$0.id] }, rightMarks: right.flatMap { marks[$0.id] }))
                         index += 1
                         budget -= 1
                         consumed += (left == nil ? 0 : 1) + (right == nil ? 0 : 1)
@@ -190,7 +196,7 @@ enum DiffRowItem: Identifiable {
                     case .context:
                         flush()
                         guard budget > 0 else { break hunks }
-                        rows.append(.split(prefix + "p\(index)", left: line, right: line, hunk: hunk))
+                        rows.append(.split(prefix + "p\(index)", left: line, right: line, hunk: hunk, leftMarks: nil, rightMarks: nil))
                         index += 1
                         budget -= 1
                         consumed += 1
@@ -240,10 +246,10 @@ struct DiffRowView: View {
         switch item {
         case .header(let hunk):
             HunkHeaderRow(hunk: hunk, repository: repository)
-        case .unified(_, let line, let hunk):
-            UnifiedLineRow(line: line, hunk: hunk, picking: picking)
-        case .split(_, let left, let right, let hunk):
-            SplitLineRow(left: left, right: right, hunk: hunk, picking: picking)
+        case .unified(_, let line, let hunk, let marks):
+            UnifiedLineRow(line: line, hunk: hunk, picking: picking, marks: marks)
+        case .split(_, let left, let right, let hunk, let leftMarks, let rightMarks):
+            SplitLineRow(left: left, right: right, hunk: hunk, picking: picking, leftMarks: leftMarks, rightMarks: rightMarks)
         case .note(_, let text):
             Text(text)
                 .font(.system(size: 12))
@@ -342,6 +348,8 @@ private struct UnifiedLineRow: View {
     let line: DiffLine
     let hunk: ReviewHunk
     let picking: LinePicking?
+    var marks: WordMarks?
+    @Environment(\.diffStyle) private var style
 
     var body: some View {
         let colors = DiffColors(kind: line.kind)
@@ -356,18 +364,66 @@ private struct UnifiedLineRow: View {
             Text(line.kind == .addition ? "+" : line.kind == .deletion ? "−" : "")
                 .foregroundStyle(line.kind == .addition ? K.add : K.del)
                 .frame(width: 18)
-            Text(line.kind == .noNewline ? "No newline at end of file" : displayText(line.text))
-                .foregroundStyle(line.kind == .noNewline ? K.label2 : K.code)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            DiffLineText(text: line.kind == .noNewline ? "No newline at end of file" : line.text, kind: line.kind,
+                         marks: marks, color: line.kind == .noNewline ? K.label2 : K.code)
                 .padding(.trailing, 16)
         }
-        .font(.system(size: 12, design: .monospaced))
-        .lineSpacing(4)
+        .font(style.font)
+        .lineSpacing(style.lineSpacing)
         .frame(minHeight: 20)
         .background(picked ? K.accentSoft : colors.line)
         .overlay(alignment: .leading) { if picked { K.accent.frame(width: 3) } }
         .pickable(pick, picking: picking)
+    }
+}
+
+/// A line's text: wrapped or on one line (Settings › Diff › Wrap long lines), with its changed
+/// words marked.
+struct DiffLineText: View {
+    let text: String
+    let kind: DiffLine.Kind
+    var marks: WordMarks?
+    var color: Color = K.code
+    @Environment(\.diffStyle) private var style
+
+    var body: some View {
+        content
+            .foregroundStyle(color)
+            .lineLimit(style.wraps ? nil : 1)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(style.wraps ? "" : text)
+    }
+
+    private var content: Text {
+        let shown = displayText(text)
+        guard let marks, !marks.isEmpty, kind == .addition || kind == .deletion else { return Text(shown) }
+        var attributed = AttributedString(shown)
+        let characters = Array(shown)
+        // Ranges count Characters of the raw text; tabs became four spaces.
+        let offsets = Self.displayOffsets(text)
+        for range in marks {
+            let lower = offsets[min(range.lowerBound, offsets.count - 1)]
+            let upper = offsets[min(range.upperBound, offsets.count - 1)]
+            guard lower < upper, upper <= characters.count else { continue }
+            let start = attributed.index(attributed.startIndex, offsetByCharacters: lower)
+            let end = attributed.index(attributed.startIndex, offsetByCharacters: upper)
+            attributed[start..<end].backgroundColor = kind == .addition ? K.addWord : K.delWord
+        }
+        return Text(attributed)
+    }
+
+    /// Where each raw character starts in the shown text (one past the end last).
+    private static func displayOffsets(_ text: String) -> [Int] {
+        var offsets: [Int] = []
+        var position = 0
+        for character in text {
+            offsets.append(position)
+            if character == "\t" { position += 4 } else if character == "\r" { continue } else { position += 1 }
+        }
+        offsets.append(position)
+        return offsets
     }
 }
 
@@ -378,20 +434,23 @@ private struct SplitLineRow: View {
     let right: DiffLine?
     let hunk: ReviewHunk
     let picking: LinePicking?
+    var leftMarks: WordMarks?
+    var rightMarks: WordMarks?
+    @Environment(\.diffStyle) private var style
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            side(left, number: left?.oldNumber, changed: left?.kind == .deletion)
+            side(left, number: left?.oldNumber, changed: left?.kind == .deletion, marks: leftMarks)
             K.sep.frame(width: 1)
-            side(right, number: right?.newNumber, changed: right?.kind == .addition)
+            side(right, number: right?.newNumber, changed: right?.kind == .addition, marks: rightMarks)
         }
-        .font(.system(size: 12, design: .monospaced))
-        .lineSpacing(4)
+        .font(style.font)
+        .lineSpacing(style.lineSpacing)
         .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
-    private func side(_ line: DiffLine?, number: Int?, changed: Bool) -> some View {
+    private func side(_ line: DiffLine?, number: Int?, changed: Bool, marks: WordMarks?) -> some View {
         if let line {
             let colors = DiffColors(kind: changed ? line.kind : .context)
             let pick = changed ? picking?.pick(for: line, in: hunk) : nil
@@ -401,10 +460,7 @@ private struct SplitLineRow: View {
                 if picking != nil {
                     StagedMark(shows: changed && hunk.stage == .staged)
                 }
-                Text(displayText(line.text))
-                    .foregroundStyle(K.code)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                DiffLineText(text: line.text, kind: changed ? line.kind : .context, marks: changed ? marks : nil)
                     .padding(.leading, picking == nil ? 8 : 2)
                     .padding(.trailing, 12)
             }
@@ -420,7 +476,7 @@ private struct SplitLineRow: View {
 }
 
 /// A line number in its gutter; bold accent on the accent tint when the line is picked.
-private struct LineNumber: View {
+struct LineNumber: View {
     let number: Int?
     let width: CGFloat
     let trailing: CGFloat
@@ -465,7 +521,7 @@ private extension View {
 }
 
 /// Line and gutter colors of a diff line.
-private struct DiffColors {
+struct DiffColors {
     let line: Color
     let gutter: Color
 
@@ -485,7 +541,7 @@ private struct DiffColors {
 }
 
 /// The empty side of a split row: 5 pt diagonal stripes every 10 pt (`.sd.empty`).
-private struct StripeFill: View {
+struct StripeFill: View {
     var body: some View {
         Canvas { context, size in
             let step: CGFloat = 10 * 2.0.squareRoot()
@@ -577,4 +633,37 @@ struct FilePathText: View {
         .font(.system(size: size))
         .lineLimit(1)
     }
+}
+
+// MARK: - Diff settings
+
+/// How diffs are drawn (Settings › Diff): font, wrapping, changed-word marks.
+struct DiffStyle {
+    var font: Font = .system(size: 12, design: .monospaced)
+    var lineSpacing: CGFloat = 4
+    var wraps = true
+    var words = true
+}
+
+extension EnvironmentValues {
+    @Entry var diffStyle = DiffStyle()
+}
+
+/// Reads the diff settings and hands them to the rows below.
+struct DiffSettingsReader: ViewModifier {
+    @AppStorage(SettingsKey.diffWrap, store: .kaern) private var wraps = true
+    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
+    @AppStorage(SettingsKey.diffFontName, store: .kaern) private var fontName = ""
+    @AppStorage(SettingsKey.diffFontSize, store: .kaern) private var fontSize = 12.0
+
+    func body(content: Content) -> some View {
+        _ = (fontName, fontSize)
+        let font = AppSettings.diffFont
+        let size = font.pointSize
+        return content.environment(\.diffStyle, DiffStyle(font: Font(font), lineSpacing: max(2, 20 - size * 1.33), wraps: wraps, words: words))
+    }
+}
+
+extension View {
+    func diffSettings() -> some View { modifier(DiffSettingsReader()) }
 }

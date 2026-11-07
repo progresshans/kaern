@@ -244,6 +244,9 @@ final class RepositoryModel: Identifiable {
 
     static let pageSize = 400
 
+    /// The first history load: one page, or everything (Settings › Advanced › Large repositories).
+    static var firstLoadLimit: Int { AppSettings.historyLoading == .all ? 5_000_000 : pageSize }
+
     @ObservationIgnored private var runner: GitRunner?
     @ObservationIgnored private var watcher: FileSystemWatcher?
     @ObservationIgnored private var pendingScope: ChangeScope = []
@@ -315,7 +318,7 @@ final class RepositoryModel: Identifiable {
                 try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
             }
             self.repository = repository
-            startWatching(repository)
+            if AppSettings.watchesFiles { startWatching(repository) }
             if isVisible {
                 await loadEverything()
             } else {
@@ -342,7 +345,8 @@ final class RepositoryModel: Identifiable {
         async let status = try? repository.status()
         async let refs = try? repository.refs()
         async let tags = try? repository.tags()
-        async let history = try? repository.log(skip: 0, limit: Self.pageSize, includeHEAD: true)
+        let limit = Self.firstLoadLimit
+        async let history = try? repository.log(skip: 0, limit: limit, includeHEAD: true)
         async let stashes = try? repository.stashes()
         async let worktrees = repository.worktrees()
         async let remotes = repository.remoteInfos()
@@ -362,7 +366,7 @@ final class RepositoryModel: Identifiable {
         lastFetch = repository.lastFetchDate
         if let loadedHistory {
             commits = loadedHistory
-            hasMoreHistory = loadedHistory.count == Self.pageSize
+            hasMoreHistory = loadedHistory.count == limit
         }
         rebuildGraph()
         phase = .ready
@@ -385,6 +389,27 @@ final class RepositoryModel: Identifiable {
         }
         watcher.start()
         self.watcher = watcher
+    }
+
+    /// Settings › Advanced › File changes was switched: start or stop watching.
+    func updateWatching() {
+        guard let repository else { return }
+        if AppSettings.watchesFiles {
+            if watcher == nil {
+                startWatching(repository)
+                refreshAfterActivation()
+            }
+        } else {
+            watcher?.stop()
+            watcher = nil
+        }
+    }
+
+    /// Without the file watcher: everything is checked when Kaern comes back to the front.
+    func refreshAfterActivation() {
+        guard repository != nil, phase == .ready || phase == .light else { return }
+        pendingScope.formUnion([.refs, .workTree, .index])
+        if isVisible, phase == .ready { runPendingRefresh(trigger: "Kaern became active") } else { scheduleLightRefresh() }
     }
 
     private func filesChanged(_ paths: [String]) {
@@ -452,7 +477,8 @@ final class RepositoryModel: Identifiable {
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
-            async let history = try? repository.log(skip: 0, limit: max(Self.pageSize, min(commits.count, 4000)), includeHEAD: true)
+            let limit = AppSettings.historyLoading == .all ? Self.firstLoadLimit : max(Self.pageSize, min(commits.count, 4000))
+            async let history = try? repository.log(skip: 0, limit: limit, includeHEAD: true)
             async let stashes = try? repository.stashes()
             async let worktrees = repository.worktrees()
             async let remotes = repository.remoteInfos()
@@ -464,7 +490,6 @@ final class RepositoryModel: Identifiable {
             self.refs = await refs ?? self.refs
             self.tags = await tags ?? self.tags
             if let history = await history {
-                let limit = max(Self.pageSize, min(commits.count, 4000))
                 commits = history
                 hasMoreHistory = history.count == limit
             }

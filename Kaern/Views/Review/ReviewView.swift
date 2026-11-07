@@ -7,6 +7,7 @@ import SwiftUI
 struct ReviewView: View {
     @Bindable var repository: RepositoryModel
     @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
+    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     /// Files whose "Show More Lines" was clicked: how many lines they show.
     @State private var limits: [String: Int] = [:]
 
@@ -41,6 +42,7 @@ struct ReviewView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: repository.linePicks.isEmpty)
+        .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
         .onChange(of: repository.selection) { limits = [:] }
@@ -74,7 +76,7 @@ struct ReviewView: View {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                         ForEach(shown) { file in
                             Section {
-                                let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit)
+                                let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
                                 let picking = picking(for: file)
                                 ForEach(rows) { item in
                                     DiffRowView(item: item, repository: repository, picking: picking) {

@@ -25,9 +25,9 @@ final class DebugDriver {
         }
     }
 
-    private var app: AppModel { AppModel.shared }
-    private var controller: MainWindowController? { app.activeWindow ?? app.windows.last }
-    private var window: WindowModel? { controller?.model }
+    var app: AppModel { AppModel.shared }
+    var controller: MainWindowController? { app.activeWindow ?? app.windows.last }
+    var window: WindowModel? { controller?.model }
 
     func run(_ line: String) {
         let parts = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -101,6 +101,8 @@ final class DebugDriver {
              "commandLog", "commandLogFilter", "commandLogSelect", "snapshotAll", "snapshotWindow", "compareWorking", "toast", "rename",
              "tag", "stopCommit", "hookAction":
             phase3(command, args)
+        case _ where DebugDriver.phase4Commands.contains(command):
+            phase4(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -644,7 +646,7 @@ final class DebugDriver {
         return image
     }
 
-    private func render(_ target: NSWindow, to path: String) {
+    func render(_ target: NSWindow, to path: String) {
         guard let view = target.contentView?.superview else { return }
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
