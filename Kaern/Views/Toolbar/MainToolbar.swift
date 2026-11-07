@@ -10,7 +10,7 @@ struct MainToolbar: View {
     let window: WindowModel
     let repository: RepositoryModel
 
-    @AppStorage("KaernPullStrategy") private var pullStrategy = PullChoice.fastForwardIfPossible
+    @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
     @State private var newBranchName = ""
     @State private var asksNewBranch = false
 

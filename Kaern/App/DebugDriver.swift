@@ -213,12 +213,12 @@ final class DebugDriver {
         case "searchStep":
             repository.stepSearch(Int(args.first ?? "1") ?? 1)
         case "diff":
-            UserDefaults.standard.set(args.first == "unified" ? "unified" : "split", forKey: DiffPreferences.layoutKey)
+            UserDefaults.kaern.set(args.first == "unified" ? "unified" : "split", forKey: DiffPreferences.layoutKey)
         case "whitespace":
-            UserDefaults.standard.set(args.first == "on", forKey: DiffPreferences.ignoreWhitespaceKey)
+            UserDefaults.kaern.set(args.first == "on", forKey: DiffPreferences.ignoreWhitespaceKey)
             repository.reloadDiffs()
         case "tree":
-            UserDefaults.standard.set(args.first == "on", forKey: DiffPreferences.treeKey)
+            UserDefaults.kaern.set(args.first == "on", forKey: DiffPreferences.treeKey)
         case "stage":
             repository.stage([rest])
         case "unstage":
@@ -243,7 +243,7 @@ final class DebugDriver {
         case "column":
             // column ref|graph|date|sha <width>
             let keys = ["ref": "KaernColumnRef", "graph": "KaernColumnGraph", "date": "KaernColumnDate", "sha": "KaernColumnSHA"]
-            if args.count == 2, let key = keys[args[0]], let value = Double(args[1]) { UserDefaults.standard.set(value, forKey: key) }
+            if args.count == 2, let key = keys[args[0]], let value = Double(args[1]) { UserDefaults.kaern.set(value, forKey: key) }
         case "scroll":
             // scroll <commit index>
             if let index = args.first.flatMap(Int.init), repository.commits.indices.contains(index) {
@@ -882,6 +882,8 @@ final class DebugDriver {
             "windows": windows,
             "lastClosedTabs": app.lastClosed?.window.tabs.count ?? 0,
             "recent": app.recent.map(\.name),
+            // Kaern's settings as this instance reads them: launch arguments over its own store.
+            "settings": UserDefaults.kaern.dictionaryRepresentation().filter { $0.key.hasPrefix("Kaern") }.mapValues { "\($0)" },
         ]
         if let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(filePath: path))

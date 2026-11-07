@@ -183,7 +183,7 @@ enum MainMenu {
             diffLayout = diffLayout == .split ? .unified : .split
         })
         diff.addItem(MenuAction.item("Ignore Whitespace", checked: { DiffPreferences.ignoresWhitespace }) {
-            UserDefaults.standard.set(!DiffPreferences.ignoresWhitespace, forKey: DiffPreferences.ignoreWhitespaceKey)
+            UserDefaults.kaern.set(!DiffPreferences.ignoresWhitespace, forKey: DiffPreferences.ignoreWhitespaceKey)
             repository?.reloadDiffs()
         })
         let diffItem = NSMenuItem(title: "Diff Layout", action: nil, keyEquivalent: "")
@@ -200,7 +200,7 @@ enum MainMenu {
                                     enabled: { isIdle && repository?.remotes.isEmpty == false }) { repository?.from("Repository menu") { repository?.fetch() } })
         menu.addItem(MenuAction.item("Pull", key: arrow(NSDownArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.status.upstream != nil }) {
-            let choice = PullChoice(rawValue: UserDefaults.standard.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
+            let choice = PullChoice(rawValue: UserDefaults.kaern.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
             repository?.from("Repository menu") { repository?.pull(choice.strategy) }
         })
         menu.addItem(MenuAction.item("Push", key: arrow(NSUpArrowFunctionKey), modifiers: [.option, .command],
@@ -342,8 +342,8 @@ enum MainMenu {
 
     /// Split or Unified for every diff (View › Diff Layout).
     private static var diffLayout: DiffLayout {
-        get { DiffLayout(rawValue: UserDefaults.standard.string(forKey: DiffPreferences.layoutKey) ?? "") ?? .split }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: DiffPreferences.layoutKey) }
+        get { DiffLayout(rawValue: UserDefaults.kaern.string(forKey: DiffPreferences.layoutKey) ?? "") ?? .split }
+        set { UserDefaults.kaern.set(newValue.rawValue, forKey: DiffPreferences.layoutKey) }
     }
 
     private static func windowMenu() -> NSMenu {

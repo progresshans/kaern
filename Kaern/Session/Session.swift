@@ -68,7 +68,8 @@ struct SessionStore {
 
     #if DEBUG
     /// The `-KaernSessionFile <path>` launch argument: a test session in place of the real one.
-    /// Only an instance on a test session takes debug commands (see `AppDelegate`).
+    /// Only an instance on a test session takes debug commands (see `AppDelegate`), and it keeps
+    /// its own settings (see `UserDefaults.kaern`).
     static var testSessionPath: String? {
         guard let custom = UserDefaults.standard.string(forKey: "KaernSessionFile"), !custom.isEmpty else { return nil }
         return custom

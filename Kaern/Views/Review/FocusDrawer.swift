@@ -6,7 +6,7 @@ import SwiftUI
 struct FocusDrawer: View {
     @Bindable var repository: RepositoryModel
     let close: () -> Void
-    @AppStorage(DiffPreferences.layoutKey) private var layout = DiffLayout.split
+    @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
     @State private var expanded: Set<String> = []
 
     var body: some View {

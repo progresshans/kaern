@@ -33,7 +33,7 @@ struct DetailsPanel: View {
 
 private struct WorkingCopyPanel: View {
     @Bindable var repository: RepositoryModel
-    @AppStorage(DiffPreferences.treeKey) private var tree = false
+    @AppStorage(DiffPreferences.treeKey, store: .kaern) private var tree = false
 
     var body: some View {
         let entries = repository.status.entries

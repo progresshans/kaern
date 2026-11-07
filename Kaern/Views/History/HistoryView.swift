@@ -13,10 +13,10 @@ struct HistoryView: View {
 
     @State private var width: CGFloat = 0
     @FocusState private var listFocused: Bool
-    @AppStorage("KaernColumnRef") private var storedRef: Double = ColumnWidths.defaultRef
-    @AppStorage("KaernColumnGraph") private var storedGraph: Double = 0
-    @AppStorage("KaernColumnDate") private var storedDate: Double = ColumnWidths.defaultDate
-    @AppStorage("KaernColumnSHA") private var storedSHA: Double = ColumnWidths.defaultSHA
+    @AppStorage("KaernColumnRef", store: .kaern) private var storedRef: Double = ColumnWidths.defaultRef
+    @AppStorage("KaernColumnGraph", store: .kaern) private var storedGraph: Double = 0
+    @AppStorage("KaernColumnDate", store: .kaern) private var storedDate: Double = ColumnWidths.defaultDate
+    @AppStorage("KaernColumnSHA", store: .kaern) private var storedSHA: Double = ColumnWidths.defaultSHA
 
     private var columns: HistoryColumns {
         HistoryColumns(

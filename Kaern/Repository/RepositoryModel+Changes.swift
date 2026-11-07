@@ -484,7 +484,7 @@ enum DiffPreferences {
     static let ignoreWhitespaceKey = "KaernIgnoreWhitespace"
     static let treeKey = "KaernFileTree"
 
-    static var ignoresWhitespace: Bool { UserDefaults.standard.bool(forKey: ignoreWhitespaceKey) }
+    static var ignoresWhitespace: Bool { UserDefaults.kaern.bool(forKey: ignoreWhitespaceKey) }
 }
 
 enum DiffLayout: String {

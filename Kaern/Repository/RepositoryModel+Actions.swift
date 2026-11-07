@@ -394,7 +394,7 @@ extension RepositoryModel {
     /// Pull on a branch: the current one pulls; another one fast-forwards to its upstream.
     func pull(branch name: String) {
         if name == status.branch {
-            let choice = PullChoice(rawValue: UserDefaults.standard.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
+            let choice = PullChoice(rawValue: UserDefaults.kaern.string(forKey: "KaernPullStrategy") ?? "") ?? .fastForwardIfPossible
             pull(choice.strategy)
             return
         }

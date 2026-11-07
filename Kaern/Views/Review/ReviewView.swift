@@ -6,7 +6,7 @@ import SwiftUI
 /// one file at a time, Split (default) or Unified. Working-copy hunks can be staged here.
 struct ReviewView: View {
     @Bindable var repository: RepositoryModel
-    @AppStorage(DiffPreferences.layoutKey) private var layout = DiffLayout.split
+    @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
     /// Files whose "Show More Lines" was clicked: how many lines they show.
     @State private var limits: [String: Int] = [:]
 

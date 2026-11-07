@@ -60,7 +60,7 @@ final class AppModel {
         }
 
         Task {
-            let userPath = UserDefaults.standard.string(forKey: GitLocator.userPathKey)
+            let userPath = UserDefaults.kaern.string(forKey: GitLocator.userPathKey)
             let resolution = await GitLocator.resolve(userPath: userPath)
             git = resolution
             // Every command goes to Window › Command Log (secrets masked by KaernKit).
