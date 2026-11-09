@@ -41,7 +41,7 @@ struct FailureHelp {
             return FailureHelp(
                 message: "\(remote ?? "The remote") has commits your branch doesn’t have yet. Pull them first, then push again.",
                 fixTitle: repository == nil ? nil : "Pull",
-                fix: repository.map { model in { model.from("Command Log") { model.pull(model.pullChoice.strategy) } } },
+                fix: repository.map { model in { model.pullWithItsSetting(from: "Command Log") } },
                 short: "pull first")
         case .conflicts(let files):
             return FailureHelp(

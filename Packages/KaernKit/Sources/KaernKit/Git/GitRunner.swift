@@ -242,7 +242,11 @@ public struct GitRunner: Sendable {
             let limit = finished.isBackground ? GitRunner.recordedOutputLimit / 10 : GitRunner.recordedOutputLimit
             finished.status = output.status
             finished.duration = ContinuousClock.now - start
-            finished.output = GitRedaction.redact(String(decoding: output.stdout.prefix(limit), as: UTF8.self))
+            // A credential helper's answer is the secret itself (and fields masking can't know,
+            // like a refresh token): the Command Log never keeps it.
+            finished.output = GitRunner.subcommand(of: arguments) == "credential"
+                ? (output.stdout.isEmpty ? "" : "(not kept: a credential helper’s answer)")
+                : GitRedaction.redact(String(decoding: output.stdout.prefix(limit), as: UTF8.self))
             finished.errorOutput = GitRedaction.redact(String(decoding: output.stderr.prefix(limit), as: UTF8.self))
             finished.isOutputCut = output.stdout.count > limit || output.stderr.count > limit
             finished.wasStopped = result.wasStopped

@@ -118,14 +118,8 @@ extension RepositoryModel {
                 showToast(contents.isMissingLFSContent ? "\(file.name) isn’t downloaded · Download it first" : "\(file.name) is too big for Quick Look")
                 return
             }
-            let folder = FileManager.default.temporaryDirectory
-                .appending(path: "Kaern Quick Look", directoryHint: .isDirectory)
-                .appending(path: String(UUID().uuidString.prefix(8)), directoryHint: .isDirectory)
             do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                let url = folder.appending(path: (path as NSString).lastPathComponent)
-                try data.write(to: url)
-                quickLookURL = url
+                quickLookURL = try QuickLookCopies.make(data, name: (path as NSString).lastPathComponent)
             } catch {
                 showToast("Couldn’t open Quick Look: \(error.localizedDescription)")
             }
@@ -238,11 +232,42 @@ extension RepositoryModel {
     }
 
     /// Update to Recorded: checks out, inside the submodule, the commit this repository records.
+    /// When no branch in the submodule holds what's checked out there, those commits would be
+    /// left behind, so it asks first. ⌘Z checks out what the submodule had before.
     func updateSubmoduleToRecorded(_ submodulePath: String, label: String) {
-        perform(.working("Checking out \(label) in \(submodulePath)…"), trigger: "Update \(submodulePath) to Recorded") { repository in
-            try await repository.updateSubmodule(submodulePath)
-        } onSuccess: { [weak self] in
-            self?.showToast("\(submodulePath) is at \(label) again")
+        guard let repository, activity == nil else { return }
+        Task { [weak self] in
+            let behind = await repository.submoduleCommitsOnNoBranch(submodulePath)
+            guard let self else { return }
+            guard !behind.isEmpty else {
+                updateSubmoduleNow(submodulePath, label: label)
+                return
+            }
+            let them = behind.count == 1 ? "it" : "them"
+            confirmation = Confirmation(
+                title: "Leave \(Formatters.count(behind.count, "commit", "commits")) in \(submodulePath) on no branch?",
+                message: "No branch or tag in \(submodulePath) has \(behind.count == 1 ? "this commit" : "these commits"). Checking out "
+                    + "\(label) leaves \(them) where only Git’s reflog finds \(them); ⌘Z checks \(them) out again.",
+                lost: behind,
+                note: "Return cancels. To keep \(them) under a name, open the submodule and make a branch first.",
+                confirmTitle: "Update to \(label)",
+                confirm: { [weak self] in self?.updateSubmoduleNow(submodulePath, label: label) }
+            )
+        }
+    }
+
+    private func updateSubmoduleNow(_ submodulePath: String, label: String) {
+        let action = "Update \(submodulePath) to \(label)"
+        perform(.working("Checking out \(label) in \(submodulePath)…"), trigger: "Update \(submodulePath) to Recorded") { [weak self] repository in
+            let before = await repository.submodulePosition(submodulePath)
+            try await repository.checkOutRecordedSubmodule(submodulePath)
+            guard let self else { return }
+            var step: ReversibleStep?
+            if let before, let after = await repository.submoduleHead(submodulePath), before.commit != after || before.branch != nil {
+                step = .submoduleCheckout(label: action, path: submodulePath,
+                                          from: before.branch.map { .branch($0) } ?? .detached(before.commit), to: after)
+            }
+            self.record(step, toast: "\(submodulePath) is at \(label) again")
         }
     }
 
@@ -251,5 +276,42 @@ extension RepositoryModel {
         let url = URL(filePath: path, directoryHint: .isDirectory).appending(path: submodulePath, directoryHint: .isDirectory)
         guard let window = AppModel.shared.activeWindow?.model else { return }
         AppModel.shared.open([url], in: window)
+    }
+}
+
+/// Copies of file versions for Quick Look, which needs a file (an older version, an LFS file's
+/// content). Each new copy removes the one before it, quitting removes the last, and copies an
+/// earlier run left behind go at launch.
+@MainActor
+enum QuickLookCopies {
+    static let folder = FileManager.default.temporaryDirectory.appending(path: "Kaern Quick Look", directoryHint: .isDirectory)
+    private static var last: URL?
+
+    static func make(_ data: Data, name: String) throws -> URL {
+        removeLast()
+        let place = folder.appending(path: String(UUID().uuidString.prefix(8)), directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+        let url = place.appending(path: name)
+        try data.write(to: url)
+        last = place
+        return url
+    }
+
+    static func removeLast() {
+        if let last { try? FileManager.default.removeItem(at: last) }
+        last = nil
+    }
+
+    /// Copies more than a day old (another Kaern that's open may be showing a newer one).
+    static func removeOld() {
+        let fileManager = FileManager.default
+        guard let items = try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else {
+            return
+        }
+        let dayAgo = Date.now.addingTimeInterval(-86_400)
+        for item in items {
+            let date = (try? item.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if date < dayAgo { try? fileManager.removeItem(at: item) }
+        }
     }
 }

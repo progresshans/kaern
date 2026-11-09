@@ -351,8 +351,9 @@ struct BigRepositoryTests {
         let resumed = repository.historyStream(skip: 40)
         #expect(try await resumed.next(5).map(\.id) == Array(all.dropFirst(40).prefix(5)).map(\.id))
         resumed.cancel()
-        #expect(resumed.isFinished)
-        #expect(try await resumed.next(5).isEmpty)
+        // Stopped isn't the end of history, and a stopped stream gives nothing more.
+        #expect(!resumed.isFinished)
+        await #expect(throws: CancellationError.self) { _ = try await resumed.next(5) }
     }
 }
 

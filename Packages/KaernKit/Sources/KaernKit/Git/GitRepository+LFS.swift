@@ -70,7 +70,9 @@ extension GitRepository {
     /// Where Git LFS keeps the content of `oid` ("sha256:…"), when it has been downloaded.
     public func lfsObjectURL(_ oid: String) -> URL? {
         let hex = oid.hasPrefix("sha256:") ? String(oid.dropFirst("sha256:".count)) : oid
-        guard hex.count > 4 else { return nil }
+        // A SHA-256 in hex and nothing else: a pointer from a commit must not name a path
+        // ("sha256:../../…") outside .git/lfs/objects.
+        guard hex.utf8.count == 64, hex.utf8.allSatisfy({ (48 ... 57).contains($0) || (97 ... 102).contains($0) }) else { return nil }
         let url = commonGitDirectory
             .appending(path: "lfs/objects")
             .appending(path: String(hex.prefix(2)))

@@ -451,7 +451,13 @@ private struct MissingFolderView: View {
         let path = repository.path
         let handler: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
-            Task { _ = await AppModel.shared.relocate(path, to: url) }
+            Task {
+                guard await AppModel.shared.relocate(path, to: url) == nil else { return }
+                let alert = NSAlert()
+                alert.messageText = "\(url.lastPathComponent) isn’t a repository’s own folder"
+                alert.informativeText = "Choose the folder that has .git in it. A folder inside another repository would open that repository instead."
+                if let window = NSApp.keyWindow { alert.beginSheetModal(for: window) { _ in } } else { alert.runModal() }
+            }
         }
         if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: handler) } else { handler(panel.runModal()) }
     }

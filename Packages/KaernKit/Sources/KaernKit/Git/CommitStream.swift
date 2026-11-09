@@ -56,13 +56,16 @@ public final class CommitStream: @unchecked Sendable {
         self.arguments = arguments
     }
 
-    /// Everything is read, or the stream was stopped.
-    public var isFinished: Bool { lock.withLock { finishedReading || stopped } }
+    /// History was read to its end. A stopped stream isn't finished: there may be more, and a new
+    /// stream can read it.
+    public var isFinished: Bool { lock.withLock { finishedReading && !stopped } }
 
     /// How many commits the stream has handed out.
     public var count: Int { queue.sync { delivered } }
 
     /// The next `count` commits, newest first; fewer at the end of history, none after it.
+    /// Throws `CancellationError` when the stream was stopped before it got them: a read that
+    /// was cut short gives nothing, so nobody mistakes part of the history for all of it.
     public func next(_ count: Int) async throws -> [Commit] {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -88,12 +91,15 @@ public final class CommitStream: @unchecked Sendable {
 
     deinit {
         if let process, process.isRunning { process.terminate() }
+        // Released before git's exit was heard: the Command Log record ends here, or it would
+        // show git running forever.
+        if record != nil { finishRecord(stopped: !readToEnd) }
     }
 
     // MARK: Reading (on `queue`)
 
     private func read(_ count: Int) throws -> [Commit] {
-        if lock.withLock({ stopped }) { return [] }
+        if lock.withLock({ stopped }) { throw CancellationError() }
         try launchIfNeeded()
         var commits: [Commit] = []
         commits.reserveCapacity(min(count, 4096))
@@ -107,9 +113,9 @@ public final class CommitStream: @unchecked Sendable {
             }
             let (atEnd, wasStopped) = lock.withLock { (finishedReading, stopped) }
             if wasStopped {
-                // git was ended mid-record: what's left is cut off.
+                // git was ended before this read had what it asked for.
                 buffer.removeAll()
-                break
+                throw CancellationError()
             }
             if atEnd {
                 // The last record has no NUL after it.
@@ -121,7 +127,17 @@ public final class CommitStream: @unchecked Sendable {
             if let chunk, !chunk.isEmpty {
                 buffer.append(chunk)
             } else {
-                lock.withLock { finishedReading = true }
+                // `cancel()` marks the stream stopped before it ends git, so an end of output
+                // after that is the cut, not the end of history.
+                let cut = lock.withLock { () -> Bool in
+                    if stopped { return true }
+                    finishedReading = true
+                    return false
+                }
+                if cut {
+                    buffer.removeAll()
+                    throw CancellationError()
+                }
                 reachedEnd = true
             }
         }

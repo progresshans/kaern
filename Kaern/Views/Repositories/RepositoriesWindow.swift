@@ -761,7 +761,7 @@ private struct RepositoryRowView: View {
         guard let model = row.model else { return }
         switch row.fix {
         case .pull:
-            model.from("Repositories window") { model.pull(model.pullChoice.strategy) }
+            model.pullWithItsSetting(from: "Repositories window")
         case .signIn(let host):
             SettingsWindowController.shared.showSignIn(host: host)
         case .resolve:
@@ -789,6 +789,8 @@ private struct RepositoryRowView: View {
             Task {
                 if let found = await app.relocate(model.path, to: url) {
                     state.showToast("Found \(model.name) at \(Formatters.abbreviatedPath(found))")
+                } else {
+                    state.showToast("\(url.lastPathComponent) isn’t a repository’s own folder · choose the folder with .git in it")
                 }
             }
         }

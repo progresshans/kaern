@@ -330,6 +330,14 @@ final class RepositoryModel: Identifiable {
     /// The `git log` the history reads more from as you scroll (one per visible repository).
     @ObservationIgnored var historyStream: CommitStream?
     @ObservationIgnored var allHistoryTask: Task<Void, Never>?
+    /// A history read was cut short (the tab went to the background while it read): history
+    /// loads again the next time the tab shows.
+    @ObservationIgnored private var historyIsStale = false
+    /// A first load or a refresh is reading history from a new stream; pages for scrolling wait
+    /// for it, so they never come from the new stream on top of the old list.
+    @ObservationIgnored private var isReloadingHistory = false
+    /// Scrolling asked for more while history was reloading.
+    @ObservationIgnored private var wantsMoreHistory = false
     /// How long the last full `git status` took (the fsmonitor suggestion, the status bar).
     var statusDuration: Duration?
     /// `core.fsmonitor` is on here (read once a slow status makes it matter).
@@ -448,6 +456,7 @@ final class RepositoryModel: Identifiable {
         async let tags = try? repository.tags()
         let limit = Self.pageSize
         let stream = restartHistoryStream(repository)
+        isReloadingHistory = true
         async let history = try? stream.next(limit)
         async let stashes = try? repository.stashes()
         async let worktrees = repository.worktrees()
@@ -472,12 +481,17 @@ final class RepositoryModel: Identifiable {
         if let loadedHistory {
             commits = loadedHistory
             hasMoreHistory = !stream.isFinished
+            historyIsStale = false
+        } else {
+            historyIsStale = true
         }
+        isReloadingHistory = false
         rebuildGraph()
         phase = .ready
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
         pendingScope = []
+        historyReloaded()
         await refreshBranchFacts()
         await refreshLineStats()
         loadSelectionDetails()
@@ -554,6 +568,8 @@ final class RepositoryModel: Identifiable {
         case .light:
             Task { await loadEverything() }
         case .ready:
+            // A read cut short when the tab went to the background: history loads again.
+            if historyIsStale { pendingScope.insert(.refs) }
             if !pendingScope.isEmpty || !statusIsFull {
                 pendingScope.insert(.workTree)
                 runPendingRefresh(trigger: "Tab became visible")
@@ -606,6 +622,7 @@ final class RepositoryModel: Identifiable {
             // As much history as was loaded (a refresh shouldn't shrink what you scrolled to).
             let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
             let stream = restartHistoryStream(repository)
+            isReloadingHistory = true
             async let history = try? stream.next(limit)
             async let stashes = try? repository.stashes()
             async let worktrees = repository.worktrees()
@@ -621,7 +638,11 @@ final class RepositoryModel: Identifiable {
                 commits = history
                 hasMoreHistory = !stream.isFinished
                 totalCommitCount = nil
+                historyIsStale = false
+            } else {
+                historyIsStale = true
             }
+            isReloadingHistory = false
             self.stashes = await stashes ?? self.stashes
             self.worktrees = await worktrees
             self.remotes = await remotes
@@ -633,7 +654,10 @@ final class RepositoryModel: Identifiable {
         }
         operation = repository.operationState()
         rebuildGraph()
-        if scope.contains(.refs) { loadAllHistoryIfAsked() }
+        if scope.contains(.refs) {
+            loadAllHistoryIfAsked()
+            historyReloaded()
+        }
         await refreshBranchFacts()
         await refreshLineStats()
         diffsAreStale = true
@@ -725,6 +749,11 @@ final class RepositoryModel: Identifiable {
     @discardableResult
     func loadMoreHistory(count: Int = RepositoryModel.pageSize) -> Task<Void, Never>? {
         guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready else { return nil }
+        if isReloadingHistory {
+            // A refresh is reading the new history; this page comes once that's in.
+            wantsMoreHistory = true
+            return nil
+        }
         isLoadingMoreHistory = true
         let task = Task {
             defer { isLoadingMoreHistory = false }
@@ -751,7 +780,9 @@ final class RepositoryModel: Identifiable {
     /// Reads older history until one of `targets` is loaded (Search stepping past the loaded
     /// commits): one read, one graph rebuild, however far it goes.
     func loadHistory(until targets: Set<String>) async -> Bool {
-        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready, !targets.isEmpty else { return false }
+        guard let repository, hasMoreHistory, !isLoadingMoreHistory, !isReloadingHistory, phase == .ready, !targets.isEmpty else {
+            return false
+        }
         isLoadingMoreHistory = true
         defer { isLoadingMoreHistory = false }
         let start = ContinuousClock.now
@@ -768,7 +799,9 @@ final class RepositoryModel: Identifiable {
         var read: [Commit] = []
         var found = false
         while !found, !stream.isFinished, !Task.isCancelled {
-            guard let page = try? await stream.next(5_000), historyStream === stream else { break }
+            guard let page = try? await stream.next(5_000) else { break }
+            // A refresh replaced the history meanwhile: these pages belong to the old one.
+            guard historyStream === stream else { return false }
             if page.isEmpty { break }
             read += page
             found = page.contains { targets.contains($0.id) }
@@ -785,6 +818,20 @@ final class RepositoryModel: Identifiable {
         let stream = repository.historyStream()
         historyStream = stream
         return stream
+    }
+
+    /// After a first load or a refresh read its history: a tab in the background lets go of git
+    /// (scrolling later starts a new `git log` where this one stopped), and a page scrolling
+    /// asked for meanwhile is read now.
+    private func historyReloaded() {
+        if !isVisible, AppSettings.historyLoading != .all {
+            historyStream?.cancel()
+            historyStream = nil
+        }
+        if wantsMoreHistory {
+            wantsMoreHistory = false
+            loadMoreHistory()
+        }
     }
 
     /// Settings › Advanced › Load all history: the rest comes in the background, 5,000 at a time.

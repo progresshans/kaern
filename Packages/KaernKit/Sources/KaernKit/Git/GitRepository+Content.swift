@@ -177,6 +177,52 @@ extension GitRepository {
         return id.isEmpty ? nil : id
     }
 
+    /// The submodule at `path` as a repository of its own.
+    public func submodule(at path: String) async throws -> GitRepository {
+        guard let folder = submoduleFolder(path) else { throw NotARepositoryError(folder: root.appending(path: path)) }
+        let submodule = try await GitRepository.open(folder, runner: runner)
+        // A folder that isn't cloned would open this repository instead.
+        func place(_ url: URL) -> String {
+            var path = url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+        guard place(submodule.root) == place(folder) else { throw NotARepositoryError(folder: folder) }
+        return submodule
+    }
+
+    /// Where the submodule at `path` is: its branch (`nil` on a detached HEAD) and commit.
+    /// `nil` when it isn't cloned.
+    public func submodulePosition(_ path: String) async -> (branch: String?, commit: String)? {
+        guard let folder = submoduleFolder(path), let head = await submoduleHead(path) else { return nil }
+        let output = try? await runner.run(["symbolic-ref", "--quiet", "--short", "HEAD"], in: folder, acceptedStatus: [0, 1])
+        let branch = output?.status == 0 ? output?.text.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        return (branch?.isEmpty == false ? branch : nil, head)
+    }
+
+    /// Commits checked out in the submodule at `path` that no branch, tag or remote branch there
+    /// holds. Checking out another commit leaves them where only the submodule's reflog finds
+    /// them. Newest first, at most `limit`; empty when some ref holds HEAD.
+    public func submoduleCommitsOnNoBranch(_ path: String, limit: Int = 50) async -> [CommitSummary] {
+        guard let folder = submoduleFolder(path) else { return [] }
+        if let held = try? await runner.run(["for-each-ref", "--contains", "HEAD", "--count=1", "--format=%(refname)"], in: folder),
+           !held.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return []
+        }
+        guard let output = try? await runner.run(["log", "-z", "--format=\(LogParser.format)", "--max-count=\(limit)",
+                                                  "HEAD", "--not", "--branches", "--tags", "--remotes", "--"], in: folder) else {
+            return []
+        }
+        return LogParser.parse(output.stdout).map { CommitSummary(id: $0.id, subject: $0.subject) }
+    }
+
+    /// Update to Recorded: checks out the commit this repository records inside the submodule at
+    /// `path`, on a detached HEAD. `--checkout` wins over the submodule's `update` setting
+    /// (`none` would leave it where it is; `rebase` or `merge` would move its branch).
+    public func checkOutRecordedSubmodule(_ path: String) async throws {
+        try await git(["submodule", "update", "--checkout", "--", path])
+    }
+
     /// What moving the submodule at `path` from `old` to `new` brings: the tags on both, and
     /// the commits in between (up to `limit` each way).
     public func submoduleChange(_ path: String, from old: String?, to new: String?, limit: Int = 50) async -> SubmoduleChange {

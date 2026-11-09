@@ -120,6 +120,22 @@ nonisolated extension ReversibleStep {
         }
     }
 
+    /// Update to Recorded moved the submodule at `path` from `from` to `commit` (detached).
+    /// Undo checks out what it had before, which also brings back commits no branch held.
+    static func submoduleCheckout(label: String, path: String, from: HeadPosition, to commit: String) -> ReversibleStep {
+        ReversibleStep(label: label) { repository in
+            let submodule = try await repository.submodule(at: path)
+            try await requirePosition(submodule, .detached(commit), label)
+            try await go(to: from, in: submodule)
+            return ReversibleStep(label: label) { repository in
+                let submodule = try await repository.submodule(at: path)
+                try await requirePosition(submodule, from, label)
+                try await go(to: .detached(commit), in: submodule)
+                return submoduleCheckout(label: label, path: path, from: from, to: commit)
+            }
+        }
+    }
+
     /// A branch was made at `tip` and checked out. Undo goes back and deletes it.
     static func createdBranch(label: String, name: String, at tip: String, upstream: String?, previous: HeadPosition) -> ReversibleStep {
         ReversibleStep(label: label) { repository in

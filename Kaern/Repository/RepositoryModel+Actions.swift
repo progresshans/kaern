@@ -353,6 +353,15 @@ extension RepositoryModel {
         )
     }
 
+    /// Pull from outside the tab (the Repositories window, the Command Log). A tab in the
+    /// background may not have read this repository's own pull setting yet, so that comes first.
+    func pullWithItsSetting(from source: String) {
+        Task {
+            await refreshPullOverride()
+            from(source) { pull(pullChoice.strategy) }
+        }
+    }
+
     /// Pull on a branch: the current one pulls; another one fast-forwards to its upstream.
     func pull(branch name: String) {
         if name == status.branch {

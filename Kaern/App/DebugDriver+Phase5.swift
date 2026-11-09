@@ -2,6 +2,9 @@
 import AppKit
 import KaernKit
 
+/// What the last `relocate` command got back ("refused" for `nil`).
+@MainActor var debugLastRelocate = ""
+
 /// Phase-5 debug commands: Clone, Create New Repository, Publish, the Repositories window, the
 /// repository switching modes, big repositories and the diff extras.
 extension DebugDriver {
@@ -12,7 +15,7 @@ extension DebugDriver {
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
         "diffWrap", "scrollWheel", "selectSubject", "quickLook", "alwaysLFS", "imageMode", "downloadLFS",
-        "useWindow", "focusGraph", "targetFrame", "initSubmodule", "deepen",
+        "useWindow", "focusGraph", "targetFrame", "initSubmodule", "deepen", "updateRecorded", "relocate",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -40,7 +43,7 @@ extension DebugDriver {
             state.selection = row.path
             if command == "reposFix", let model = row.model {
                 switch row.fix {
-                case .pull: model.from("Repositories window") { model.pull(model.pullChoice.strategy) }
+                case .pull: model.pullWithItsSetting(from: "Repositories window")
                 case .resolve: FailureHelp.reveal(model); model.openConflicts()
                 case .open: FailureHelp.reveal(model)
                 default: break
@@ -110,7 +113,12 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
-        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph", "initSubmodule", "deepen":
+        case "relocate":
+            // relocate <old path> <new path> — Locate…'s choice; the dump's lastRelocate says what happened.
+            guard args.count == 2 else { return }
+            Task { debugLastRelocate = await app.relocate(args[0], to: URL(filePath: args[1], directoryHint: .isDirectory)) ?? "refused" }
+            return
+        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph", "initSubmodule", "deepen", "updateRecorded":
             guard let tab = window.activeTab else { return }
             let repository = app.repository(for: tab.path)
             switch command {
@@ -133,6 +141,10 @@ extension DebugDriver {
             case "initSubmodule":
                 // initSubmodule <path> — the sidebar's Initialize.
                 repository.from("Sidebar") { repository.initializeSubmodule(args.joined(separator: " ")) }
+            case "updateRecorded":
+                // updateRecorded <path> <label> — the submodule page's Update to Recorded (<label>).
+                guard args.count >= 2 else { return }
+                repository.from("Submodule") { repository.updateSubmoduleToRecorded(args[0], label: args[1]) }
             case "quickLook":
                 // quickLook — Space: the file Review shows; again closes it.
                 _ = controller?.toggleQuickLook()
@@ -327,8 +339,10 @@ extension DebugDriver {
                 "sidebarSubmodules": repository.submoduleItems.map { "\($0.path) | \($0.detail) | \($0.state)" },
                 "alert": repository.alert.map { "\($0.title) — \($0.message)" } ?? "",
                 "toast": repository.toast?.message ?? "",
+                "quickLookCopies": (try? FileManager.default.contentsOfDirectory(atPath: QuickLookCopies.folder.path(percentEncoded: false)).count) ?? 0,
             ] as [String: Any]
         }
+        result["lastRelocate"] = debugLastRelocate
         result["windows"] = app.windows.enumerated().map { index, controller -> [String: Any] in
             let tab = controller.model.activeTab
             return ["index": index, "tab": tab?.name ?? "", "lastTarget": controller.contextTracker.lastTarget.map { "\($0)" } ?? "",

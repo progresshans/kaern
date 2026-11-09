@@ -213,8 +213,9 @@ public enum GitRedaction {
         /([A-Za-z][A-Za-z0-9+.\-]*:\/\/)[^\/\s@'"]+@/
     nonisolated(unsafe) private static let authorizationHeader =
         /(?i)((?:proxy-)?authorization:\s*)(?:(?:bearer|basic|token|digest)\s+)?[^\s'"]+/
+    // Any key that ends in one of these: access_token, oauth_refresh_token, client_secret…
     nonisolated(unsafe) private static let secretAssignment =
-        /(?i)\b(password|passwd|pwd|token|access_token|private_token|api_key|apikey|secret|client_secret)(\s*[=:]\s*)[^\s&'",;]+/
+        /(?i)\b([a-z0-9_.\-]*(?:password|passwd|pwd|token|api_?key|secret))(\s*[=:]\s*)[^\s&'",;]+/
     nonisolated(unsafe) private static let tokenPatterns: [Regex<Substring>] = [
         /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,                 // GitHub tokens
         /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,               // GitHub fine-grained tokens

@@ -20,12 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if SessionStore.testSessionPath != nil { DebugDriver.shared.start() }
         #endif
         AppModel.shared.launch()
+        QuickLookCopies.removeOld()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Save before AppKit closes the windows, so they're in the session as open windows.
         AppModel.shared.saveNow()
         AppModel.shared.isTerminating = true
+        QuickLookCopies.removeLast()
         return .terminateNow
     }
 

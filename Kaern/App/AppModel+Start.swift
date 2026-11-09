@@ -272,11 +272,14 @@ extension AppModel {
 
 extension AppModel {
     /// Locate…: a repository's folder moved to `url`. Every tab showing the old folder points at
-    /// the new one. Returns the new folder, or `nil` when `url` isn't that kind of folder.
+    /// the new one. Returns the new folder, or `nil` when `url` isn't a repository's own folder:
+    /// a folder inside another repository (a parent folder that is one, a monorepo) would point
+    /// the tab at that repository instead.
     func relocate(_ oldPath: String, to url: URL) async -> String? {
         guard let runner = await waitForGit(),
               let repository = try? await GitRepository.open(url, runner: runner) else { return nil }
         let newPath = repository.root.path(percentEncoded: false).trimmingTrailingSlash
+        guard newPath == canonicalPath(url.path(percentEncoded: false)).trimmingTrailingSlash else { return nil }
         guard newPath != oldPath else { retry(self.repository(for: oldPath)); return newPath }
         _ = self.repository(for: newPath)
         for controller in windows {
