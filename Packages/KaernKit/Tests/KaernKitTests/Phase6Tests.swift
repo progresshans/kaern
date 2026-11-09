@@ -224,7 +224,7 @@ struct Phase6Tests {
         // A detached one comes back at its commit.
         let head = try await repository.git(["rev-parse", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
         try await repository.addWorktree(at: folder, detachedAt: head)
-        #expect(try await repository.worktrees().contains { $0.branch == nil && $0.head == head })
+        #expect(await repository.worktrees().contains { $0.branch == nil && $0.head == head })
     }
 
     // MARK: Pull with rebase over uncommitted changes
