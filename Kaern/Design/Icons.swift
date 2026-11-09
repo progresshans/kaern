@@ -112,6 +112,30 @@ enum Icons {
     static let check = SVGIcon(16, [.path("M3.5 8.4l2.9 2.9 6.1-6.6", width: 2, cap: .round, join: .round)])
     static let folder = SVGIcon(16, [.path("M2.2 5a1 1 0 0 1 1-1h3.1l1.3 1.4h5.2a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3.2a1 1 0 0 1-1-1z", width: 1.3, join: .round)])
 
+    // MARK: Signatures and worktrees (ScreenMarks)
+
+    private static let shield = "M8 1.6l5.2 2.1v3.9c0 3.3-2.2 5.6-5.2 6.9-3-1.3-5.2-3.6-5.2-6.9V3.7z"
+    /// The Commit column header's legend button.
+    static let shieldOutline = SVGIcon(16, [.path(shield, width: 1.5)])
+    static let shieldVerified = SVGIcon(16, [
+        .filled(shield),
+        .path("M5.5 8.1l1.8 1.8 3.2-3.6", width: 1.7, cap: .round, join: .round, stroke: .white),
+    ])
+    static let shieldUnknown = SVGIcon(16, [
+        .filled(shield),
+        .path("M6.5 6.5a1.6 1.6 0 1 1 2.3 1.4c-.5.3-.8.6-.8 1.1", width: 1.5, cap: .round, stroke: .white),
+        .circle(8, 10.9, 0.9, fill: .white),
+    ])
+    static let shieldBad = SVGIcon(16, [
+        .filled(shield),
+        .path("M6.3 6.3l3.4 3.4M9.7 6.3l-3.4 3.4", width: 1.6, cap: .round, stroke: .white),
+    ])
+    /// A branch checked out in another worktree (`.wtb`, `.wtin`): a folder with a plus.
+    static let worktreeMark = SVGIcon(16, [
+        .path("M1.8 4.6a1 1 0 0 1 1-1h3l1.2 1.3h6.2a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z", width: 1.4, join: .round),
+        .path("M6 10.6h4M8 8.6v4", width: 1.4, cap: .round),
+    ])
+
     // MARK: History labels
 
     static let labelHead = SVGIcon(10, [.path("M2 5.3l2 2 4-4.6", width: 1.7, cap: .round, join: .round)])

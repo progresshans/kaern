@@ -151,6 +151,82 @@ struct Phase6Tests {
         #expect(!FileManager.default.fileExists(atPath: repository.root.appending(path: ".gitignore").path(percentEncoded: false)))
     }
 
+    // MARK: Signatures and worktrees (ScreenMarks)
+
+    /// An ed25519 key pair made with ssh-keygen in a temporary folder.
+    private static func sshKey(_ name: String, in folder: URL) throws -> URL {
+        let key = folder.appending(path: name)
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/ssh-keygen")
+        process.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", name, "-f", key.path(percentEncoded: false)]
+        try process.run()
+        process.waitUntilExit()
+        return key
+    }
+
+    @Test func sshSignaturesReadAsSignedEvenWithoutAllowedSigners() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        let keys = FileManager.default.temporaryDirectory.appending(path: "kaern-keys-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: keys, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: keys) }
+        let key = try Self.sshKey("signer", in: keys)
+        try repository.write("signed\n", to: "a.txt")
+        try await repository.git(["add", "-A"])
+        try await repository.git(["-c", "gpg.format=ssh", "-c", "user.signingkey=" + key.path(percentEncoded: false) + ".pub",
+                                  "commit", "-q", "-S", "-m", "signed"])
+        let id = try await repository.git(["rev-parse", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // git alone calls it unsigned without an allowed signers file; Kaern reads it as signed, not trusted.
+        #expect(try await repository.git(["log", "-1", "--format=%G?"]).text.trimmingCharacters(in: .whitespacesAndNewlines) == "N")
+        #expect(await repository.signatureCodes(of: [id])[id] == "U")
+        let signature = await repository.signature(of: id)
+        #expect(signature?.status == .unverified && signature?.format == "SSH" && signature?.key.hasPrefix("SHA256:") == true)
+        let publicKey = try #require(await repository.sshSigningKey(of: id))
+        #expect(publicKey.hasPrefix("ssh-ed25519 "))
+
+        // Listed in the allowed signers: verified.
+        let allowed = keys.appending(path: "allowed_signers")
+        try GitRepository.addAllowedSigner(principal: "tests@kaern.invalid", key: publicKey, to: allowed)
+        try await repository.git(["config", "gpg.ssh.allowedSignersFile", allowed.path(percentEncoded: false)])
+        #expect(await repository.signatureCodes(of: [id])[id] == "G")
+        #expect(await repository.signature(of: id)?.signer == "tests@kaern.invalid")
+    }
+
+    @Test func removingAWorktreeKeepsItsChangesAndUndoPutsThemBack() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\n", to: "a.txt")
+        try await repository.commitAll("one")
+        try await repository.createBranch("hotfix", startPoint: nil, checkout: false)
+        let folder = FileManager.default.temporaryDirectory.appending(path: "kaern-worktree-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await repository.addWorktree(at: folder, branch: "hotfix", newBranchFrom: nil)
+        let worktree = try await GitRepository.open(folder, runner: Self.runner)
+        try worktree.write("one\nchanged\n", to: "a.txt")
+        try worktree.write("new\n", to: "untracked.txt")
+
+        let path = folder.path(percentEncoded: false)
+        let stash = try #require(try await repository.removeWorktree(path, keepingChangesAs: "Worktree test"))
+        #expect(!FileManager.default.fileExists(atPath: path))
+        #expect(try await repository.stashes().first?.message.contains("Worktree test") == true)
+
+        try await repository.addWorktree(at: folder, branch: "hotfix", newBranchFrom: nil)
+        let back = try await GitRepository.open(folder, runner: Self.runner)
+        try await back.popStash(object: stash)
+        #expect(back.read("a.txt") == "one\nchanged\n" && back.read("untracked.txt") == "new\n")
+        #expect(try await repository.stashes().isEmpty)
+
+        // Without changes nothing goes to the stash list.
+        try await back.git(["checkout", "--", "a.txt"])
+        try FileManager.default.removeItem(at: folder.appending(path: "untracked.txt"))
+        #expect(try await repository.removeWorktree(path, keepingChangesAs: "Worktree test") == nil)
+        // A detached one comes back at its commit.
+        let head = try await repository.git(["rev-parse", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await repository.addWorktree(at: folder, detachedAt: head)
+        #expect(try await repository.worktrees().contains { $0.branch == nil && $0.head == head })
+    }
+
     // MARK: Pull with rebase over uncommitted changes
 
     /// A repository with an origin, a local commit the origin doesn't have, and a second clone

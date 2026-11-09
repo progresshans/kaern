@@ -35,6 +35,11 @@ extension GitRepository {
         return commit
     }
 
+    /// The commit object as git stores it (`git cat-file commit`): headers, signature, message.
+    public func commitObject(_ id: String) async throws -> Data {
+        try await git(["cat-file", "commit", id]).stdout
+    }
+
     /// The full message of a commit.
     public func message(of id: String) async throws -> String {
         try await git(["log", "-1", "--format=%B", id, "--"]).text.trimmingCharacters(in: .whitespacesAndNewlines)

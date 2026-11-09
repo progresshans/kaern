@@ -149,9 +149,12 @@ struct RefLabelItem: Identifiable, Equatable {
     let hasRemote: Bool
     /// Every ref name in the label, for the tooltip.
     let names: [String]
+    /// The other worktree that has this branch checked out (ScreenMarks › 워크트리).
+    var worktree: String?
 
-    /// HEAD's branch first, then local branches, remote branches and tags.
-    static func labels(for refs: [Ref], headBranch: String?) -> [RefLabelItem] {
+    /// HEAD's branch first, then local branches, remote branches and tags. `worktrees`: branch →
+    /// the other worktree that has it checked out.
+    static func labels(for refs: [Ref], headBranch: String?, worktrees: [String: String] = [:]) -> [RefLabelItem] {
         var result: [RefLabelItem] = []
         var mergedRemotes = Set<String>()
         let locals = refs.filter { $0.kind == .localBranch }
@@ -162,7 +165,7 @@ struct RefLabelItem: Identifiable, Equatable {
             result.append(RefLabelItem(
                 id: local.fullName, title: local.name, kind: .branch,
                 isHead: local.name == headBranch, hasLocal: true, hasRemote: !twins.isEmpty,
-                names: [local.name] + twins.map(\.name)
+                names: [local.name] + twins.map(\.name), worktree: worktrees[local.name]
             ))
         }
         for remote in remotes where !mergedRemotes.contains(remote.fullName) {
@@ -208,6 +211,12 @@ struct RefLabel: View {
             case .branch:
                 Icon(Icons.labelLocal, size: 12).foregroundStyle(iconColor)
                 if label.hasRemote { Icon(Icons.labelRemote, size: 12).foregroundStyle(iconColor) }
+                if let worktree = label.worktree {
+                    // `.wtb`: checked out in another worktree.
+                    Icon(Icons.worktreeMark, size: 12)
+                        .foregroundStyle(label.isHead || selected ? Color.white : K.accentText)
+                        .help("Checked out in the worktree \(worktree)")
+                }
             case .remote:
                 Icon(Icons.labelRemote, size: 12).foregroundStyle(iconColor)
             case .tag:
@@ -222,7 +231,13 @@ struct RefLabel: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(selected ? Color.white.opacity(0.22) : (label.isHead ? K.lane1 : K.laneTint(lane)))
         )
-        .help(label.names.joined(separator: "\n"))
+        .overlay {
+            // `.lab.wtlab`: a thin accent ring around a branch another worktree has.
+            if label.worktree != nil, !selected, !label.isHead {
+                RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(K.worktreeRing, lineWidth: 1)
+            }
+        }
+        .help(label.names.joined(separator: "\n") + (label.worktree.map { "\nChecked out in the worktree \($0)" } ?? ""))
     }
 
     private var iconColor: Color { label.isHead || selected ? .white : K.label2 }

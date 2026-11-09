@@ -166,6 +166,23 @@ final class RepositoryModel: Identifiable {
     var drawnRemoteBranches: [String] = []
     /// A commit to select once history was read again (a remote branch picked to be drawn).
     @ObservationIgnored var selectAfterReload: String?
+
+    // Phase 6 (ScreenMarks): signatures and worktrees.
+    /// `%G?` of the history rows that have been on screen (the Commit column's shields).
+    var signatureCodes: [String: Character] = [:]
+    @ObservationIgnored var signaturesInFlight: Set<String> = []
+    /// The selected commit's signature, once read (the panel's card).
+    var selectedSignature: SelectedSignature?
+    /// The card shows its details (they open when a commit is picked, like the board).
+    var signatureCardOpen = true
+    @ObservationIgnored var signatureTask: Task<Void, Never>?
+    /// Another worktree's page in the right panel (its path); `nil`: the selection's details.
+    var selectedWorktree: String? {
+        didSet { if selectedWorktree != oldValue { worktreeDetails = nil } }
+    }
+    /// Uncommitted changes in the other worktrees, by path (the sidebar's "2 changes" and dot).
+    var worktreeChanges: [String: Int] = [:]
+    var worktreeDetails: WorktreeDetails?
     private(set) var stashes: [Stash] = []
     private(set) var worktrees: [Worktree] = []
     private(set) var remotes: [RemoteInfo] = []
@@ -193,6 +210,8 @@ final class RepositoryModel: Identifiable {
     var selection: HistorySelection = .workingCopy {
         didSet {
             guard selection != oldValue else { return }
+            selectedWorktree = nil
+            signatureCardOpen = true
             // A commit inside a folded run of bot commits: the run opens.
             if case .commit(let id) = selection, let run = insideRun[id] { expandedRuns.insert(run) }
             loadSelectionDetails()
@@ -780,6 +799,7 @@ final class RepositoryModel: Identifiable {
         lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
         await refreshWorkingMarks()
         await refreshSubmodules()
+        await refreshWorktreeChanges()
     }
 
     /// Remotes again (Repository Settings added, edited or removed one).
@@ -1090,8 +1110,10 @@ final class RepositoryModel: Identifiable {
         guard case .commit(let id) = selection, let repository else {
             selectedDetails = nil
             selectedFiles = []
+            selectedSignature = nil
             return
         }
+        loadSelectedSignature(id)
         if let cached = detailsCache[id] {
             selectedDetails = cached.0
             selectedFiles = cached.1

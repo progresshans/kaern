@@ -150,6 +150,8 @@ struct StepButton: View {
 /// `.ghost`: a small bordered button (Review All, Done, One File).
 struct GhostButton: View {
     let title: String
+    /// The text color (`.wtrm`: Remove… in the error color).
+    var tint: Color = K.label
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
 
@@ -157,7 +159,7 @@ struct GhostButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(K.label)
+                .foregroundStyle(tint)
                 .lineLimit(1)
                 .padding(.horizontal, 9)
                 .frame(height: 24)

@@ -151,8 +151,16 @@ extension GitRepository {
 
     /// The signature of one commit (checking it runs gpg or ssh-keygen, so only on demand).
     public func signature(of id: String) async -> CommitSignature? {
-        guard let output = try? await git(["log", "-1", "--format=%G?%x1f%GS%x1f%GK%x1f%GG", id, "--"]) else { return nil }
+        let check = await signatureCheckArguments()
+        guard let output = try? await git(check + ["log", "-1", "--format=%G?%x1f%GS%x1f%GK%x1f%GG", id, "--"]) else { return nil }
         return CommitSignature.parse(output.text)
+    }
+
+    /// git checks SSH signatures against `gpg.ssh.allowedSignersFile`; without one (or when it's
+    /// missing) it calls them unsigned. An empty list makes them "signed, key not trusted" instead.
+    func signatureCheckArguments() async -> [String] {
+        if let file = await allowedSignersFile(), FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) { return [] }
+        return ["-c", "gpg.ssh.allowedSignersFile=/dev/null"]
     }
 
     /// Whether the repository stores files in Git LFS (`filter=lfs` in `.gitattributes`).
@@ -164,8 +172,9 @@ extension GitRepository {
     /// `%G?` for each commit (G good, U untrusted, B bad, X/Y expired, R revoked, E can't check,
     /// N unsigned). For the rows on screen: checking runs gpg or ssh-keygen per signed commit.
     public func signatureCodes(of ids: [String]) async -> [String: Character] {
-        guard !ids.isEmpty,
-              let output = try? await git(["log", "--no-walk=unsorted", "--format=%H%x1f%G?"] + ids + ["--"]) else { return [:] }
+        guard !ids.isEmpty else { return [:] }
+        let check = await signatureCheckArguments()
+        guard let output = try? await git(check + ["log", "--no-walk=unsorted", "--format=%H%x1f%G?"] + ids + ["--"]) else { return [:] }
         var codes: [String: Character] = [:]
         for line in output.text.split(separator: "\n") {
             let fields = Records.fields(line)
@@ -213,6 +222,26 @@ extension GitRepository {
     /// `git worktree remove`: git refuses when the folder has changes that aren't committed.
     public func removeWorktree(_ path: String) async throws {
         try await git(["worktree", "remove", path])
+    }
+
+    /// Removes the working tree at `path`. Its uncommitted changes (untracked files too) go to the
+    /// stash list first, which every working tree shares; git would refuse, or lose them with
+    /// --force. Returns that stash's object, `nil` when there was nothing to keep.
+    public func removeWorktree(_ path: String, keepingChangesAs message: String) async throws -> String? {
+        let worktree = try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
+        let stash = try await worktree.stashAll(message: message, includeUntracked: true)
+        do {
+            try await removeWorktree(path)
+        } catch {
+            if let stash { try? await worktree.popStash(object: stash) }
+            throw error
+        }
+        return stash
+    }
+
+    /// `git worktree add --detach`: a working tree at `commit`, on no branch.
+    public func addWorktree(at folder: URL, detachedAt commit: String) async throws {
+        try await git(["worktree", "add", "--detach", folder.path(percentEncoded: false), commit])
     }
 }
 

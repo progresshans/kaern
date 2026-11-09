@@ -34,6 +34,8 @@ enum RepositorySheet: Equatable, Identifiable {
     case renameStash(Stash)
     case repositorySettings
     case interactiveRebase(RebaseDraft)
+    /// Add Worktree… (ScreenMarks): a branch and a folder, the branch picked when given.
+    case addWorktree(String?)
 
     var id: String {
         switch self {
@@ -43,6 +45,7 @@ enum RepositorySheet: Equatable, Identifiable {
         case .renameStash(let stash): "stash:\(stash.id)"
         case .repositorySettings: "settings"
         case .interactiveRebase(let draft): "rebase:\(draft.base)"
+        case .addWorktree: "worktree"
         }
     }
 }

@@ -8,6 +8,7 @@ extension DebugDriver {
     static let phase6Commands: Set<String> = [
         "graphScope", "showRemote", "remoteOpen", "remoteFolder", "remoteMore", "sidebarFilter", "retryHistory", "pullWith", "selectRef",
         "ignoreSuggestion", "changeFolder", "changeMore", "fileList", "stageFolder",
+        "worktree", "worktreeAction", "addWorktree", "worktreeSheet", "signatureOpen", "trustKey", "rawSignature",
     ]
 
     func phase6(_ command: String, _ args: [String]) {

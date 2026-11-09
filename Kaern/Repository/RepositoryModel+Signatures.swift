@@ -1,0 +1,215 @@
+import AppKit
+import KaernKit
+
+/// How a commit's signature reads in the Commit column and the panel (ScreenMarks › 서명): a green
+/// shield with a check, an orange one with a question mark, a red one with a cross.
+enum SignatureMark: Equatable {
+    /// git checked the signature against a key it trusts.
+    case verified
+    /// Signed, but by a key git can't vouch for (not in allowed signers or the keychain, can't be
+    /// checked, expired).
+    case unverified
+    /// The signature doesn't match the commit, or the key was revoked.
+    case bad
+
+    /// `%G?`: `nil` for unsigned commits (N).
+    init?(code: Character) {
+        switch code {
+        case "G": self = .verified
+        case "B", "R": self = .bad
+        case "N": return nil
+        default: self = .unverified   // U, E, X, Y
+        }
+    }
+
+    init(_ status: CommitSignature.Status) {
+        switch status {
+        case .verified: self = .verified
+        case .bad, .revoked: self = .bad
+        case .unverified, .expired, .missingKey: self = .unverified
+        }
+    }
+
+    var icon: SVGIcon {
+        switch self {
+        case .verified: Icons.shieldVerified
+        case .unverified: Icons.shieldUnknown
+        case .bad: Icons.shieldBad
+        }
+    }
+}
+
+/// The selected commit's signature, once read (`nil`: unsigned).
+struct SelectedSignature: Equatable {
+    let id: String
+    let signature: CommitSignature?
+    /// Where git looks up SSH keys ("~/.config/git/allowed_signers"), when set.
+    var allowedSigners: String?
+}
+
+extension RepositoryModel {
+    /// Reads `%G?` for history rows that came on screen. Checking runs gpg or ssh-keygen once per
+    /// signed commit, so only for rows that have been seen.
+    func loadSignatures(for ids: [String]) {
+        let missing = ids.filter { signatureCodes[$0] == nil && !signaturesInFlight.contains($0) }
+        guard !missing.isEmpty, let repository else { return }
+        signaturesInFlight.formUnion(missing)
+        Task {
+            let codes = await GitCommandTrigger.$current.withValue(.background("Checking signatures")) {
+                await repository.signatureCodes(of: missing)
+            }
+            signaturesInFlight.subtract(missing)
+            var updated = signatureCodes
+            for id in missing { updated[id] = codes[id] ?? "N" }
+            signatureCodes = updated
+        }
+    }
+
+    /// The shield for a history row, once its signature was read.
+    func signatureMark(of id: String) -> SignatureMark? {
+        signatureCodes[id].flatMap(SignatureMark.init(code:))
+    }
+
+    /// The panel's card for the selected commit: who signed it, the key, what git says.
+    func loadSelectedSignature(_ id: String) {
+        guard let repository, selectedSignature?.id != id else { return }
+        signatureTask?.cancel()
+        signatureTask = Task {
+            let signature = await GitCommandTrigger.$current.withValue(.background("Commit signature")) {
+                await repository.signature(of: id)
+            }
+            let file = signature?.format == "SSH" ? await repository.allowedSignersFile() : nil
+            guard !Task.isCancelled, selection == .commit(id) else { return }
+            selectedSignature = SelectedSignature(id: id, signature: signature,
+                                                  allowedSigners: file.map { ($0.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath })
+            // The row's shield agrees with the card.
+            if let signature { signatureCodes[id] = signature.code } else { signatureCodes[id] = "N" }
+        }
+    }
+
+    /// After the allowed signers changed: every shield and the card are read again.
+    func recheckSignatures() {
+        signatureCodes = [:]
+        signaturesInFlight = []
+        let selected = selectedSignature?.id
+        selectedSignature = nil
+        if let selected { loadSelectedSignature(selected) }
+    }
+
+    // MARK: Trust This Key…
+
+    /// The allowed signers file Trust This Key… writes to when git has none set: in a test
+    /// instance next to its session file, never the real ~/.config/git.
+    static var defaultAllowedSignersFile: URL {
+        #if DEBUG
+        if let stem = TestSession.stem { return URL(filePath: stem + ".allowed_signers") }
+        #endif
+        return FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/git/allowed_signers")
+    }
+
+    /// Trust This Key…: an SSH key goes into the allowed signers file once you've compared its
+    /// fingerprint (the confirmation shows it); ⌘Z takes it out again. GPG keys are trusted in
+    /// GPG, so for those it says how.
+    func askTrustSignatureKey() {
+        guard case .commit(let id) = selection, let signed = selectedSignature, signed.id == id,
+              let signature = signed.signature, let repository else { return }
+        let committer = selectedDetails?.committer
+        let who = signature.signer.isEmpty ? (committer?.name ?? "the signer") : signature.signer
+        guard signature.format == "SSH" else {
+            let key = signature.key.isEmpty ? "<key id>" : signature.key
+            confirmation = Confirmation(
+                title: "Trust \(who)’s GPG key in GPG",
+                message: "Git checks GPG signatures with the keys in your GPG keychain. Import the key and sign it locally, then Kaern shows the commit as verified:\n\ngpg --recv-keys \(key)\ngpg --quick-lsign-key \(key)",
+                confirmTitle: "Copy Commands",
+                confirm: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("gpg --recv-keys \(key)\ngpg --quick-lsign-key \(key)", forType: .string)
+                }
+            )
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let key = await repository.sshSigningKey(of: id) else {
+                showToast("Couldn’t read the key from \(short(id))’s signature")
+                return
+            }
+            let configured = await repository.allowedSignersFile()
+            let file = configured ?? Self.defaultAllowedSignersFile
+            let principal = committer?.email ?? who
+            let place = (file.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+            confirmation = Confirmation(
+                title: "Trust \(who)’s SSH key?",
+                message: "Compare this fingerprint with the one \(who) gave you:\n\(signature.key)\n\nKaern adds the key for \(principal) to \(place), and git shows the commits it signed as verified.",
+                note: configured == nil ? "Git has no allowed signers file yet: Kaern makes this one and sets gpg.ssh.allowedSignersFile in your Git settings." : nil,
+                confirmTitle: "Trust Key",
+                confirm: { [weak self] in self?.trustSigningKey(key, principal: principal, file: file, setsConfig: configured == nil) }
+            )
+        }
+    }
+
+    private func trustSigningKey(_ key: String, principal: String, file: URL, setsConfig: Bool) {
+        perform(.working("Trusting the key…"), trigger: "Trust Key") { [weak self] repository in
+            let previous = FileManager.default.contents(atPath: file.path(percentEncoded: false))
+            try GitRepository.addAllowedSigner(principal: principal, key: key, to: file)
+            if setsConfig {
+                try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", file.path(percentEncoded: false))
+            }
+            guard let self else { return }
+            self.recheckSignatures()
+            self.record(.trustedKey(file: file, previous: previous, setConfig: setsConfig, model: self),
+                        toast: "Trusted the key of \(principal) · commits it signed show as verified")
+        }
+    }
+
+    /// Show Raw Signature (a bad one): the commit object as git stores it, signature included, in
+    /// Quick Look (`git cat-file commit`).
+    func showRawSignature() {
+        guard case .commit(let id) = selection, let repository else { return }
+        Task {
+            guard let raw = try? await repository.commitObject(id) else { return }
+            do {
+                quickLookURL = try QuickLookCopies.make(raw, name: "\(short(id)) signed commit.txt")
+            } catch {
+                showToast("Couldn’t open Quick Look: \(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+extension CommitSignature {
+    /// `%G?` again, for the row's shield.
+    var code: Character {
+        switch status {
+        case .verified: "G"
+        case .unverified: "U"
+        case .bad: "B"
+        case .expired: "X"
+        case .revoked: "R"
+        case .missingKey: "E"
+        }
+    }
+}
+
+nonisolated extension ReversibleStep {
+    /// Trust This Key… wrote to the allowed signers file (and maybe set it in the global config).
+    /// Undo puts the file back as it was; redo writes it again.
+    static func trustedKey(file: URL, previous: Data?, setConfig: Bool, model: RepositoryModel) -> ReversibleStep {
+        let path = file.path(percentEncoded: false)
+        let after = FileManager.default.contents(atPath: path)
+        return ReversibleStep(label: "Trust Key") { repository in
+            guard FileManager.default.contents(atPath: path) == after else {
+                throw UndoRefusal(message: "\((path as NSString).lastPathComponent) changed since “Trust Key”, so Kaern can’t take it back.")
+            }
+            if let previous { try previous.write(to: file, options: .atomic) } else { try FileManager.default.removeItem(at: file) }
+            if setConfig { _ = try? await repository.runner.run(["config", "--global", "--unset", "gpg.ssh.allowedSignersFile"], in: nil) }
+            await MainActor.run { model.recheckSignatures() }
+            return ReversibleStep(label: "Trust Key") { repository in
+                if let after { try after.write(to: file, options: .atomic) }
+                if setConfig { try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", path) }
+                await MainActor.run { model.recheckSignatures() }
+                return trustedKey(file: file, previous: previous, setConfig: setConfig, model: model)
+            }
+        }
+    }
+}

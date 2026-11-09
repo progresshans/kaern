@@ -27,6 +27,8 @@ struct RepositorySheetHost: View {
                         RepositorySettingsSheet(repository: repository)
                     case .interactiveRebase(let draft):
                         InteractiveRebaseSheet(repository: repository, draft: draft)
+                    case .addWorktree(let branch):
+                        AddWorktreeSheet(repository: repository, preselected: branch)
                     }
                 }
                 .id(sheet.id)
@@ -562,5 +564,72 @@ private struct RenameStashSheet: View {
         guard !trimmed.isEmpty else { return }
         repository.sheet = nil
         repository.from("Stash view") { repository.renameStash(stash, to: trimmed) }
+    }
+}
+
+// MARK: - Add Worktree (ScreenMarks › 워크트리)
+
+/// Add Worktree…: "asks for a branch and a folder". Branches no working tree has checked out; the
+/// folder starts next to this repository and follows the branch until it's edited.
+private struct AddWorktreeSheet: View {
+    let repository: RepositoryModel
+    let preselected: String?
+    @State private var branch = ""
+    @State private var folder = ""
+    @State private var folderEdited = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        let branches = repository.branchesForNewWorktree
+        let path = (folder as NSString).expandingTildeInPath
+        let exists = !path.isEmpty && FileManager.default.fileExists(atPath: path)
+        SheetCard {
+            SheetTitle("Add Worktree", subtitle: "Another folder with a branch of \(repository.name) checked out. Both share commits, branches and tags.")
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                SheetFormRow(label: "Branch") {
+                    if branches.isEmpty {
+                        FieldMessage(text: "Every branch is checked out in a worktree. Make a new branch first.", tone: .note)
+                    } else {
+                        Picker("Branch", selection: $branch) {
+                            ForEach(branches, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                SheetFormRow(label: "Folder") {
+                    SheetField(placeholder: "~/Developer/\(repository.name)-branch", text: Binding(get: { folder }, set: {
+                        folder = $0
+                        folderEdited = true
+                    }), isBad: exists, monospaced: true, focus: $focused, onSubmit: submit)
+                }
+                GridRow {
+                    Color.clear.frame(width: 72, height: 1)
+                    FieldMessage(text: exists ? "Something is already at this path." : "Kaern makes this folder and checks the branch out in it.",
+                                 tone: exists ? .error : .plain)
+                }
+            }
+            .padding(.top, 14)
+            SheetButtons(confirmTitle: "Add Worktree", isEnabled: !branch.isEmpty && !path.isEmpty && !exists,
+                         cancel: { repository.sheet = nil }, confirm: submit)
+        }
+        .onAppear {
+            branch = preselected.flatMap { branches.contains($0) ? $0 : nil } ?? branches.first ?? ""
+            folder = suggested
+        }
+        .onChange(of: branch) {
+            if !folderEdited { folder = suggested }
+        }
+    }
+
+    private var suggested: String {
+        branch.isEmpty ? "" : (repository.suggestedWorktreeFolder(for: branch).path(percentEncoded: false).trimmingTrailingSlash as NSString).abbreviatingWithTildeInPath
+    }
+
+    private func submit() {
+        let path = (folder as NSString).expandingTildeInPath
+        guard !branch.isEmpty, !path.isEmpty, !FileManager.default.fileExists(atPath: path) else { return }
+        repository.sheet = nil
+        repository.from("Sidebar") { repository.addWorktree(branch: branch, folder: URL(filePath: path, directoryHint: .isDirectory)) }
     }
 }

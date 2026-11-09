@@ -41,6 +41,8 @@ nonisolated enum K {
     static let lane2 = dynamic(0xe07000, 0xff9f0a)
     static let lane3 = dynamic(0xd6336c, 0xff4f7b)
     static let lt1 = dynamic(rgba(10, 108, 255, 0.13), rgba(47, 140, 255, 0.24))
+    /// `.lab.wtlab`: the ring around a branch label another worktree has checked out (one value in both).
+    static let worktreeRing = dynamic(rgba(10, 108, 255, 0.35), rgba(10, 108, 255, 0.35))
     static let lt2 = dynamic(rgba(224, 112, 0, 0.15), rgba(255, 159, 10, 0.24))
     static let lt3 = dynamic(rgba(214, 51, 108, 0.13), rgba(255, 79, 123, 0.24))
     static let wip = dynamic(0x8e8e93, 0x98989d)

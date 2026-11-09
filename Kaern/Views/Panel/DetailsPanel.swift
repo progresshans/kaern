@@ -9,7 +9,10 @@ struct DetailsPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if repository.branchCompare != nil || repository.picked.count == 2 {
+            if let path = repository.selectedWorktree, let worktree = repository.otherWorktrees.first(where: { $0.path == path }) {
+                // ScreenMarks › 워크트리: another working tree picked in the sidebar.
+                WorktreePanel(repository: repository, worktree: worktree)
+            } else if repository.branchCompare != nil || repository.picked.count == 2 {
                 ComparePanel(repository: repository)
             } else if repository.picked.count >= 3 {
                 MultiSelectPanel(repository: repository)
@@ -476,6 +479,10 @@ struct CommitInfoView: View {
                     }
                 }
                 .padding(.top, 12)
+                // ScreenMarks › 서명: who signed it (the selected commit's panel).
+                if let signed = repository.selectedSignature, signed.id == details.commit.id {
+                    SignatureCard(repository: repository, signed: signed, committer: details.committer)
+                }
                 Text(details.commit.subject)
                     .font(.system(size: 14, weight: .semibold))
                     .lineSpacing(2)

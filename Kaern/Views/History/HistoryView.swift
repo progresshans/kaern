@@ -106,6 +106,7 @@ struct HistoryView: View {
         let headBranch = repository.status.branch
         let picked = Set(repository.picked)
         let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
+        let worktreeBranches = repository.branchesInOtherWorktrees
         VStack(spacing: 0) {
             if repository.showsWorkingCopy, let row = repository.graph.first {
                 WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
@@ -130,7 +131,9 @@ struct HistoryView: View {
                     CommitRow(
                         commit: commit,
                         graph: row,
-                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
+                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch,
+                                                    worktrees: worktreeBranches),
+                        signature: repository.signatureMark(of: commit.id),
                         isAlternate: index % 2 == 1,
                         isSelected: picked.isEmpty
                             ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
@@ -181,6 +184,10 @@ struct HistoryView: View {
                 ? nil : repository.displayCommits[max(0, anchor)].id
         }
         if last >= count - 40 { repository.loadMoreHistory() }
+        // ScreenMarks: the shields of the rows in view.
+        if window.lowerBound < count {
+            repository.loadSignatures(for: repository.displayCommits[window.clamped(to: 0..<count)].map(\.id))
+        }
     }
 
     /// Back on this tab: the row that was at the top is at the top again.
@@ -220,6 +227,8 @@ struct HistoryView: View {
 
     private func pick(_ selection: HistorySelection) {
         repository.clearPicks()
+        // A row picked while a worktree's page is open goes back to the row's details.
+        repository.selectedWorktree = nil
         repository.selection = selection
         listFocused = true
         onPick()
@@ -398,8 +407,11 @@ private struct HistoryHeader: View {
             }
             if columns.showsSHA {
                 // The board sets this header in the hash column's monospaced face.
-                Text("Commit").font(.system(size: 11.5, design: .monospaced)).fontWeight(.regular)
-                    .frame(width: columns.sha, alignment: .leading)
+                HStack(spacing: 5) {
+                    Text("Commit").font(.system(size: 11.5, design: .monospaced)).fontWeight(.regular)
+                    SignatureLegendButton()
+                }
+                .frame(width: columns.sha, alignment: .leading)
             }
         }
         .font(.system(size: 11, weight: .semibold))
@@ -610,6 +622,8 @@ private struct CommitRow: View {
     let commit: Commit
     let graph: GraphRow?
     let labels: [RefLabelItem]
+    /// The signature's shield after the hash (`nil`: unsigned, or not read yet).
+    var signature: SignatureMark?
     let isAlternate: Bool
     let isSelected: Bool
     let isDimmed: Bool
@@ -684,10 +698,18 @@ private struct CommitRow: View {
                     .frame(width: columns.date, alignment: .leading)
             }
             if columns.showsSHA {
-                Text(commit.shortID)
-                    .font(KFont.hash)
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    .frame(width: columns.sha, alignment: .leading)
+                HStack(spacing: 5) {
+                    Text(commit.shortID)
+                        .font(KFont.hash)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                    if let signature {
+                        // `.sig`: the shield in its color, white on the selected row.
+                        Icon(signature.icon, size: 12)
+                            .foregroundStyle(isSelected ? Color.white : signature.color)
+                            .help(signature.tooltip)
+                    }
+                }
+                .frame(width: columns.sha, alignment: .leading)
             }
         }
         .font(.system(size: 13))
@@ -976,5 +998,61 @@ private struct BotRunRow: View {
         let newest = Formatters.compactDate(run.newest)
         let oldest = Formatters.compactDate(run.oldest)
         return newest == oldest ? newest : "\(newest) – \(oldest)"
+    }
+}
+
+// MARK: - Signatures (ScreenMarks › 서명)
+
+extension SignatureMark {
+    var color: Color {
+        switch self {
+        case .verified: K.ok
+        case .unverified: K.warn
+        case .bad: K.err
+        }
+    }
+
+    var tooltip: String {
+        switch self {
+        case .verified: "Verified signature"
+        case .unverified: "Signed, key not trusted on this Mac"
+        case .bad: "Bad signature"
+        }
+    }
+}
+
+/// `.sglg`: the outline shield next to "Commit"; hovering it shows what the shields mean (`.sglt`).
+private struct SignatureLegendButton: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Icon(Icons.shieldOutline, size: 11)
+            .foregroundStyle(hovering ? K.label2 : K.label3)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .popover(isPresented: $hovering, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Signatures").font(.system(size: 11.5, weight: .bold))
+                    legendRow(K.ok, "Verified")
+                    legendRow(K.warn, "Signed, key not trusted")
+                    legendRow(K.err, "Bad signature")
+                    HStack(spacing: 7) {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(K.label3, lineWidth: 1.5).frame(width: 10, height: 10)
+                        Text("Not signed")
+                    }
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(K.label)
+                .padding(EdgeInsets(top: 9, leading: 11, bottom: 9, trailing: 11))
+                .frame(width: 190, alignment: .leading)
+            }
+            .accessibilityLabel("Signature marks")
+    }
+
+    private func legendRow(_ color: Color, _ title: String) -> some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color).frame(width: 10, height: 10)
+            Text(title)
+        }
     }
 }

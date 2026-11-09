@@ -663,6 +663,7 @@ extension RepositoryModel {
     /// A click on a commit row: plain selects it, ⌘ adds or removes it from the picked commits,
     /// ⇧ picks the rows between the last pick and this one.
     func click(commit id: String, command: Bool, shift: Bool) {
+        selectedWorktree = nil
         if command {
             var set = picked
             if set.isEmpty, case .commit(let current) = selection, current != id { set = [current] }

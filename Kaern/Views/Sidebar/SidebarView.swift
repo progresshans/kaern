@@ -117,11 +117,21 @@ struct SidebarView: View {
         }
     }
 
+    @ViewBuilder
     private func branchRow(_ ref: Ref, title: String, nested: Bool) -> some View {
-        SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind)
-            .help(ref.upstream.map { "\(ref.name) — tracks \($0). Double-click to switch." } ?? "\(ref.name) — double-click to switch.")
-            .onTapGesture(count: 2) { repository.from("Sidebar › double-click branch") { repository.switchBranch(ref.name) } }
-            .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+        if let tree = repository.otherWorktree(checkingOut: ref.name) {
+            // ScreenMarks › 워크트리: checked out in another worktree; a click shows that worktree.
+            SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind,
+                       trailingIcon: Icons.worktreeMark, isOn: repository.selectedWorktree == tree.path)
+                .help("\(ref.name) — checked out in the worktree \(tree.name). Click to see it.")
+                .onTapGesture { repository.showWorktree(tree) }
+                .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+        } else {
+            SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind)
+                .help(ref.upstream.map { "\(ref.name) — tracks \($0). Double-click to switch." } ?? "\(ref.name) — double-click to switch.")
+                .onTapGesture(count: 2) { repository.from("Sidebar › double-click branch") { repository.switchBranch(ref.name) } }
+                .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+        }
     }
 
     private func toggleFolder(_ folder: String) {
@@ -303,19 +313,21 @@ struct SidebarView: View {
 
     // MARK: Worktrees
 
+    /// ScreenMarks › 워크트리: this window's working tree ("This window · ~/Developer/powerlens"),
+    /// the others with their branch and changes (a dot when there are some), then Add Worktree….
     private var worktreeSection: some View {
-        let root = repository.repository?.root.path(percentEncoded: false).trimmingTrailingSlash ?? repository.path
         let trees = repository.worktrees.filter { !$0.isBare && (matches($0.name) || matches($0.branch ?? "")) }
         return SidebarSectionView(
             title: "Worktrees", tile: Icons.tileWorktree, tileSize: 13, color: Color(nsColor: K.hex(0x2e8f4a)),
             count: repository.worktrees.filter { !$0.isBare }.count, isOpen: isOpen(.worktrees), toggle: { toggle(.worktrees) }
         ) {
-            ForEach(Array(trees.enumerated()), id: \.element.id) { index, tree in
-                let path = Formatters.abbreviatedPath(tree.path)
-                let isCurrent = canonicalPath(tree.path).trimmingTrailingSlash == canonicalPath(root).trimmingTrailingSlash
-                SidebarRow(title: tree.name, flat: true, isCurrent: isCurrent,
-                           subtitle: index == 0 || tree.branch == nil ? path : "\(tree.branch ?? "") · \(path)",
-                           trailingCheck: isCurrent)
+            ForEach(trees) { tree in
+                WorktreeSidebarRow(repository: repository, tree: tree)
+            }
+            if filter.isEmpty, repository.isReady {
+                SidebarRow(title: "Add Worktree…", flat: true, isLink: true)
+                    .onTapGesture { repository.sheet = .addWorktree(nil) }
+                    .accessibilityAddTraits(.isButton)
             }
         }
     }
@@ -376,6 +388,64 @@ struct SidebarView: View {
         .padding(.horizontal, 9)
         .frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.hover))
+    }
+}
+
+/// `.si.two`: a worktree — its folder's name, then "This window · ~/Developer/powerlens" for this
+/// tab's, or "hotfix/0.9.3.1 · 2 changes" with an orange dot. A click shows the worktree's page.
+private struct WorktreeSidebarRow: View {
+    let repository: RepositoryModel
+    let tree: Worktree
+    @State private var hovering = false
+
+    var body: some View {
+        let isCurrent = repository.isCurrent(tree)
+        let isOn = repository.selectedWorktree == tree.path
+        let changes = repository.worktreeChanges[tree.path] ?? 0
+        let highlighted = isCurrent && !showsOther
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tree.name)
+                    .font(highlighted ? KFont.body650 : .system(size: 13))
+                    .foregroundStyle(highlighted ? K.accentText : K.label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(subtitle(isCurrent: isCurrent, changes: changes))
+                    .font(.system(size: 11))
+                    .foregroundStyle(K.label2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !isCurrent, changes > 0 {
+                Circle().fill(K.warn).frame(width: 7, height: 7).help("Uncommitted changes")
+            }
+            if isCurrent {
+                Icon(Icons.check, size: 13).foregroundStyle(K.accent)
+            }
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(height: 42)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(highlighted ? K.accentSoft : (isOn || hovering ? K.hover : .clear))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { repository.showWorktree(isCurrent ? nil : tree) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .help(tree.path)
+    }
+
+    /// Another worktree's page is open: this tab's row isn't highlighted (the board's 워크트리 state).
+    private var showsOther: Bool { repository.selectedWorktree != nil }
+
+    private func subtitle(isCurrent: Bool, changes: Int) -> String {
+        if isCurrent { return "This window · " + Formatters.abbreviatedPath(tree.path) }
+        let place = tree.branch ?? tree.head.map { "detached at \($0.prefix(7))" } ?? Formatters.abbreviatedPath(tree.path)
+        return changes > 0 ? "\(place) · \(Formatters.count(changes, "change", "changes"))" : place
     }
 }
 
@@ -526,6 +596,10 @@ private struct SidebarRow: View {
     var ahead = 0
     var behind = 0
     var trailingCheck = false
+    /// `.wtin`: a mark at the end (a branch checked out in another worktree).
+    var trailingIcon: SVGIcon?
+    /// `.si.on`: the row whose page the right panel shows.
+    var isOn = false
 
     @State private var hovering = false
 
@@ -571,6 +645,9 @@ private struct SidebarRow: View {
                 }
                 if ahead > 0 { Pill(text: "↑\(ahead)", fill: K.accentSoft, color: K.accentText) }
                 if behind > 0 { Pill(text: "↓\(behind)", fill: K.modBg, color: K.mod) }
+                if let trailingIcon {
+                    Icon(trailingIcon, size: 12).foregroundStyle(K.accentText)
+                }
                 if trailingCheck {
                     Icon(Icons.check, size: 13).foregroundStyle(K.accent)
                 }
@@ -581,7 +658,7 @@ private struct SidebarRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isCurrent ? K.accentSoft : (hovering && !isPlaceholder ? K.hover : .clear))
+                .fill(isCurrent ? K.accentSoft : (isOn || (hovering && !isPlaceholder) ? K.hover : .clear))
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
