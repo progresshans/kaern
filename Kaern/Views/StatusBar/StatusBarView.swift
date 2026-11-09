@@ -121,6 +121,15 @@ struct StatusBarView: View {
         } else if let branch = status.branch, !repository.remotes.isEmpty {
             parts.append("\(branch) isn’t published yet")
         }
+        // ScreenMarks: LFS files still pointers, submodules away from their recorded commit.
+        let pointers = repository.workingMarks.lfsPointers.count
+        if pointers > 0 {
+            parts.append("LFS: " + Formatters.count(pointers, "file", "files") + " not downloaded")
+        }
+        let moved = repository.workingMarks.submoduleNotes.count
+        if moved > 0 {
+            parts.append(Formatters.count(moved, "submodule", "submodules") + " moved")
+        }
         // ScreenBigRepo: a slow status says so.
         if repository.isStatusSlow, repository.fsmonitorOn == false, let duration = repository.statusDuration {
             let value = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18

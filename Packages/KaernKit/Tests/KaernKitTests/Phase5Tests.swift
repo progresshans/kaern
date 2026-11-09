@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import KaernKit
@@ -452,5 +453,99 @@ struct BotFoldingTests {
         #expect(BotFolding.isBot(signature("ci", "41898282+github-actions[bot]@users.noreply.github.com")))
         #expect(BotFolding.isBot(signature("renovate")))
         #expect(!BotFolding.isBot(signature("Robot Kim")))
+    }
+}
+
+@Suite("Diff extras")
+struct DiffExtrasTests {
+    static let runner = RepositoryTests.runner
+
+    @Test func readsAFileAtEachVersion() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\n", to: "a.txt")
+        let first = try await repository.commitAll("One")
+        try repository.write("two\n", to: "a.txt")
+        try await repository.stage(["a.txt"])
+        try repository.write("three\n", to: "a.txt")
+        func text(_ version: FileVersion) async -> String? {
+            await repository.contents(of: "a.txt", at: version)?.data.map { String(decoding: $0, as: UTF8.self) }
+        }
+        #expect(await text(.revision(first)) == "one\n")
+        #expect(await text(.index) == "two\n")
+        #expect(await text(.workTree) == "three\n")
+        #expect(await repository.contents(of: "missing.txt", at: .revision(first)) == nil)
+        let tooBig = try #require(await repository.contents(of: "a.txt", at: .workTree, limit: 2))
+        #expect(tooBig.data == nil && tooBig.size == 6 && !tooBig.isMissingLFSContent)
+    }
+
+    @Test func findsTheContentOfAnLFSFileOnceItIsDownloaded() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        let content = Data("pretend these are the bytes of a PNG".utf8)
+        let hex = SHA256.hash(data: content).map { String(format: "%02x", $0) }.joined()
+        try repository.write("*.png filter=lfs diff=lfs merge=lfs -text\n", to: ".gitattributes")
+        try repository.write("version https://git-lfs.github.com/spec/v1\noid sha256:\(hex)\nsize \(content.count)\n", to: "art/logo.png")
+        let commit = try await repository.commitAll("Add the logo")
+
+        let missing = try #require(await repository.contents(of: "art/logo.png", at: .revision(commit)))
+        #expect(missing.isMissingLFSContent)
+        #expect(missing.size == content.count && missing.pointer?.oid == "sha256:\(hex)")
+
+        // git-lfs keeps content in .git/lfs/objects/<2>/<2>/<oid>.
+        let object = repository.root.appending(path: ".git/lfs/objects/\(hex.prefix(2))/\(hex.dropFirst(2).prefix(2))/\(hex)")
+        try FileManager.default.createDirectory(at: object.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: object)
+        let found = try #require(await repository.contents(of: "art/logo.png", at: .revision(commit)))
+        #expect(found.data == content && found.pointer != nil && !found.isMissingLFSContent)
+        // The work tree still holds the pointer, so it reads the same way.
+        #expect(await repository.contents(of: "art/logo.png", at: .workTree)?.data == content)
+    }
+
+    @Test func downloadingLFSFilesNeedsGitLFS() async throws {
+        guard !Self.runner.isLFSInstalled else { return }
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        await #expect(throws: LFSNotInstalledError.self) {
+            try await repository.downloadLFS(["art/logo.png"])
+        }
+    }
+
+    @Test func tellsWhatASubmoduleMoveBrings() async throws {
+        // The submodule's own repository: three commits, with tags on the first and the last.
+        let library = try await TestRepositories.make()
+        defer { TestRepositories.remove(library) }
+        try library.write("2.6.4\n", to: "VERSION")
+        let oldest = try await library.commitAll("Release 2.6.4")
+        try await library.git(["tag", "2.6.4"])
+        try library.write("2.6.5-dev\n", to: "VERSION")
+        try await library.commitAll("Fix appcast parsing for alpha channels")
+        try library.write("2.7.0\n", to: "VERSION")
+        let newest = try await library.commitAll("Bump version to 2.7.0")
+        try await library.git(["tag", "2.7.0"])
+
+        let app = try await TestRepositories.make()
+        defer { TestRepositories.remove(app) }
+        try app.write("app\n", to: "README.md")
+        try await app.commitAll("Start")
+        try await app.git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", library.root.path(percentEncoded: false), "Vendor/Sparkle"])
+        let folder = app.root.appending(path: "Vendor/Sparkle")
+        try await Self.runner.run(["checkout", "-q", oldest], in: folder)
+        try await app.commitAll("Add Sparkle at 2.6.4")
+        try await Self.runner.run(["checkout", "-q", newest], in: folder)
+
+        #expect(await app.submoduleHead("Vendor/Sparkle") == newest)
+        let forward = await app.submoduleChange("Vendor/Sparkle", from: oldest, to: newest)
+        #expect(forward.isInitialized && forward.isFastForward)
+        #expect(forward.oldTag == "2.6.4" && forward.newTag == "2.7.0")
+        #expect(forward.addedCount == 2)
+        #expect(forward.added.map(\.subject) == ["Bump version to 2.7.0", "Fix appcast parsing for alpha channels"])
+        let back = await app.submoduleChange("Vendor/Sparkle", from: newest, to: oldest)
+        #expect(back.removedCount == 2 && back.addedCount == 0 && !back.isFastForward)
+        #expect(back.removed.first?.subject == "Bump version to 2.7.0")
+        let added = await app.submoduleChange("Vendor/Sparkle", from: nil, to: newest)
+        #expect(added.addedCount == 3)
+        #expect(await app.submoduleChange("Vendor/Other", from: oldest, to: newest).isInitialized == false)
+        #expect(await app.submoduleHead("Vendor/Other") == nil)
     }
 }

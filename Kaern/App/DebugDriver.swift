@@ -697,7 +697,7 @@ final class DebugDriver {
         guard let nsWindow = controller?.window else { return }
         let keys: [String: (UInt16, Int)] = [
             "up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey),
-            "return": (36, 0x0D), "escape": (53, 0x1B),
+            "return": (36, 0x0D), "escape": (53, 0x1B), "space": (49, 0x20),
         ]
         guard let (code, scalar) = keys[name], let unicode = UnicodeScalar(scalar) else { return }
         let characters = String(Character(unicode))

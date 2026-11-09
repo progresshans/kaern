@@ -21,7 +21,7 @@ struct ReviewHunk: Identifiable, Equatable {
 /// One file of the selection, with its hunks in file order.
 struct ReviewFile: Identifiable, Equatable {
     let path: String
-    let letter: String
+    var letter: String
     var additions = 0
     var deletions = 0
     var hunks: [ReviewHunk] = []
@@ -37,6 +37,12 @@ struct ReviewFile: Identifiable, Equatable {
     var hasStaged = false
     /// Which of its diffs can have single lines staged, unstaged or discarded.
     var pickable: Set<ReviewHunk.Stage> = []
+    /// A picture, an LFS file or a submodule: Review shows its own page (ScreenMarks).
+    var special: SpecialFile?
+    /// Where its two versions come from (pictures, LFS files, Quick Look).
+    var sides = FileSides()
+    /// Stored in Git LFS (its diff is of pointers).
+    var isLFS = false
 
     var id: String { path }
 
@@ -76,6 +82,11 @@ extension RepositoryModel {
                 var file = ReviewFile(path: diff.path, letter: letter, additions: diff.additions, deletions: diff.deletions)
                 file.hunks = diff.hunks.map { ReviewHunk(id: "c\($0.id)", hunk: $0, stage: .committed, path: diff.path) }
                 if diff.isBinary { file.note = "Binary file" } else if diff.hunks.isEmpty { file.note = "No line changes (mode or type only)" }
+                file.sides = FileSides(old: diff.isNewFile ? nil : .revision(compare.base),
+                                       new: diff.isDeletedFile ? nil : compare.target.map { .revision($0) } ?? .workTree,
+                                       oldPath: diff.oldPath)
+                file.special = SpecialFile.detect(path: diff.path, diff: diff)
+                file.isLFS = diff.lfsChange != nil
                 return file
             }
         }
@@ -94,7 +105,7 @@ extension RepositoryModel {
                     hunks.append((hunk.oldStart, 1, ReviewHunk(id: "u\(hunk.id)", hunk: hunk, stage: .unstaged, path: entry.path)))
                 }
                 hunks.sort { ($0.key, $0.order) < ($1.key, $1.order) }
-                var file = ReviewFile(path: entry.path, letter: entry.isUntracked ? "A" : entry.kind.letter)
+                var file = ReviewFile(path: entry.path, letter: entry.submodule != nil ? "S" : entry.isUntracked ? "A" : entry.kind.letter)
                 file.hunks = hunks.map(\.hunk)
                 file.isWorking = true
                 file.hasUnstaged = entry.hasUnstagedChanges
@@ -115,17 +126,45 @@ extension RepositoryModel {
                 } else if file.hunks.isEmpty {
                     file.note = entry.submodule != nil ? "Submodule changes" : "No line changes (mode or type only)"
                 }
+                let deleted = entry.worktreeStatus == "D" || (entry.indexStatus == "D" && entry.worktreeStatus == ".")
+                file.sides = FileSides(old: entry.isUntracked || status.headID == nil || entry.indexStatus == "A" ? nil : .revision("HEAD"),
+                                       new: deleted ? nil : .workTree)
+                if let submodule = entry.submodule, !entry.isConflicted {
+                    file.special = submodule.commitChanged
+                        ? .submodule(SubmoduleSides(old: submodule.indexCommit, new: nil, stage: .unstaged,
+                                                    changedInside: submodule.hasModifiedContent || submodule.hasUntrackedContent))
+                        : submodule.headCommit != submodule.indexCommit
+                            ? .submodule(SubmoduleSides(old: submodule.headCommit, new: submodule.indexCommit, stage: .staged))
+                            : .submodule(SubmoduleSides(old: submodule.indexCommit, new: submodule.indexCommit, stage: .unstaged, changedInside: true))
+                } else if !entry.isConflicted {
+                    let diff = diffs?.unstaged ?? diffs?.staged
+                    file.special = SpecialFile.detect(path: entry.path, diff: diff)
+                    file.isLFS = diff?.lfsChange != nil || workingMarks.lfsSizes[entry.path] != nil
+                }
+                // A page of its own: no lines to pick.
+                if file.special != nil { file.pickable = [] }
                 return file
             }
         case .commit(let id):
             guard let loaded = commitDiffs, loaded.id == id else { return nil }
             let kinds = Dictionary(selectedFiles.map { ($0.path, $0.kind) }, uniquingKeysWith: { first, _ in first })
+            let moves = Dictionary(selectedFiles.compactMap { file in file.submodule.map { (file.path, $0) } }, uniquingKeysWith: { first, _ in first })
+            let parent = commit(id)?.parents.first
             return loaded.diffs.map { diff in
                 let letter = kinds[diff.path]?.letter
                     ?? (diff.isNewFile ? "A" : diff.isDeletedFile ? "D" : diff.oldPath != nil ? "R" : "M")
                 var file = ReviewFile(path: diff.path, letter: letter, additions: diff.additions, deletions: diff.deletions)
                 file.hunks = diff.hunks.map { ReviewHunk(id: "c\($0.id)", hunk: $0, stage: .committed, path: diff.path) }
                 if diff.isBinary { file.note = "Binary file" } else if diff.hunks.isEmpty { file.note = "No line changes (mode or type only)" }
+                file.sides = FileSides(old: diff.isNewFile ? nil : parent.map { .revision($0) }, new: diff.isDeletedFile ? nil : .revision(id),
+                                       oldPath: diff.oldPath)
+                if let move = moves[diff.path] {
+                    file.letter = "S"
+                    file.special = .submodule(SubmoduleSides(old: move.old, new: move.new, stage: .committed(id)))
+                } else {
+                    file.special = SpecialFile.detect(path: diff.path, diff: diff)
+                    file.isLFS = diff.lfsChange != nil
+                }
                 return file
             }
         }
@@ -592,6 +631,7 @@ struct StatusTile: View {
         case "A", "U", "?": K.add
         case "D": K.del
         case "!": K.err
+        case "S": K.sub
         default: K.mod
         }
     }
@@ -601,6 +641,7 @@ struct StatusTile: View {
         case "A", "U", "?": K.addBg
         case "D": K.delBg
         case "!": K.delBg
+        case "S": K.subBg
         default: K.modBg
         }
     }

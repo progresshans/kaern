@@ -149,6 +149,12 @@ final class RepositoryModel: Identifiable {
     private(set) var lastFetch: Date?
     /// Line counts of the working copy's changes, staged and unstaged apart.
     private(set) var lineStats = WorkingLineStats.empty
+    /// Git LFS sizes and pointers, and how far moved submodules are (ScreenMarks).
+    var workingMarks = WorkingMarks.empty
+    /// The same for the selected commit's files.
+    var commitMarks: CommitMarks?
+    /// The file Quick Look shows (Space, ⌘Y).
+    var quickLookURL: URL?
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
@@ -675,6 +681,7 @@ final class RepositoryModel: Identifiable {
         guard let repository, isVisible else { return }
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
         lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
+        await refreshWorkingMarks()
     }
 
     /// Remotes again (Repository Settings added, edited or removed one).
@@ -899,6 +906,9 @@ final class RepositoryModel: Identifiable {
         if let cached = detailsCache[id] {
             selectedDetails = cached.0
             selectedFiles = cached.1
+            if commitMarks?.id != id {
+                detailsTask = Task { await loadCommitMarks(cached.0.commit, files: cached.1) }
+            }
             return
         }
         detailsTask = Task {
@@ -913,6 +923,7 @@ final class RepositoryModel: Identifiable {
             if detailsCache.count > 200 { detailsCache.removeAll() }
             selectedDetails = details
             selectedFiles = files
+            await loadCommitMarks(details.commit, files: files)
         }
     }
 

@@ -29,7 +29,9 @@ struct FocusDrawer: View {
                 .frame(width: 310)
                 .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
                 Group {
-                    if let current {
+                    if let current, let special = current.special {
+                        SpecialFileView(file: current, special: special, repository: repository)
+                    } else if let current {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 let limit = expanded.contains(current.path) ? Int.max : 2_000

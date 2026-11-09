@@ -65,6 +65,16 @@ struct ReviewView: View {
         let shown: [ReviewFile] = state.showsAllFiles
             ? files
             : [files.first { $0.path == state.path } ?? files[0]]
+        if !state.showsAllFiles, let file = shown.first, let special = file.special {
+            // A picture, an LFS file or a submodule: its own page (ScreenMarks).
+            SpecialFileView(file: file, special: special, repository: repository)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            list(files: files, shown: shown, state: state)
+        }
+    }
+
+    private func list(files: [ReviewFile], shown: [ReviewFile], state: ReviewState) -> some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 if state.showsAllFiles {
@@ -76,11 +86,15 @@ struct ReviewView: View {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                         ForEach(shown) { file in
                             Section {
-                                let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
-                                let picking = picking(for: file)
-                                ForEach(rows) { item in
-                                    DiffRowView(item: item, repository: repository, picking: picking) {
-                                        limits[file.path] = Int.max
+                                if let special = file.special {
+                                    SpecialFileView(file: file, special: special, repository: repository, inList: true)
+                                } else {
+                                    let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
+                                    let picking = picking(for: file)
+                                    ForEach(rows) { item in
+                                        DiffRowView(item: item, repository: repository, picking: picking) {
+                                            limits[file.path] = Int.max
+                                        }
                                     }
                                 }
                                 K.sep.frame(height: 1)
@@ -136,6 +150,8 @@ private struct ReviewHeader: View {
                 if !state.showsAllFiles, let file {
                     StatusTile(letter: file.letter)
                     Text(file.path).truncationMode(.middle)
+                    if file.isLFS { LFSBadge() }
+                    if case .submodule? = file.special { KindPill(text: "Submodule") }
                 } else {
                     Text(title).truncationMode(.tail)
                 }
@@ -143,8 +159,10 @@ private struct ReviewHeader: View {
             .font(.system(size: 13, weight: .semibold))
             .lineLimit(1)
             .layoutPriority(-1)
-            LineCounts(additions: state.showsAllFiles ? files.reduce(0) { $0 + $1.additions } : file?.additions ?? 0,
-                       deletions: state.showsAllFiles ? files.reduce(0) { $0 + $1.deletions } : file?.deletions ?? 0)
+            if state.showsAllFiles || file?.special == nil {
+                LineCounts(additions: state.showsAllFiles ? files.reduce(0) { $0 + $1.additions } : file?.additions ?? 0,
+                           deletions: state.showsAllFiles ? files.reduce(0) { $0 + $1.deletions } : file?.deletions ?? 0)
+            }
             Spacer(minLength: 0)
             if !state.showsAllFiles, let file, !file.pickable.isEmpty, state.compare == nil {
                 Text(Self.stagedLines(file))
@@ -165,7 +183,9 @@ private struct ReviewHeader: View {
                         .disabled(current >= files.count - 1)
                 }
             }
-            SegmentedChoice(options: [(DiffLayout.split, "Split"), (.unified, "Unified")], selection: $layout, label: "Diff layout")
+            if state.showsAllFiles || file?.special == nil {
+                SegmentedChoice(options: [(DiffLayout.split, "Split"), (.unified, "Unified")], selection: $layout, label: "Diff layout")
+            }
             GhostButton(title: state.showsAllFiles ? "One File" : "All Files") {
                 repository.review = ReviewState(showsAllFiles: !state.showsAllFiles, path: file?.path, compare: state.compare)
             }
@@ -215,6 +235,21 @@ private struct ReviewHeader: View {
     private func show(_ index: Int) {
         guard files.indices.contains(index) else { return }
         repository.review = ReviewState(showsAllFiles: false, path: files[index].path, compare: state.compare)
+    }
+}
+
+/// `.kindp`: what a file is ("Submodule"), in a gray capsule.
+struct KindPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(K.label2)
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .background(Capsule().fill(K.hover))
+            .fixedSize()
     }
 }
 

@@ -51,6 +51,12 @@ nonisolated enum K {
     static let err = dynamic(0xe5372b, 0xff453a)
     static let badge = dynamic(0xff3b30, 0xff453a)
 
+    // MARK: Git LFS and submodules (ScreenMarks `.lfsb`, `.st-S`)
+    static let lfs = dynamic(0x6a3ed6, 0xb79cff)
+    static let lfsBg = dynamic(rgba(124, 77, 232, 0.14), rgba(150, 110, 255, 0.24))
+    static let sub = dynamic(0x4f6b8a, 0x9db5d2)
+    static let subBg = dynamic(rgba(79, 107, 138, 0.16), rgba(140, 170, 205, 0.22))
+
     // MARK: Diff
     static let add = dynamic(0x157347, 0x4cd97b)
     static let addBg = dynamic(rgba(40, 167, 69, 0.1), rgba(48, 209, 88, 0.1))

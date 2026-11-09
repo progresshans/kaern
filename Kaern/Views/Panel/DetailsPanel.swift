@@ -253,7 +253,15 @@ private struct PanelFileRow: View {
                             .font(.system(size: 10.5, weight: .semibold))
                             .foregroundStyle(isReviewed ? .white.opacity(0.85) : K.accentText)
                     }
-                    LineCounts(additions: stat?.additions, deletions: stat?.deletions, selected: isReviewed)
+                    let marks = FileMarks(lfs: repository.workingMarks.lfsSizes[entry.path],
+                                          notDownloaded: !staged && repository.workingMarks.lfsPointers.contains(entry.path),
+                                          submoduleNote: staged ? nil : repository.workingMarks.submoduleNotes[entry.path],
+                                          selected: isReviewed)
+                    if marks.isEmpty {
+                        LineCounts(additions: stat?.additions, deletions: stat?.deletions, selected: isReviewed)
+                    } else {
+                        marks
+                    }
                 }
                 .padding(.horizontal, 6)
                 .frame(height: KMetric.fileRow)
@@ -273,6 +281,7 @@ private struct PanelFileRow: View {
     /// The staged list shows what's in the index, the unstaged list what's in the work tree.
     private var letter: String {
         if entry.isConflicted { return "!" }
+        if entry.submodule != nil { return "S" }
         if entry.isUntracked { return "A" }
         let status = staged ? entry.indexStatus : entry.worktreeStatus
         return ChangeKind(statusLetter: status)?.letter ?? entry.kind.letter
@@ -470,7 +479,8 @@ struct CommitInfoView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 4)
                 ForEach(files) { file in
-                    CommitFileRow(file: file, isHighlighted: file.path == highlightedPath) { openFile(file) }
+                    CommitFileRow(file: file, isHighlighted: file.path == highlightedPath,
+                                  marks: repository.commitMarks?.id == details.commit.id ? repository.commitMarks : nil) { openFile(file) }
                         .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: 6, inset: 0))
                 }
             }
@@ -510,16 +520,23 @@ private struct CommitActions: View {
 private struct CommitFileRow: View {
     let file: FileChange
     let isHighlighted: Bool
+    var marks: CommitMarks?
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                StatusTile(letter: file.kind.letter, selected: isHighlighted)
+                StatusTile(letter: file.submodule != nil ? "S" : file.kind.letter, selected: isHighlighted)
                 FilePathText(path: file.path, selected: isHighlighted)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                LineCounts(additions: file.stat?.additions, deletions: file.stat?.deletions, selected: isHighlighted)
+                let fileMarks = FileMarks(lfs: marks?.lfsSizes[file.path], notDownloaded: marks?.lfsMissing.contains(file.path) == true,
+                                          selected: isHighlighted)
+                if fileMarks.isEmpty {
+                    LineCounts(additions: file.stat?.additions, deletions: file.stat?.deletions, selected: isHighlighted)
+                } else {
+                    fileMarks
+                }
             }
             .padding(.horizontal, 6)
             .frame(height: KMetric.fileRow)

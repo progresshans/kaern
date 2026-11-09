@@ -45,6 +45,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.closeTab = { [weak self] in self?.closeActiveTab() ?? false }
         window.contextMenu = { [weak self] point in self?.contextMenu(at: point) }
+        window.quickLook = { [weak self] in self?.toggleQuickLook() ?? false }
         window.contextTracker = tracker
 
         lights = TrafficLights(window: window, centerFromTop: KMetric.tabRow / 2)
@@ -121,6 +122,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// The menu for the row at `point` (a commit, label, sidebar row, file or stash), in window
     /// coordinates with the origin at the top left.
+    /// Space: Quick Look of the file Review shows; Space again closes it.
+    func toggleQuickLook() -> Bool {
+        guard let tab = model.activeTab, let app, window?.attachedSheet == nil else { return false }
+        let repository = app.repository(for: tab.path)
+        if repository.quickLookURL != nil {
+            repository.quickLookURL = nil
+            return true
+        }
+        guard let file = repository.quickLookFile else { return false }
+        repository.quickLook(file)
+        return true
+    }
+
     private func contextMenu(at point: CGPoint) -> (NSMenu, UUID)? {
         guard let tab = model.activeTab, let app, let hit = contextTracker.hit(at: point) else { return nil }
         let repository = app.repository(for: tab.path)
@@ -182,6 +196,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 /// and Close Window (⇧⌘W) always close the window.
 final class KaernWindow: NSWindow {
     var closeTab: (() -> Bool)?
+    /// Space that nothing else took: Quick Look of the file Review shows (ScreenMarks).
+    var quickLook: (() -> Bool)?
     /// The context menu for the row at a point (window coordinates, top-left origin), `nil`
     /// where Kaern has none (the tab bar's own menus and text fields then get the click).
     var contextMenu: ((CGPoint) -> (NSMenu, UUID)?)?
@@ -189,6 +205,12 @@ final class KaernWindow: NSWindow {
     /// The tab row and toolbar (or the toolbar alone as the title bar): their own menus stay theirs.
     var chromeHeight: CGFloat = KMetric.tabRow + KMetric.toolbar
     private var closingWindow = false
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+        if event.keyCode == 49, modifiers.isEmpty, quickLook?() == true { return }
+        super.keyDown(with: event)
+    }
 
     override func sendEvent(_ event: NSEvent) {
         let isContextClick = event.type == .rightMouseDown

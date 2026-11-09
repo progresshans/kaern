@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -284,6 +285,8 @@ struct RepositoryScreen: View {
                 .padding(.bottom, showsStatusBar ? 44 : 18)
                 .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
         }
+        // Space and File › Quick Look (ScreenMarks).
+        .quickLookPreview($repository.quickLookURL)
         .overlay {
             if window.showsQuickOpen, repository.isReady {
                 ZStack(alignment: .top) {

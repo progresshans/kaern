@@ -105,6 +105,11 @@ enum MainMenu {
             (app.activeWindow?.window as? KaernWindow)?.performCloseWindow()
         })
         menu.addItem(.separator())
+        // ScreenMarks: the file Review shows, as Finder's ⌘Y (Space works too).
+        menu.addItem(MenuAction.item("Quick Look", key: "y", enabled: { repository?.quickLookFile != nil },
+                                    title: { repository?.quickLookFile.map { "Quick Look “\($0.name)”" } ?? "Quick Look" }) {
+            if let file = repository?.quickLookFile { repository?.quickLook(file) }
+        })
         menu.addItem(MenuAction.item("Show in Finder", enabled: { window?.activeTab != nil }) {
             if let path = window?.activeTab?.path { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
         })
@@ -235,6 +240,10 @@ enum MainMenu {
         menu.addItem(MenuAction.item("Fetch All Repositories", key: "f", modifiers: [.option, .shift, .command],
                                     enabled: { !AutoFetcher.shared.isFetchingAll && !app.openRepositories.isEmpty }) {
             AutoFetcher.shared.fetchAll(auto: false)
+        })
+        // ScreenMarks: every LFS file of the checked-out commit.
+        menu.addItem(MenuAction.item("Fetch LFS Files", enabled: { isIdle && repository?.usesLFS == true }) {
+            repository?.from("Repository menu") { repository?.fetchAllLFS() }
         })
         menu.addItem(MenuAction.item("Pull", key: arrow(NSDownArrowFunctionKey), modifiers: [.option, .command],
                                     enabled: { isIdle && repository?.status.upstream != nil }) {

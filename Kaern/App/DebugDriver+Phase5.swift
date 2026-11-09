@@ -11,7 +11,7 @@ extension DebugDriver {
         "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
-        "diffWrap", "scrollWheel",
+        "diffWrap", "scrollWheel", "selectSubject", "quickLook", "alwaysLFS", "imageMode", "downloadLFS",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -51,6 +51,10 @@ extension DebugDriver {
                 }
             }
             return
+        case "imageMode":
+            // imageMode 2up|swipe|onion
+            UserDefaults.kaern.set(args.first ?? "swipe", forKey: SettingsKey.imageDiffMode)
+            return
         case "diffWrap":
             // diffWrap on|off — Settings › Diff › Wrap long lines.
             UserDefaults.kaern.set(args.first != "off", forKey: SettingsKey.diffWrap)
@@ -86,6 +90,28 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
+        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS":
+            guard let tab = window.activeTab else { return }
+            let repository = app.repository(for: tab.path)
+            switch command {
+            case "selectSubject":
+                // selectSubject <subject…> — the newest loaded commit with that subject.
+                let subject = args.joined(separator: " ")
+                if let commit = repository.commits.first(where: { $0.subject == subject }) {
+                    repository.clearPicks()
+                    repository.selection = .commit(commit.id)
+                }
+            case "downloadLFS":
+                // downloadLFS <path> — the LFS page's Download, for the selected commit or the work tree.
+                let commit: String? = if case .commit(let id) = repository.selection { id } else { nil }
+                repository.from("LFS file") { repository.downloadLFS([args.joined(separator: " ")], at: commit) }
+            case "quickLook":
+                // quickLook — Space: the file Review shows; again closes it.
+                _ = controller?.toggleQuickLook()
+            default:
+                // alwaysLFS on|off — Always Download in <repository>.
+                repository.alwaysDownloadsLFS = args.first != "off"
+            }
         case "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow":
             guard let tab = window.activeTab else { return }
             let repository = app.repository(for: tab.path)
@@ -246,6 +272,33 @@ extension DebugDriver {
                  "rows": section.rows.map { "\($0.name) | \($0.branch) | \($0.changes.map(String.init) ?? "—") | \($0.toPush.map(String.init) ?? "—") | \($0.toPull.map(String.init) ?? "—") | \($0.tone) | \($0.status) | \($0.fixTitle ?? "")" }]
             },
         ] as [String: Any]
+        if let window, let tab = window.activeTab {
+            let repository = app.repository(for: tab.path)
+            func sizes(_ value: [String: LFSSizes]) -> [String: String] {
+                value.mapValues { "\($0.old.map(String.init) ?? "-")→\($0.new.map(String.init) ?? "-")" }
+            }
+            result["marks"] = [
+                "lfs": sizes(repository.workingMarks.lfsSizes),
+                "pointers": repository.workingMarks.lfsPointers.sorted(),
+                "submodules": repository.workingMarks.submoduleNotes,
+                "commit": repository.commitMarks.map { ["id": String($0.id.prefix(7)), "lfs": sizes($0.lfsSizes), "missing": $0.lfsMissing.sorted()] as [String: Any] } ?? NSNull(),
+                "files": (repository.reviewFiles ?? []).map { file -> String in
+                    let kind: String
+                    switch file.special {
+                    case .image?: kind = "image"
+                    case .lfs?: kind = "lfs"
+                    case .submodule(let sides)?: kind = "submodule \(sides.stage) \(sides.old.map { String($0.prefix(7)) } ?? "-")→\(sides.new.map { String($0.prefix(7)) } ?? "now")"
+                    case nil: kind = "text"
+                    }
+                    return "\(file.letter) \(file.path) \(kind)\(file.isLFS ? " lfs" : "")"
+                },
+                "quickLook": repository.quickLookURL?.lastPathComponent ?? "",
+                "quickLookFile": repository.quickLookFile?.path ?? "",
+                "alwaysLFS": repository.alwaysDownloadsLFS,
+                "alert": repository.alert.map { "\($0.title) — \($0.message)" } ?? "",
+                "toast": repository.toast?.message ?? "",
+            ] as [String: Any]
+        }
         result["sideScroll"] = DiffSideScroll.current.map { side -> [String: Any] in
             ["offset": side.offset, "content": side.contentWidth, "column": side.columnWidth, "max": side.maxOffset, "lastSeen": side.lastSeen]
         } ?? NSNull()

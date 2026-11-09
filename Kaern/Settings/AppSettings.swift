@@ -37,6 +37,10 @@ nonisolated enum SettingsKey {
     static let diffContext = "KaernDiffContext"
     static let diffWords = "KaernDiffWords"
     static let diffWrap = "KaernDiffWrap"
+    /// Repositories (paths) whose Git LFS files download when opened (ScreenMarks › Always Download).
+    static let lfsAlwaysDownload = "KaernLFSAlwaysDownload"
+    /// 2-up, Swipe or Onion Skin (ScreenMarks).
+    static let imageDiffMode = "KaernImageDiffMode"
     static let diffFontName = "KaernDiffFontName"
     static let diffFontSize = "KaernDiffFontSize"
     // Advanced
