@@ -348,6 +348,8 @@ final class RepositoryModel: Identifiable {
     /// A history read was cut short (the tab went to the background while it read): history
     /// loads again the next time the tab shows.
     @ObservationIgnored private var historyIsStale = false
+    /// Line counts, LFS and submodule marks were skipped because the tab wasn't visible.
+    @ObservationIgnored private var lineStatsAreStale = false
     /// A first load or a refresh is reading history from a new stream; pages for scrolling wait
     /// for it, so they never come from the new stream on top of the old list.
     @ObservationIgnored private var isReloadingHistory = false
@@ -598,6 +600,9 @@ final class RepositoryModel: Identifiable {
             if !pendingScope.isEmpty || !statusIsFull {
                 pendingScope.insert(.workTree)
                 runPendingRefresh(trigger: "Tab became visible")
+            } else if lineStatsAreStale {
+                // Loaded in the background: what that load left for the visible tab.
+                Task { await GitCommandTrigger.$current.withValue(.background("Tab became visible")) { await refreshLineStats() } }
             }
         default:
             break
@@ -743,7 +748,14 @@ final class RepositoryModel: Identifiable {
     }
 
     func refreshLineStats() async {
-        guard let repository, isVisible else { return }
+        guard let repository else { return }
+        guard isVisible else {
+            // A tab loaded in the background (the preload after launch): line counts, LFS and
+            // submodule marks come when it's shown.
+            lineStatsAreStale = true
+            return
+        }
+        lineStatsAreStale = false
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
         lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
         await refreshWorkingMarks()
