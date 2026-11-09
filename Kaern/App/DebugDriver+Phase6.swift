@@ -7,6 +7,7 @@ import KaernKit
 extension DebugDriver {
     static let phase6Commands: Set<String> = [
         "graphScope", "showRemote", "remoteOpen", "remoteFolder", "remoteMore", "sidebarFilter", "retryHistory", "pullWith", "selectRef",
+        "ignoreSuggestion", "changeFolder", "changeMore", "fileList", "stageFolder",
     ]
 
     func phase6(_ command: String, _ args: [String]) {
@@ -49,14 +50,14 @@ extension DebugDriver {
             // selectRef <name> — selects the commit a branch, remote branch or tag points at.
             if let ref = repository.refs.refs.first(where: { $0.name == rest }) { repository.reveal(ref.target) }
         default:
-            break
+            phase6Marks(command, args, repository: repository)
         }
     }
 
     func phase6Dump(_ window: WindowModel?) -> [String: Any] {
         guard let window, let tab = window.activeTab else { return [:] }
         let repository = app.repository(for: tab.path)
-        let result: [String: Any] = [
+        var result: [String: Any] = [
             "historyError": repository.historyError ?? "",
             "graphScope": repository.graphScope.rawValue,
             "graphScopeLabel": repository.graphScopeLabel,
@@ -84,6 +85,7 @@ extension DebugDriver {
             "sidebarRemote": sidebarRemoteLines(repository),
             "filter": repository.sidebar.filter,
         ]
+        result.merge(phase6MarksDump(repository)) { _, new in new }
         return result
     }
 

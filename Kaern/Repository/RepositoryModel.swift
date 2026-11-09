@@ -120,7 +120,16 @@ final class RepositoryModel: Identifiable {
     /// The banner over a repository Kaern just made that's only on this Mac (Publish to GitHub…).
     var showsPublishBanner = false
     private(set) var repository: GitRepository?
-    private(set) var status: WorkingTreeStatus = .empty
+    private(set) var status: WorkingTreeStatus = .empty {
+        didSet { updateBigChanges() }
+    }
+    /// Thousands of changed files: the panel lists folders and may suggest ignoring one (ScreenBigRepo).
+    private(set) var bigChanges: BigChanges?
+    /// Folders whose .gitignore suggestion was put away with Not Now.
+    var dismissedIgnoreSuggestions: Set<String> = []
+    /// Folders opened in the big changes list, and how many more files each shows.
+    var openChangeFolders: Set<String> = []
+    var changeFolderExtra: [String: Int] = [:]
     /// `false` while `status` comes from the light check (untracked folders folded).
     private(set) var statusIsFull = false
     private(set) var refs: RefSnapshot = .empty
@@ -384,6 +393,17 @@ final class RepositoryModel: Identifiable {
         self.id = path
         self.path = path
         fsmonitorDismissed = (UserDefaults.kaern.stringArray(forKey: SettingsKey.fsmonitorDismissed) ?? []).contains(path)
+        dismissedIgnoreSuggestions = Self.dismissedIgnoreSuggestions(for: path)
+    }
+
+    /// Works out the folder list when the status has thousands of files (once per status).
+    private func updateBigChanges() {
+        if status.entries.count >= BigChanges.threshold {
+            let changes = BigChanges(status.entries)
+            if changes != bigChanges { bigChanges = changes }
+        } else if bigChanges != nil {
+            bigChanges = nil
+        }
     }
 
     // MARK: Derived state

@@ -159,7 +159,9 @@ extension RepositoryModel {
     /// The paths of entries, with the old path of a staged rename.
     private func pathsWithRenames(_ paths: [String]) -> [String] {
         var result = paths
-        for entry in status.entries where paths.contains(entry.path) {
+        // A set: Stage All passes every path, and there may be thousands.
+        let wanted = Set(paths)
+        for entry in status.entries where wanted.contains(entry.path) {
             if let original = entry.originalPath { result.append(original) }
         }
         return Array(Set(result)).sorted()

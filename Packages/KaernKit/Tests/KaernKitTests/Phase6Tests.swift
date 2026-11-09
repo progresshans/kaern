@@ -130,6 +130,27 @@ struct Phase6Tests {
         #expect(!refs.remoteBranches.contains { $0.fullName == "refs/remotes/origin/HEAD" })
     }
 
+    // MARK: Ignoring a folder
+
+    @Test func aFolderPatternIgnoresThatFolder() async throws {
+        #expect(IgnorePatterns.folderPattern("charts/vendor/") == "charts/vendor/")
+        #expect(IgnorePatterns.folderPattern("node_modules/") == "/node_modules/")
+        #expect(IgnorePatterns.folderPattern("a[1]") == "/a\\[1]/")
+        #expect(IgnorePatterns(path: "docs/notes.md").folder == "/docs/")
+
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("x\n", to: "charts/vendor/a/x.yaml")
+        try repository.write("y\n", to: "other/charts/vendor/y.yaml")
+        let edit = try repository.addIgnorePattern(IgnorePatterns.folderPattern("charts/vendor/"))
+        let paths = try await repository.status().entries.map(\.path)
+        #expect(!paths.contains("charts/vendor/a/x.yaml") && paths.contains(".gitignore"))
+        // A pattern with a slash is anchored to the top: the same name deeper isn't ignored.
+        #expect(paths.contains("other/charts/vendor/y.yaml"))
+        try repository.restoreIgnoreFile(edit)
+        #expect(!FileManager.default.fileExists(atPath: repository.root.appending(path: ".gitignore").path(percentEncoded: false)))
+    }
+
     // MARK: Pull with rebase over uncommitted changes
 
     /// A repository with an origin, a local commit the origin doesn't have, and a second clone

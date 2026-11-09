@@ -115,12 +115,15 @@ public struct IgnorePatterns: Sendable, Hashable {
         file = directory.isEmpty ? "/" + escapedPath : escapedPath
         let ext = (name as NSString).pathExtension
         fileExtension = ext.isEmpty || name.hasPrefix(".") && !name.dropFirst().contains(".") ? nil : "*." + IgnorePatterns.escape(ext)
-        if directory.isEmpty {
-            folder = nil
-        } else {
-            let escaped = IgnorePatterns.escape(directory) + "/"
-            folder = directory.contains("/") ? escaped : "/" + escaped
-        }
+        folder = directory.isEmpty ? nil : IgnorePatterns.folderPattern(directory)
+    }
+
+    /// A folder's pattern: "charts/vendor/" stays relative to the .gitignore (it has a slash),
+    /// a folder at the top gets one in front ("/node_modules/") so it doesn't match deeper ones.
+    public static func folderPattern(_ folder: String) -> String {
+        let directory = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        let escaped = escape(directory) + "/"
+        return directory.contains("/") ? escaped : "/" + escaped
     }
 
     /// Backslash-escapes what gitignore treats as a pattern (`*`, `?`, `[`, `\`), a leading `#`

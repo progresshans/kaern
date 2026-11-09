@@ -68,14 +68,18 @@ private struct WorkingCopyPanel: View {
 
     var body: some View {
         let entries = repository.status.entries
-        let unstaged = entries.filter(\.hasUnstagedChanges)
-        let staged = entries.filter(\.hasStagedChanges)
         VStack(alignment: .leading, spacing: 0) {
             if repository.suggestsFSMonitor {
                 FSMonitorCard(repository: repository)
             }
             header(count: entries.count)
-            if entries.isEmpty {
+            if let big = repository.bigChanges {
+                // ScreenBigRepo › 변경 파일 1만 개: folders instead of thousands of rows.
+                if let suggestion = repository.ignoreSuggestion {
+                    IgnoreSuggestionCard(repository: repository, suggestion: suggestion)
+                }
+                BigChangesList(repository: repository, big: big, tree: $tree)
+            } else if entries.isEmpty {
                 VStack(spacing: 6) {
                     Text("Working tree clean").font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label2)
                     Text("Changes you make in this folder show up here.")
@@ -84,12 +88,14 @@ private struct WorkingCopyPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(20)
             } else {
+                let unstaged = entries.filter(\.hasUnstagedChanges)
+                let staged = entries.filter(\.hasStagedChanges)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        SectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
+                        PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
                             .disabled(unstaged.isEmpty || !repository.canChangeIndex)
                         FileList(repository: repository, entries: unstaged, staged: false, tree: tree)
-                        SectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
+                        PanelSectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
                             .disabled(staged.isEmpty || !repository.canChangeIndex)
                         FileList(repository: repository, entries: staged, staged: true, tree: tree)
                     }
@@ -99,6 +105,14 @@ private struct WorkingCopyPanel: View {
             }
             Composer(repository: repository)
         }
+    }
+
+    /// "git status 2.8 s · 12,408 files" (ScreenBigRepo).
+    private func bigNote(count: Int) -> String {
+        let files = Formatters.count(count, "file", "files")
+        guard let duration = repository.statusDuration else { return files }
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        return String(format: "git status %.1f s · ", seconds) + files
     }
 
     /// `.ph`: "13 file changes on [branch]", then Path / Tree and Review All.
@@ -124,8 +138,16 @@ private struct WorkingCopyPanel: View {
             HStack(spacing: 6) {
                 SegmentedChoice(options: [(false, "Path"), (true, "Tree")], selection: $tree, label: "File list style")
                 Spacer(minLength: 0)
-                GhostButton(title: "Review All") { repository.review = ReviewState(showsAllFiles: true) }
-                    .disabled(count == 0)
+                if repository.bigChanges != nil {
+                    // Thousands of files: how long git status takes instead of Review All.
+                    Text(bigNote(count: count))
+                        .font(.system(size: 11))
+                        .foregroundStyle(K.label2)
+                        .lineLimit(1)
+                } else {
+                    GhostButton(title: "Review All") { repository.review = ReviewState(showsAllFiles: true) }
+                        .disabled(count == 0)
+                }
             }
         }
         .padding(EdgeInsets(top: 12, leading: 14, bottom: 8, trailing: 14))
@@ -133,7 +155,7 @@ private struct WorkingCopyPanel: View {
 }
 
 /// `.psec`: "Unstaged Files (10)" with Stage All on the right.
-private struct SectionHeader: View {
+struct PanelSectionHeader: View {
     let title: String
     let action: String
     let run: () -> Void
@@ -145,6 +167,9 @@ private struct SectionHeader: View {
             Text(title)
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(K.label2)
+                .lineLimit(1)
+                .allowsTightening(true)
+                .minimumScaleFactor(0.9)
             Spacer(minLength: 0)
             Button(action: run) {
                 Text(action)
