@@ -669,13 +669,39 @@ extension RepositoryModel {
         } else if shift, let anchor = pickAnchor ?? selectedCommitID,
                   let a = commits.firstIndex(where: { $0.id == anchor }), let b = commits.firstIndex(where: { $0.id == id }), a != b {
             picked = commits[min(a, b)...max(a, b)].map(\.id)
+            pickFocus = id
             branchCompare = nil
         } else {
             picked = []
             pickAnchor = id
+            pickFocus = nil
             branchCompare = nil
             selection = .commit(id)
         }
+    }
+
+    /// ⇧↑ / ⇧↓ in the graph: the picked range grows or shrinks by one row at its moving end, as
+    /// ⇧-clicking the next row would (folded bot runs are stepped over). Returns the row the
+    /// moving end is on, to scroll to.
+    @discardableResult
+    func extendPick(by step: Int) -> String? {
+        guard let anchor = pickAnchor ?? selectedCommitID else { return nil }
+        let rows = displayCommits.filter { botRuns[$0.id] == nil }.map(\.id)
+        let end = pickFocus ?? anchor
+        guard let index = rows.firstIndex(of: end) else { return nil }
+        let next = min(max(index + step, 0), rows.count - 1)
+        let target = rows[next]
+        pickAnchor = anchor
+        if target == anchor {
+            // Back to one commit.
+            picked = []
+            pickFocus = nil
+            branchCompare = nil
+            selection = .commit(anchor)
+        } else {
+            click(commit: target, command: false, shift: true)
+        }
+        return target
     }
 
     var selectedCommitID: String? {
@@ -685,6 +711,7 @@ extension RepositoryModel {
 
     func clearPicks() {
         picked = []
+        pickFocus = nil
         branchCompare = nil
         compareSwapped = false
     }

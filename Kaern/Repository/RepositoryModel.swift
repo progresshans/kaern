@@ -212,6 +212,10 @@ final class RepositoryModel: Identifiable {
     }
     /// Where ⇧-click ranges start.
     var pickAnchor: String?
+    /// The end of the range ⇧↑ / ⇧↓ moves (the anchor stays).
+    var pickFocus: String?
+    /// Asks the graph to take keyboard focus (the debug driver; a background window gets no clicks).
+    var historyFocusRequest = 0
     /// Compare Two Commits shows the diff the other way round (Swap).
     var compareSwapped = false {
         didSet { if compareSwapped != oldValue { refreshComparisonIfNeeded() } }

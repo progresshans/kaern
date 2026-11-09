@@ -137,6 +137,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     private func contextMenu(at point: CGPoint) -> (NSMenu, UUID)? {
         guard let tab = model.activeTab, let app, let hit = contextTracker.hit(at: point) else { return nil }
+        contextTracker.lastTarget = hit.target
         let repository = app.repository(for: tab.path)
         return ContextMenus.menu(for: hit.target, repository: repository, window: model).map { ($0, hit.view) }
     }

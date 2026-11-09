@@ -37,6 +37,8 @@ final class ContextMenuTracker {
     var open: UUID?
     /// The menu on screen (the debug driver closes it after a snapshot).
     @ObservationIgnored weak var openMenu: NSMenu?
+    /// What the last right-click opened a menu for (the debug driver checks it).
+    @ObservationIgnored var lastTarget: ContextTarget?
 
     func setFrame(_ frame: CGRect?, for target: ContextTarget, view: UUID, clip: UUID?) {
         frames[view] = frame.map { (target, $0, clip) }
@@ -55,6 +57,11 @@ final class ContextMenuTracker {
         }
             .min { $0.value.frame.width * $0.value.frame.height < $1.value.frame.width * $1.value.frame.height }
             .map { Hit(view: $0.key, target: $0.value.target) }
+    }
+
+    /// Where the smallest view showing `target` is (window points, top-left origin).
+    func frame(of target: ContextTarget) -> CGRect? {
+        view(for: target).flatMap { frames[$0]?.frame }
     }
 
     /// The smallest view showing `target` (a branch's label before its sidebar row), for menus

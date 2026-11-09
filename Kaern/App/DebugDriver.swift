@@ -26,7 +26,12 @@ final class DebugDriver {
     }
 
     var app: AppModel { AppModel.shared }
-    var controller: MainWindowController? { app.activeWindow ?? app.windows.last }
+    /// `useWindow <n>` points the driver at one window: background windows never become key.
+    static var chosenWindow: Int?
+    var controller: MainWindowController? {
+        if let index = Self.chosenWindow, app.windows.indices.contains(index) { return app.windows[index] }
+        return app.activeWindow ?? app.windows.last
+    }
     var window: WindowModel? { controller?.model }
 
     func run(_ line: String) {
@@ -171,8 +176,9 @@ final class DebugDriver {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
         case "press":
-            // press up|down|return|escape — a key down through the window, to the focused view.
-            press(args.first ?? "")
+            // press up|down|return|escape|space [shift] [option] [command] — a key down through the
+            // window, to the focused view.
+            press(args.first ?? "", modifiers: Array(args.dropFirst()))
         case "front":
             // Makes the window key, so snapshots show the active-window look (traffic lights, checkboxes).
             NSApp.activate()
@@ -261,6 +267,8 @@ final class DebugDriver {
     // MARK: Phase 3
 
     private var openMenu: NSMenu?
+    /// `targetFrame`'s answer, for the dump.
+    var lastTargetFrame: CGRect?
     /// The first pass of a menu capture, and where its menu was.
     private var menuCapture: NSBitmapImageRep?
     private var menuCaptureFrame: NSRect?
@@ -693,7 +701,7 @@ final class DebugDriver {
 
     // MARK: Synthesized input (in-process, through NSWindow.sendEvent)
 
-    private func press(_ name: String) {
+    private func press(_ name: String, modifiers names: [String] = []) {
         guard let nsWindow = controller?.window else { return }
         let keys: [String: (UInt16, Int)] = [
             "up": (126, NSUpArrowFunctionKey), "down": (125, NSDownArrowFunctionKey),
@@ -701,9 +709,15 @@ final class DebugDriver {
         ]
         guard let (code, scalar) = keys[name], let unicode = UnicodeScalar(scalar) else { return }
         let characters = String(Character(unicode))
+        var flags: NSEvent.ModifierFlags = []
+        if names.contains("shift") { flags.insert(.shift) }
+        if names.contains("option") { flags.insert(.option) }
+        if names.contains("command") { flags.insert(.command) }
+        // Arrow keys carry the function-key flag, as real ones do.
+        if [126, 125].contains(code) { flags.insert([.function, .numericPad]) }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             guard let event = NSEvent.keyEvent(
-                with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: nsWindow.windowNumber, context: nil, characters: characters,
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
             ) else { continue }

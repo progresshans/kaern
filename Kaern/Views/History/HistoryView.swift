@@ -77,8 +77,9 @@ struct HistoryView: View {
                 repository.showToast(ids.count == 1 ? "Copied \(repository.short(ids[0]))" : "Copied \(ids.count) commit hashes")
                 return [NSItemProvider(object: ids.joined(separator: " ") as NSString)]
             }
-            .onKeyPress(.upArrow) { move(-1) }
-            .onKeyPress(.downArrow) { move(1) }
+            // ↑ ↓ move the selection; ⇧↑ ⇧↓ pick a range, as ⇧-click does.
+            .onKeyPress(.upArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(-1) : move(-1) }
+            .onKeyPress(.downArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(1) : move(1) }
             .onKeyPress(.return) {
                 // Return opens the selection in Review (Keyboard Shortcuts › In the Graph).
                 guard repository.canReview else { return .ignored }
@@ -86,6 +87,7 @@ struct HistoryView: View {
                 return .handled
             }
             .onAppear(perform: restoreAnchor)
+            .onChange(of: repository.historyFocusRequest) { listFocused = true }
             .onChange(of: repository.displayCommits.count) { updateWindow() }
             .onChange(of: repository.scrollRequest) { _, request in
                 if let request { center(request.id) }
@@ -227,6 +229,16 @@ struct HistoryView: View {
         repository.click(commit: id, command: command, shift: shift)
         listFocused = true
         if !command, !shift { onPick() }
+    }
+
+    /// ⇧↑ / ⇧↓: the picked range grows or shrinks at its moving end, which stays in view.
+    private func extend(_ step: Int) -> KeyPress.Result {
+        guard let end = repository.extendPick(by: step) else { return .ignored }
+        if let index = repository.displayCommits.firstIndex(where: { $0.id == end }) {
+            reveal(top: top(ofRow: index), height: KMetric.graphRow)
+        }
+        listFocused = true
+        return .handled
     }
 
     /// ↑ / ↓ move the selection through the working copy and the commits (a folded run is

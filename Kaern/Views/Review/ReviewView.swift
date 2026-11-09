@@ -48,6 +48,18 @@ struct ReviewView: View {
         .onChange(of: repository.selection) { limits = [:] }
     }
 
+    /// The right-click menu a file's chip and header open: the same as its row in the panel
+    /// (a working-copy file, or a file of the commit or compare target).
+    private func contextTarget(_ file: ReviewFile) -> ContextTarget {
+        if let compare = repository.review?.compare {
+            return compare.target.map { .commitFile(path: file.path, commit: $0) } ?? .file(path: file.path, staged: false)
+        }
+        switch repository.selection {
+        case .workingCopy: return .file(path: file.path, staged: !file.hasUnstaged)
+        case .commit(let id): return .commitFile(path: file.path, commit: id)
+        }
+    }
+
     /// Line picking for a working-copy file whose diffs allow it.
     private func picking(for file: ReviewFile) -> LinePicking? {
         guard file.isWorking, !file.pickable.isEmpty, repository.review?.compare == nil else { return nil }
@@ -78,7 +90,7 @@ struct ReviewView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 if state.showsAllFiles {
-                    FileIndex(files: files) { path in
+                    FileIndex(files: files, target: contextTarget) { path in
                         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("file:" + path, anchor: .top) }
                     }
                 }
@@ -100,12 +112,17 @@ struct ReviewView: View {
                                 K.sep.frame(height: 1)
                             } header: {
                                 // The chips scroll to the header, so the file starts below it.
-                                if state.showsAllFiles { FileSectionHeader(file: file).id("file:" + file.path) }
+                                if state.showsAllFiles {
+                                    FileSectionHeader(file: file)
+                                        .contextTarget(contextTarget(file), ring: ContextRing(radius: 0, inset: 1))
+                                        .id("file:" + file.path)
+                                }
                             }
                         }
                     }
                     .padding(.bottom, 20)
                 }
+                .contextClip()
                 .diffSideScrolling(resetKey: shown.map(\.path).joined(separator: "\n") + "\(layout)")
             }
         }
@@ -256,6 +273,7 @@ struct KindPill: View {
 /// `.rvindex`: a chip per file; clicking one scrolls to it.
 private struct FileIndex: View {
     let files: [ReviewFile]
+    let target: (ReviewFile) -> ContextTarget
     let jump: (String) -> Void
 
     var body: some View {
@@ -274,6 +292,7 @@ private struct FileIndex: View {
                 }
                 .buttonStyle(.plain)
                 .help(file.path)
+                .contextTarget(target(file), ring: ContextRing(radius: 7, inset: 0))
             }
         }
         .padding(.horizontal, 16)

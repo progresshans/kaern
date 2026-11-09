@@ -12,6 +12,7 @@ extension DebugDriver {
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
         "diffWrap", "scrollWheel", "selectSubject", "quickLook", "alwaysLFS", "imageMode", "downloadLFS",
+        "useWindow", "focusGraph", "targetFrame",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -50,6 +51,25 @@ extension DebugDriver {
                     app.open([URL(filePath: row.path, directoryHint: .isDirectory)], in: window)
                 }
             }
+            return
+        case "useWindow":
+            // useWindow <n> | useWindow off — later commands go to that window.
+            DebugDriver.chosenWindow = args.first.flatMap(Int.init)
+            return
+        case "targetFrame":
+            // targetFrame file <path> | commitFile <path> | commit <index> — writes where its row is
+            // (window points) into the dump's `targetFrame`.
+            guard let controller, args.count >= 2, let tab = controller.model.activeTab else { return }
+            let repository = app.repository(for: tab.path)
+            let rest = args.dropFirst().joined(separator: " ")
+            let target: ContextTarget? = switch args[0] {
+            case "file": .file(path: rest, staged: false)
+            case "fileStaged": .file(path: rest, staged: true)
+            case "commitFile": repository.selectedCommitID.map { .commitFile(path: rest, commit: $0) }
+            case "commit": Int(rest).flatMap { repository.commits.indices.contains($0) ? .commit(repository.commits[$0].id) : nil }
+            default: nil
+            }
+            lastTargetFrame = target.flatMap { controller.contextTracker.frame(of: $0) }
             return
         case "imageMode":
             // imageMode 2up|swipe|onion
@@ -90,7 +110,7 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
-        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS":
+        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph":
             guard let tab = window.activeTab else { return }
             let repository = app.repository(for: tab.path)
             switch command {
@@ -105,6 +125,8 @@ extension DebugDriver {
                 // downloadLFS <path> — the LFS page's Download, for the selected commit or the work tree.
                 let commit: String? = if case .commit(let id) = repository.selection { id } else { nil }
                 repository.from("LFS file") { repository.downloadLFS([args.joined(separator: " ")], at: commit) }
+            case "focusGraph":
+                repository.historyFocusRequest += 1
             case "quickLook":
                 // quickLook — Space: the file Review shows; again closes it.
                 _ = controller?.toggleQuickLook()
@@ -299,6 +321,16 @@ extension DebugDriver {
                 "toast": repository.toast?.message ?? "",
             ] as [String: Any]
         }
+        result["windows"] = app.windows.enumerated().map { index, controller -> [String: Any] in
+            let tab = controller.model.activeTab
+            return ["index": index, "tab": tab?.name ?? "", "lastTarget": controller.contextTracker.lastTarget.map { "\($0)" } ?? "",
+                    "lastTargetRepo": tab.map { app.repository(for: $0.path).name } ?? "",
+                    "targetInRepo": {
+                        guard let tab, case .commit(let id)? = controller.contextTracker.lastTarget else { return false }
+                        return app.repository(for: tab.path).commit(id) != nil
+                    }()]
+        }
+        result["targetFrame"] = lastTargetFrame.map { [$0.minX, $0.minY, $0.width, $0.height] } ?? NSNull()
         result["sideScroll"] = DiffSideScroll.current.map { side -> [String: Any] in
             ["offset": side.offset, "content": side.contentWidth, "column": side.columnWidth, "max": side.maxOffset, "lastSeen": side.lastSeen]
         } ?? NSNull()
