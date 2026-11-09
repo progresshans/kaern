@@ -79,8 +79,8 @@ struct Phase6Tests {
         #expect(GitRepository.revisionArguments(for: all, head: .leftOut) == ["--branches", "--remotes", "--tags"])
         #expect(GitRepository.revisionArguments(for: .current, head: .attached) == ["--ignore-missing", "HEAD"])
         #expect(GitRepository.revisionArguments(for: .local(remoteBranches: ["origin/main"]), head: .attached)
-            == ["--branches", "--remotes=origin/mai[n]"])
-        #expect(GitRepository.exactPattern("origin/release/2026.11") == "origin/release/2026.1[1]")
+            == ["--branches", "--glob=refs/remote[s]/origin/main"])
+        #expect(GitRepository.exactRemoteGlob("origin/release/2026.11") == "refs/remote[s]/origin/release/2026.11")
     }
 
     // MARK: Graph scopes
@@ -207,7 +207,9 @@ struct Phase6Tests {
         try worktree.write("new\n", to: "untracked.txt")
 
         let path = folder.path(percentEncoded: false)
-        let stash = try #require(try await repository.removeWorktree(path, keepingChangesAs: "Worktree test"))
+        let removed = try await repository.removeWorktree(path, keepingChangesAs: "Worktree test")
+        let stash = try #require(removed.stash)
+        #expect(removed.branch == "hotfix" && removed.trashed.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: path))
         #expect(try await repository.stashes().first?.message.contains("Worktree test") == true)
 
@@ -220,7 +222,7 @@ struct Phase6Tests {
         // Without changes nothing goes to the stash list.
         try await back.git(["checkout", "--", "a.txt"])
         try FileManager.default.removeItem(at: folder.appending(path: "untracked.txt"))
-        #expect(try await repository.removeWorktree(path, keepingChangesAs: "Worktree test") == nil)
+        #expect(try await repository.removeWorktree(path, keepingChangesAs: "Worktree test").stash == nil)
         // A detached one comes back at its commit.
         let head = try await repository.git(["rev-parse", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
         try await repository.addWorktree(at: folder, detachedAt: head)

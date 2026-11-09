@@ -32,6 +32,29 @@ public struct GitRepository: Sendable, Hashable {
 
     public var name: String { root.lastPathComponent }
 
+    /// Whether two file URLs name the same place (symbolic links resolved, trailing slashes ignored).
+    public static func samePlace(_ a: URL, _ b: URL) -> Bool {
+        func place(_ url: URL) -> String {
+            var path = url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+        return place(a) == place(b)
+    }
+
+    /// Runs `work` where a stop can't reach it. Putting changes back after a stop must not be
+    /// stopped too: every git command in a cancelled task is ended as soon as it starts.
+    static func uncancelled<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await Task { try await work() }.value
+    }
+
+    /// An error in a sentence ("It was stopped." for a stop).
+    static func describe(_ error: any Error) -> String {
+        if error is CancellationError { return "It was stopped." }
+        let text = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.hasSuffix(".") ? text : text + "."
+    }
+
     // MARK: - Opening
 
     /// Opens the repository containing `url`.

@@ -46,9 +46,49 @@ public struct Worktree: Sendable, Hashable, Identifiable {
     public var branch: String?
     public var isBare = false
     public var isLocked = false
+    /// The repository's main working tree (the first one `git worktree list` gives): it can't
+    /// be removed.
+    public var isMain = false
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }
+}
+
+/// What Remove… kept of a working tree: where its HEAD was, its uncommitted changes (a stash),
+/// and the files git ignores, in the Trash.
+public struct RemovedWorktree: Sendable, Hashable {
+    public struct TrashedItem: Sendable, Hashable {
+        /// Where it was, relative to the working tree's folder.
+        public var path: String
+        /// Where it is in the Trash now.
+        public var trashURL: URL
+
+        public init(path: String, trashURL: URL) {
+            self.path = path
+            self.trashURL = trashURL
+        }
+    }
+
+    /// The branch it had checked out, `nil` on a detached HEAD.
+    public var branch: String?
+    public var head: String
+    public var stash: String?
+    public var trashed: [TrashedItem]
+
+    public init(branch: String?, head: String, stash: String?, trashed: [TrashedItem]) {
+        self.branch = branch
+        self.head = head
+        self.stash = stash
+        self.trashed = trashed
+    }
+}
+
+/// Why Kaern won't remove a working tree (said before anything changed), or what's left where
+/// after a removal that didn't go through.
+public struct WorktreeRefusal: Error, LocalizedError, Sendable {
+    public let message: String
+    public init(message: String) { self.message = message }
+    public var errorDescription: String? { message }
 }
 
 /// Who signed a commit and whether git trusts the key (`%G?`, `%GS`, `%GK`).
@@ -146,6 +186,7 @@ extension GitRepository {
             }
         }
         if let current { result.append(current) }
+        if !result.isEmpty { result[0].isMain = true }
         return result
     }
 
@@ -174,7 +215,9 @@ extension GitRepository {
     public func signatureCodes(of ids: [String]) async -> [String: Character] {
         guard !ids.isEmpty else { return [:] }
         let check = await signatureCheckArguments()
-        guard let output = try? await git(check + ["log", "--no-walk=unsorted", "--format=%H%x1f%G?"] + ids + ["--"]) else { return [:] }
+        // The ids go in on standard input: thousands of them would make the command line too long.
+        guard let output = try? await git(check + ["log", "--no-walk=unsorted", "--format=%H%x1f%G?", "--stdin", "--"],
+                                          input: Data((ids.joined(separator: "\n") + "\n").utf8)) else { return [:] }
         var codes: [String: Character] = [:]
         for line in output.text.split(separator: "\n") {
             let fields = Records.fields(line)
@@ -219,24 +262,101 @@ extension GitRepository {
         }
     }
 
-    /// `git worktree remove`: git refuses when the folder has changes that aren't committed.
+    /// `git worktree remove`: git refuses when the folder has changes that aren't committed (but
+    /// deletes the files it ignores).
     public func removeWorktree(_ path: String) async throws {
         try await git(["worktree", "remove", path])
     }
 
-    /// Removes the working tree at `path`. Its uncommitted changes (untracked files too) go to the
-    /// stash list first, which every working tree shares; git would refuse, or lose them with
-    /// --force. Returns that stash's object, `nil` when there was nothing to keep.
-    public func removeWorktree(_ path: String, keepingChangesAs message: String) async throws -> String? {
-        let worktree = try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
+    /// The linked working tree at `path` as a repository of its own. Refuses this repository's
+    /// main working tree, and a folder that isn't a working tree's own top folder (it would open
+    /// the repository around it).
+    public func linkedWorktree(at path: String) async throws -> GitRepository {
+        let folder = URL(filePath: path, directoryHint: .isDirectory)
+        let worktree = try await GitRepository.open(folder, runner: runner)
+        guard Self.samePlace(worktree.root, folder) else {
+            throw WorktreeRefusal(message: "\(folder.lastPathComponent) isn’t a working tree’s own folder.")
+        }
+        // A linked working tree's git folder is .git/worktrees/<name>; the main one's is .git itself.
+        guard !Self.samePlace(worktree.gitDirectory, worktree.commonGitDirectory) else {
+            throw WorktreeRefusal(message: "\(folder.lastPathComponent) is the repository’s main working tree, which can’t be removed.")
+        }
+        return worktree
+    }
+
+    /// Files and folders git ignores here (a folder it ignores as a whole is one item), as paths
+    /// relative to the working tree: `git ls-files --others --ignored --exclude-standard --directory`.
+    public func ignoredItems() async -> [String] {
+        guard let output = try? await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"]) else { return [] }
+        return Records.splitNUL(output.stdout).map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }.filter { !$0.isEmpty }
+    }
+
+    /// Removes the linked working tree at `path` and keeps what git would lose with it:
+    /// - its uncommitted changes (untracked files too) go to the stash list, which every working
+    ///   tree shares (git would refuse, or lose them with --force);
+    /// - files git ignores there (`.env`, build output, `node_modules/`) go to the Trash, where git
+    ///   would delete them with the folder.
+    /// Before changing anything it refuses the main working tree, a rebase or merge in progress
+    /// there (its state lives in the folder git deletes), and a detached HEAD with commits that
+    /// no branch, tag or remote branch holds.
+    public func removeWorktree(_ path: String, keepingChangesAs message: String) async throws -> RemovedWorktree {
+        let worktree = try await linkedWorktree(at: path)
+        let name = worktree.root.lastPathComponent
+        guard worktree.operationState() == nil else {
+            throw WorktreeRefusal(message: "A rebase, merge or cherry-pick is in progress in \(name). Finish or abort it there first.")
+        }
+        guard let head = await worktree.resolve("HEAD") else {
+            throw WorktreeRefusal(message: "\(name) has no commit checked out.")
+        }
+        let branch = await worktree.currentBranchName()
+        if branch == nil {
+            let held = try? await worktree.git(["for-each-ref", "--contains", "HEAD", "--count=1", "--format=%(refname)"])
+            if (held?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw WorktreeRefusal(message: "HEAD in \(name) has commits no branch holds. Make a branch for them there first.")
+            }
+        }
+        let ignored = await worktree.ignoredItems()
         let stash = try await worktree.stashAll(message: message, includeUntracked: true)
+        let folder = worktree.root
+        var trashed: [RemovedWorktree.TrashedItem] = []
         do {
+            for item in ignored {
+                var result: NSURL?
+                try FileManager.default.trashItem(at: folder.appending(path: item), resultingItemURL: &result)
+                if let result { trashed.append(RemovedWorktree.TrashedItem(path: item, trashURL: result as URL)) }
+            }
             try await removeWorktree(path)
         } catch {
-            if let stash { try? await worktree.popStash(object: stash) }
-            throw error
+            // Nothing was removed: everything goes back, even after a stop.
+            let failure = error
+            Self.putBack(trashed, into: folder)
+            if let stash {
+                do {
+                    try await Self.uncancelled { try await worktree.popStash(object: stash) }
+                } catch {
+                    throw WorktreeRefusal(message: "\(Self.describe(failure)) The changes in \(name) are kept in the stash list as “\(message)”.")
+                }
+            }
+            throw failure
         }
-        return stash
+        return RemovedWorktree(branch: branch, head: head, stash: stash, trashed: trashed)
+    }
+
+    /// Puts items Remove… moved to the Trash back into `folder` (the ones still in the Trash).
+    /// Returns how many couldn't come back.
+    @discardableResult
+    public static func putBack(_ items: [RemovedWorktree.TrashedItem], into folder: URL) -> Int {
+        var missing = 0
+        for item in items.reversed() {
+            let target = folder.appending(path: item.path)
+            do {
+                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: item.trashURL, to: target)
+            } catch {
+                missing += 1
+            }
+        }
+        return missing
     }
 
     /// `git worktree add --detach`: a working tree at `commit`, on no branch.

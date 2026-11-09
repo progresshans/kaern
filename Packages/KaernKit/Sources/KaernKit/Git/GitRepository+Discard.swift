@@ -96,6 +96,8 @@ public struct IgnoreEdit: Sendable, Hashable {
     public var pattern: String
     /// The file's contents before, `nil` when there was no `.gitignore`.
     public var previous: Data?
+    /// What Kaern wrote: ⌘Z puts `previous` back only while the file still holds this.
+    public var written: Data?
 }
 
 /// The patterns the Ignore menu offers for one path.
@@ -150,7 +152,12 @@ extension GitRepository {
         if let last = data.last, last != 0x0A { data.append(0x0A) }
         data.append(contentsOf: Array((pattern + "\n").utf8))
         try data.write(to: gitignoreURL, options: .atomic)
-        return IgnoreEdit(pattern: pattern, previous: previous)
+        return IgnoreEdit(pattern: pattern, previous: previous, written: data)
+    }
+
+    /// The top-level `.gitignore` as it is now (`nil` when there's none).
+    public func ignoreFileContents() -> Data? {
+        FileManager.default.contents(atPath: gitignoreURL.path(percentEncoded: false))
     }
 
     /// Puts `.gitignore` back the way it was before `edit`.

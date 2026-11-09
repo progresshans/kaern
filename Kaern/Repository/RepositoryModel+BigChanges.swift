@@ -150,8 +150,10 @@ extension RepositoryModel {
     }
 
     /// The folder row's checkbox: stages (or unstages) every file in it with one git command.
+    /// ⌘Z restores the index under the whole folder: the command can touch more than the listed
+    /// files (a nested repository it stages, a rename it splits).
     func stageFolder(_ folder: BigChanges.Folder, staged: Bool) {
-        let paths = folder.entries.map(\.path)
+        let paths = [folder.path.hasSuffix("/") ? folder.path : folder.path + "/"]
         let label = (staged ? "Unstage " : "Stage ") + folder.path
         if staged {
             let hasHead = status.headID != nil

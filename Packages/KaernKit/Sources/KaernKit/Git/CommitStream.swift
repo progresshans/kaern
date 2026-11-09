@@ -333,7 +333,7 @@ extension GitRepository {
             arguments.append("--branches")
             // Each remote branch by a pattern that matches only its own name, so a branch a fetch
             // pruned meanwhile is left out instead of failing the whole read.
-            arguments += remoteBranches.map { "--remotes=" + exactPattern($0) }
+            arguments += remoteBranches.map { "--glob=" + exactRemoteGlob($0) }
             switch head {
             case .detached: arguments.append("HEAD")
             case .unknown: arguments = ["--ignore-missing"] + arguments + ["HEAD"]
@@ -346,11 +346,13 @@ extension GitRepository {
         return arguments
     }
 
-    /// A ref pattern that matches `name` alone. git appends `/*` to a pattern without `*`, `?`
-    /// or `[` (so `origin/main` would mean the branches under it); bracketing the last character
-    /// keeps it exact. Branch names can't contain `*`, `?` or `[` themselves.
-    static func exactPattern(_ name: String) -> String {
-        guard let last = name.last else { return name }
-        return String(name.dropLast()) + "[" + String(last) + "]"
+    /// A ref pattern that matches the remote branch `name` ("origin/main") alone, and nothing
+    /// when a fetch pruned it (where naming it would fail the whole read). git appends `/*` to a
+    /// pattern without `*`, `?` or `[` (so `origin/main` would mean the branches under it), so one
+    /// character is bracketed: the `s` of `refs/remotes/`. A character of the name itself won't
+    /// do: a bracket matches one byte (not `é` or `글`), and `[!]` isn't a valid bracket. Branch
+    /// names can't contain `*`, `?`, `[` or a backslash, so the rest matches as written.
+    static func exactRemoteGlob(_ name: String) -> String {
+        "refs/remote[s]/" + name
     }
 }

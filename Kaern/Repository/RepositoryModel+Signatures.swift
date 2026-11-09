@@ -52,16 +52,28 @@ extension RepositoryModel {
     /// signed commit, so only for rows that have been seen.
     func loadSignatures(for ids: [String], again: Bool = false) {
         let missing = ids.filter { (again || signatureCodes[$0] == nil) && !signaturesInFlight.contains($0) }
-        guard !missing.isEmpty, let repository else { return }
+        guard !missing.isEmpty else { return }
         signaturesInFlight.formUnion(missing)
-        Task {
+        signaturesWanted.formUnion(missing)
+        readWantedSignatures()
+    }
+
+    /// One read at a time: scrolling fast would otherwise start one per frame, each running gpg
+    /// or ssh-keygen once per signed commit. Rows that come on screen meanwhile go in the next one.
+    private func readWantedSignatures() {
+        guard signatureReadTask == nil, !signaturesWanted.isEmpty, let repository else { return }
+        let batch = Array(signaturesWanted)
+        signaturesWanted = []
+        signatureReadTask = Task {
             let codes = await GitCommandTrigger.$current.withValue(.background("Checking signatures")) {
-                await repository.signatureCodes(of: missing)
+                await repository.signatureCodes(of: batch)
             }
-            signaturesInFlight.subtract(missing)
+            signaturesInFlight.subtract(batch)
             var updated = signatureCodes
-            for id in missing { updated[id] = codes[id] ?? "N" }
+            for id in batch { updated[id] = codes[id] ?? "N" }
             signatureCodes = updated
+            signatureReadTask = nil
+            readWantedSignatures()
         }
     }
 
@@ -90,7 +102,10 @@ extension RepositoryModel {
     /// After the allowed signers changed: the shields seen so far and the card are read again
     /// (the old shields stay until the new ones are in).
     func recheckSignatures() {
+        // Everything is read again, after any read that's running (reads go one at a time, so
+        // the new answers land last).
         signaturesInFlight = []
+        signaturesWanted = []
         loadSignatures(for: Array(signatureCodes.keys), again: true)
         let selected = selectedSignature?.id
         selectedSignature = nil
@@ -151,14 +166,18 @@ extension RepositoryModel {
 
     private func trustSigningKey(_ key: String, principal: String, file: URL, setsConfig: Bool) {
         perform(.working("Trusting the key…"), trigger: "Trust Key") { [weak self] repository in
-            let previous = FileManager.default.contents(atPath: file.path(percentEncoded: false))
-            try GitRepository.addAllowedSigner(principal: principal, key: key, to: file)
+            // A file kept in a dotfiles folder is often a link: the key goes into what it points
+            // at, and the link stays a link.
+            let target = file.resolvingSymlinksInPath()
+            let previous = FileManager.default.contents(atPath: target.path(percentEncoded: false))
+            try GitRepository.addAllowedSigner(principal: principal, key: key, to: target)
+            let configPath = file.path(percentEncoded: false)
             if setsConfig {
-                try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", file.path(percentEncoded: false))
+                try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", configPath)
             }
             guard let self else { return }
             self.recheckSignatures()
-            self.record(.trustedKey(file: file, previous: previous, setConfig: setsConfig, model: self),
+            self.record(.trustedKey(file: target, previous: previous, configPath: setsConfig ? configPath : nil, model: self),
                         toast: "Trusted the key of \(principal) · commits it signed show as verified")
         }
     }
@@ -193,23 +212,40 @@ extension CommitSignature {
 }
 
 nonisolated extension ReversibleStep {
-    /// Trust This Key… wrote to the allowed signers file (and maybe set it in the global config).
-    /// Undo puts the file back as it was; redo writes it again.
-    static func trustedKey(file: URL, previous: Data?, setConfig: Bool, model: RepositoryModel) -> ReversibleStep {
+    /// Trust This Key… wrote to the allowed signers file `file` (a link's target, never the link)
+    /// and, with `configPath`, set it as `gpg.ssh.allowedSignersFile` in the global config. Undo
+    /// puts the file back and unsets the setting, each only while it's as Trust Key left it;
+    /// redo writes them again only while they're as undo left them.
+    static func trustedKey(file: URL, previous: Data?, configPath: String?, model: RepositoryModel) -> ReversibleStep {
         let path = file.path(percentEncoded: false)
         let after = FileManager.default.contents(atPath: path)
+        let name = (path as NSString).lastPathComponent
+        @Sendable func setting(_ repository: GitRepository) async -> String? {
+            guard let output = try? await repository.runner.run(["config", "--global", "--get", "gpg.ssh.allowedSignersFile"], in: nil,
+                                                                acceptedStatus: [0, 1]), output.status == 0 else { return nil }
+            return output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         return ReversibleStep(label: "Trust Key") { repository in
             guard FileManager.default.contents(atPath: path) == after else {
-                throw UndoRefusal(message: "\((path as NSString).lastPathComponent) changed since “Trust Key”, so Kaern can’t take it back.")
+                throw UndoRefusal(message: "\(name) changed since “Trust Key”, so Kaern can’t take it back.")
+            }
+            if let configPath, await setting(repository) != configPath {
+                throw UndoRefusal(message: "gpg.ssh.allowedSignersFile changed since “Trust Key”, so Kaern can’t take it back.")
             }
             if let previous { try previous.write(to: file, options: .atomic) } else { try FileManager.default.removeItem(at: file) }
-            if setConfig { _ = try? await repository.runner.run(["config", "--global", "--unset", "gpg.ssh.allowedSignersFile"], in: nil) }
+            if configPath != nil { try await repository.runner.run(["config", "--global", "--unset", "gpg.ssh.allowedSignersFile"], in: nil) }
             await MainActor.run { model.recheckSignatures() }
             return ReversibleStep(label: "Trust Key") { repository in
+                guard FileManager.default.contents(atPath: path) == previous else {
+                    throw UndoRefusal(message: "\(name) changed since, so Kaern can’t do “Trust Key” again.")
+                }
+                if configPath != nil, await setting(repository) != nil {
+                    throw UndoRefusal(message: "gpg.ssh.allowedSignersFile is set again, so Kaern can’t do “Trust Key” again.")
+                }
                 if let after { try after.write(to: file, options: .atomic) }
-                if setConfig { try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", path) }
+                if let configPath { try await repository.runner.setGlobalConfig("gpg.ssh.allowedSignersFile", configPath) }
                 await MainActor.run { model.recheckSignatures() }
-                return trustedKey(file: file, previous: previous, setConfig: setConfig, model: model)
+                return trustedKey(file: file, previous: previous, configPath: configPath, model: model)
             }
         }
     }

@@ -182,12 +182,7 @@ extension GitRepository {
         guard let folder = submoduleFolder(path) else { throw NotARepositoryError(folder: root.appending(path: path)) }
         let submodule = try await GitRepository.open(folder, runner: runner)
         // A folder that isn't cloned would open this repository instead.
-        func place(_ url: URL) -> String {
-            var path = url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
-            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
-            return path
-        }
-        guard place(submodule.root) == place(folder) else { throw NotARepositoryError(folder: folder) }
+        guard Self.samePlace(submodule.root, folder) else { throw NotARepositoryError(folder: folder) }
         return submodule
     }
 

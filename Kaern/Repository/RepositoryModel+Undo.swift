@@ -285,6 +285,9 @@ nonisolated extension ReversibleStep {
     static func ignored(edit: IgnoreEdit) -> ReversibleStep {
         let label = "Ignore \(edit.pattern)"
         return ReversibleStep(label: label) { repository in
+            guard repository.ignoreFileContents() == edit.written else {
+                throw UndoRefusal(message: ".gitignore changed since “\(label)”, so Kaern can’t take it back.")
+            }
             try repository.restoreIgnoreFile(edit)
             return ReversibleStep(label: label) { repository in
                 let again = try repository.addIgnorePattern(edit.pattern)

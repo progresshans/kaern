@@ -117,7 +117,9 @@ extension GitRepository {
     /// (`message`), then puts them back, staged parts staged. They stay in the stash list, and
     /// `kept` is that entry's object, when `work` stopped on conflicts or when its result touches
     /// files the changes touch (putting them back would leave conflict markers). When `work`
-    /// throws they're put back first.
+    /// throws they're put back first. A stop that leaves git in the middle (a rebase or merge in
+    /// progress) returns `.stopped` with them kept, for Continue or Abort to bring back; when they
+    /// can't come back, the error says they're in the stash list.
     public func withChangesStashed(message: String, _ work: @Sendable () async throws -> OperationOutcome) async throws
         -> (outcome: OperationOutcome, kept: String?) {
         let before = await resolve("HEAD")
@@ -126,8 +128,18 @@ extension GitRepository {
         do {
             outcome = try await work()
         } catch {
-            if let stash { try? await popStash(object: stash) }
-            throw error
+            guard let stash else { throw error }
+            let failure = error
+            if failure is CancellationError, operationState() != nil { return (.stopped, stash) }
+            // After a stop every git command in this task is ended too: they come back from a
+            // task of their own.
+            do {
+                try await Self.uncancelled { try await self.popStash(object: stash) }
+            } catch {
+                throw GitError(arguments: ["stash", "pop"], status: -1,
+                               message: "\(Self.describe(failure)) Your uncommitted changes are kept in the stash list as “\(message)”.")
+            }
+            throw failure
         }
         guard let stash else { return (outcome, nil) }
         guard outcome == .finished else { return (outcome, stash) }
@@ -267,8 +279,14 @@ extension GitRepository {
             present.insert(path)
             entries.append("\(fields[0]) \(fields[2])\t\(path)")
         }
+        // What the index has under these paths but the tree doesn't leaves it: a folder's paths
+        // (a rename's other half, a nested repository staged with it) aren't all in `paths`.
+        var gone = Set(paths.filter { !present.contains($0) && !$0.hasSuffix("/") })
+        if let listed = try? await git(["ls-files", "-z", "--cached", "--"] + paths.map { ":(literal)" + $0 }) {
+            gone.formUnion(Records.splitNUL(listed.stdout).filter { !present.contains($0) })
+        }
         let zero = String(repeating: "0", count: 40)
-        for path in paths where !present.contains(path) {
+        for path in gone.sorted() {
             entries.append("0 \(zero)\t\(path)")
         }
         let input = entries.joined(separator: "\0") + "\0"

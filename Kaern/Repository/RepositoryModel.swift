@@ -171,6 +171,9 @@ final class RepositoryModel: Identifiable {
     /// `%G?` of the history rows that have been on screen (the Commit column's shields).
     var signatureCodes: [String: Character] = [:]
     @ObservationIgnored var signaturesInFlight: Set<String> = []
+    /// Ids waiting for the next signature read (one read runs at a time).
+    @ObservationIgnored var signaturesWanted: Set<String> = []
+    @ObservationIgnored var signatureReadTask: Task<Void, Never>?
     /// The selected commit's signature, once read (the panel's card).
     var selectedSignature: SelectedSignature?
     /// The card shows its details (they open when a commit is picked, like the board).

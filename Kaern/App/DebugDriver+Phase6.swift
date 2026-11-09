@@ -9,6 +9,7 @@ extension DebugDriver {
         "graphScope", "showRemote", "remoteOpen", "remoteFolder", "remoteMore", "sidebarFilter", "retryHistory", "pullWith", "selectRef",
         "ignoreSuggestion", "changeFolder", "changeMore", "fileList", "stageFolder",
         "worktree", "worktreeAction", "addWorktree", "worktreeSheet", "signatureOpen", "trustKey", "rawSignature",
+        "cancelActivity",
     ]
 
     func phase6(_ command: String, _ args: [String]) {
@@ -39,6 +40,9 @@ extension DebugDriver {
             repository.sidebar.filter = rest
         case "retryHistory":
             repository.retryHistory()
+        case "cancelActivity":
+            // cancelActivity — Activity's (or the status bar's) Cancel on the tab's running action.
+            repository.activityTask?.cancel()
         case "pullWith":
             // pullWith rebase|merge|ff — Pull with that choice, as from the toolbar.
             let strategy: GitRepository.PullStrategy = switch rest {

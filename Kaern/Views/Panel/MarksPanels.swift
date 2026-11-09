@@ -203,7 +203,7 @@ struct WorktreePanel: View {
                 GhostButton(title: "Remove…", tint: K.err) {
                     repository.from("Worktree") { repository.askRemoveWorktree(worktree) }
                 }
-                .disabled(repository.activity != nil || worktree.isLocked)
+                .disabled(repository.activity != nil || worktree.isLocked || worktree.isMain)
             }
             .padding(EdgeInsets(top: 10, leading: 12, bottom: 12, trailing: 12))
             .overlay(alignment: .top) { K.sep.frame(height: 1) }
