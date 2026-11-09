@@ -21,6 +21,8 @@ public struct Ref: Sendable, Hashable, Identifiable {
     public var upstreamGone: Bool
     /// `refs/remotes/origin/HEAD` and similar symbolic refs.
     public var isSymbolic: Bool
+    /// What a symbolic ref points at (`refs/remotes/origin/main` for `origin/HEAD`).
+    public var symbolicTarget: String?
     /// The branch HEAD points at.
     public var isHead: Bool
 
@@ -33,6 +35,7 @@ public struct Ref: Sendable, Hashable, Identifiable {
         behind: Int = 0,
         upstreamGone: Bool = false,
         isSymbolic: Bool = false,
+        symbolicTarget: String? = nil,
         isHead: Bool = false
     ) {
         self.fullName = fullName
@@ -43,6 +46,7 @@ public struct Ref: Sendable, Hashable, Identifiable {
         self.behind = behind
         self.upstreamGone = upstreamGone
         self.isSymbolic = isSymbolic
+        self.symbolicTarget = symbolicTarget
         self.isHead = isHead
     }
 

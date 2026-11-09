@@ -29,6 +29,8 @@ nonisolated enum SettingsKey {
     static let slowStatusSeconds = "KaernSlowStatusSeconds"
     /// Repositories where the fsmonitor suggestion was put away with Not Now.
     static let fsmonitorDismissed = "KaernFSMonitorDismissed"
+    /// The Graph: choice per repository path (ScreenBigRepo): "all", "local" or "current".
+    static let graphScopes = "KaernGraphScopes"
     /// Where Clone and Create New Repository put new folders (the last one used).
     static let projectsFolder = "KaernProjectsFolder"
     // Accounts

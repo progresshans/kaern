@@ -53,8 +53,8 @@ struct HistoryView: View {
             if !repository.picked.isEmpty {
                 SelectionBar(repository: repository)
             }
-            if repository.hasBotCommits {
-                BotBar(repository: repository)
+            if repository.hasBotCommits || repository.showsGraphScope {
+                GraphBar(repository: repository)
             }
             HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
             ScrollView {
@@ -798,37 +798,44 @@ extension RefLabelItem {
 
 // MARK: - Bot commits (ScreenBigRepo)
 
-/// `.bgbar`: Bots: Collapsed ▾, and how much was folded.
-private struct BotBar: View {
+/// `.bgbar`: Bots: Collapsed ▾ (when there are bot commits) and Graph: Local + main ▾ (many
+/// remote branches), then how much the graph holds.
+private struct GraphBar: View {
     let repository: RepositoryModel
     @AppStorage(SettingsKey.botCommits, store: .kaern) private var mode = BotCommits.collapse
 
     var body: some View {
         HStack(spacing: 6) {
-            Menu {
-                Picker("Bot Commits", selection: $mode) {
-                    Text("Collapse Runs").tag(BotCommits.collapse)
-                    Text("Show All").tag(BotCommits.show)
-                    Text("Hide").tag(BotCommits.hide)
+            if repository.hasBotCommits {
+                Menu {
+                    Picker("Bot Commits", selection: $mode) {
+                        Text("Collapse Runs").tag(BotCommits.collapse)
+                        Text("Show All").tag(BotCommits.show)
+                        Text("Hide").tag(BotCommits.hide)
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: {
+                    BarChip(label: "Bots:", value: botTitle)
                 }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } label: {
-                HStack(spacing: 4) {
-                    Text("Bots:").foregroundStyle(K.label2)
-                    Text(title).fontWeight(.semibold).foregroundStyle(K.label)
-                    Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
-                }
-                .font(.system(size: 11.5))
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(Capsule().fill(K.hover))
-                .contentShape(Capsule())
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            if repository.showsGraphScope {
+                Menu {
+                    scopeItem(.local, "Local branches and main", note: "Remote-only branches appear when you pick them")
+                    scopeItem(.current, "Current branch only", note: "\(repository.currentBranch ?? "HEAD") and what it contains")
+                } label: {
+                    BarChip(label: "Graph:", value: repository.graphScopeLabel)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("What the graph draws")
+            }
             Spacer()
             Text(summary).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
         }
@@ -841,7 +848,17 @@ private struct BotBar: View {
         }
     }
 
-    private var title: String {
+    /// A checked item with a second line, like the board's menu.
+    private func scopeItem(_ scope: GraphScope, _ title: String, note: String) -> some View {
+        Toggle(isOn: Binding(get: { repository.graphScope == scope }, set: { _ in
+            repository.from("Graph menu") { repository.setGraphScope(scope) }
+        })) {
+            Text(title)
+            Text(note)
+        }
+    }
+
+    private var botTitle: String {
         switch mode {
         case .collapse: "Collapsed"
         case .show: "Shown"
@@ -851,8 +868,9 @@ private struct BotBar: View {
 
     /// "212,408 commits · 207 bot commits folded into 13 rows".
     private var summary: String {
-        let total = repository.totalCommitCount.map { Formatters.count($0, "commit", "commits") }
+        let total = repository.totalCommitCount.flatMap { $0 >= 0 ? Formatters.count($0, "commit", "commits") : nil }
             ?? "\(Formatters.count(repository.commits.count, "commit", "commits")) loaded"
+        guard repository.hasBotCommits else { return total }
         switch mode {
         case .collapse where repository.foldedBotCount > 0:
             return "\(total) · \(repository.foldedBotCount.formatted()) bot commits folded into \(Formatters.count(repository.botRuns.count, "row", "rows"))"
@@ -861,6 +879,25 @@ private struct BotBar: View {
         default:
             return total
         }
+    }
+}
+
+/// `.bgchip`: "Bots: Collapsed ▾" — a gray capsule with the label dimmed and the value bold.
+private struct BarChip: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).foregroundStyle(K.label2)
+            Text(value).fontWeight(.semibold).foregroundStyle(K.label)
+            Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
+        }
+        .font(.system(size: 11.5))
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .background(Capsule().fill(K.hover))
+        .contentShape(Capsule())
     }
 }
 

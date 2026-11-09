@@ -3,13 +3,14 @@ import Foundation
 // MARK: - Searching the whole history
 
 extension GitRepository {
-    /// Every commit in the history (all branches, remote branches, tags and HEAD) that matches
-    /// the search, beyond the pages the history has loaded. Messages are searched in full
-    /// (subject and body), paths by any part of the path, case-insensitively.
-    public func searchHistory(_ query: String, scope: CommitSearchScope, includeHEAD: Bool) async throws -> HistorySearchResult {
+    /// Every commit in the history (all branches, remote branches, tags and HEAD, or what
+    /// `history` keeps) that matches the search, beyond the pages the history has loaded.
+    /// Messages are searched in full (subject and body), paths by any part of the path,
+    /// case-insensitively.
+    public func searchHistory(_ query: String, scope: CommitSearchScope, includeHEAD: Bool,
+                              history: HistoryScope = .all(hidden: [])) async throws -> HistorySearchResult {
         let query = query.trimmingCharacters(in: .whitespaces)
-        var revisions = ["--branches", "--remotes", "--tags"]
-        if includeHEAD { revisions.append("HEAD") }
+        let revisions = Self.revisionArguments(for: history, head: includeHEAD ? headState() : .leftOut)
         async let total = historyCount(revisions)
         guard !query.isEmpty else { return HistorySearchResult(matches: [], total: try await total) }
 

@@ -37,6 +37,7 @@ public enum RefParser {
                 behind: track.behind,
                 upstreamGone: track.gone,
                 isSymbolic: !fields[5].isEmpty,
+                symbolicTarget: fields[5].isEmpty ? nil : fields[5],
                 isHead: fields[6] == "*"
             )
         }

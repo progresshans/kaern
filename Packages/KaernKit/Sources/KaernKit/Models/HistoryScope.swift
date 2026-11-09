@@ -7,11 +7,18 @@ public enum HistoryScope: Sendable, Hashable {
     case all(hidden: [String])
     /// One branch alone (a full ref name), without HEAD unless that branch is checked out.
     case only(String)
+    /// The local branches and these remote branches (short names such as `origin/main`): the
+    /// remote's default branch and the ones picked to be drawn (Graph: Local + main, for
+    /// repositories with many remote branches). Tags show as labels on the commits drawn, but
+    /// don't bring in history of their own.
+    case local(remoteBranches: [String])
+    /// HEAD and what it contains (Graph: Current branch only).
+    case current
 
     public var isFiltered: Bool {
         switch self {
         case .all(let hidden): !hidden.isEmpty
-        case .only: true
+        case .only, .local, .current: true
         }
     }
 }

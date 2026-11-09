@@ -145,6 +145,14 @@ final class RepositoryModel: Identifiable {
     /// The last history read failed (`git log` exited with an error, as opposed to being
     /// stopped): the list keeps what it had, and the status bar shows git's message with Try Again.
     private(set) var historyError: String?
+    /// What the graph draws (ScreenBigRepo's Graph: chip). Decided on the first load: a choice
+    /// kept for this repository, else Local + main when it has many remote branches.
+    var graphScope: GraphScope = .all
+    @ObservationIgnored var graphScopeDecided = false
+    /// Remote-only branches picked in the sidebar to be drawn while the graph shows local branches.
+    var drawnRemoteBranches: [String] = []
+    /// A commit to select once history was read again (a remote branch picked to be drawn).
+    @ObservationIgnored var selectAfterReload: String?
     private(set) var stashes: [Stash] = []
     private(set) var worktrees: [Worktree] = []
     private(set) var remotes: [RemoteInfo] = []
@@ -454,8 +462,13 @@ final class RepositoryModel: Identifiable {
         debugFullLoads += 1
         let loadStart = ContinuousClock.now
         if phase != .ready { phase = .loading }
+        // The graph's scope depends on how many remote branches there are, so on the first load
+        // the refs come before history.
+        let firstRefs: RefSnapshot? = graphScopeDecided ? nil : try? await repository.refs()
+        if let firstRefs { self.refs = firstRefs }
+        decideGraphScope()
         async let status = timedStatus(repository)
-        async let refs = try? repository.refs()
+        async let refs = firstRefs != nil ? firstRefs : try? await repository.refs()
         async let tags = try? repository.tags()
         let limit = Self.pageSize
         let stream = restartHistoryStream(repository)
@@ -495,6 +508,7 @@ final class RepositoryModel: Identifiable {
         isReloadingHistory = false
         rebuildGraph()
         phase = .ready
+        selectPendingCommit()
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
         pendingScope = []
@@ -667,6 +681,7 @@ final class RepositoryModel: Identifiable {
         operation = repository.operationState()
         rebuildGraph()
         if scope.contains(.refs) {
+            selectPendingCommit()
             loadAllHistoryIfAsked()
             historyReloaded()
         }
@@ -772,7 +787,7 @@ final class RepositoryModel: Identifiable {
             defer { isLoadingMoreHistory = false }
             let start = ContinuousClock.now
             let stream = historyStream ?? GitCommandTrigger.$current.withValue(.background("Scrolling the history")) {
-                repository.historyStream(skip: commits.count)
+                repository.historyStream(skip: commits.count, scope: historyScope)
             }
             historyStream = stream
             let read = await Self.read(stream, count)
@@ -814,8 +829,9 @@ final class RepositoryModel: Identifiable {
             stream = existing
         } else {
             let skip = commits.count
+            let scope = historyScope
             stream = GitCommandTrigger.$current.withValue(.background("Searching older history")) {
-                repository.historyStream(skip: skip)
+                repository.historyStream(skip: skip, scope: scope)
             }
             historyStream = stream
         }
@@ -869,17 +885,30 @@ final class RepositoryModel: Identifiable {
 
     /// Try Again on the status bar's "Couldn’t read the history": history (and refs) again.
     func retryHistory() {
-        guard repository != nil, phase == .ready else { return }
         historyError = nil
+        reloadHistory(trigger: "Try Again (history)")
+    }
+
+    /// Reads refs and history again (the graph's scope changed, Try Again).
+    func reloadHistory(trigger: String) {
+        guard repository != nil, phase == .ready else { return }
+        totalCommitCount = nil
         pendingScope.formUnion([.refs, .workTree])
-        if isVisible { runPendingRefresh(trigger: "Try Again (history)") }
+        if isVisible { runPendingRefresh(trigger: trigger) }
+    }
+
+    /// After history was read again: the commit a picked remote branch points at.
+    private func selectPendingCommit() {
+        guard let id = selectAfterReload else { return }
+        selectAfterReload = nil
+        reveal(id)
     }
 
     /// A new `git log` stream for a first load or a refresh (the old one ends).
     private func restartHistoryStream(_ repository: GitRepository) -> CommitStream {
         historyStream?.cancel()
         allHistoryTask?.cancel()
-        let stream = repository.historyStream()
+        let stream = repository.historyStream(scope: historyScope)
         historyStream = stream
         return stream
     }
@@ -968,7 +997,7 @@ final class RepositoryModel: Identifiable {
         foldedBotCount = folded.foldedCount
         hiddenBotCount = folded.hiddenCount
         if hasBotCommits != folded.hasBotCommits { hasBotCommits = folded.hasBotCommits }
-        if hasBotCommits, totalCommitCount == nil { countAllCommits() }
+        if hasBotCommits || showsGraphScope, totalCommitCount == nil { countAllCommits() }
         builder.append(displayCommits)
         graph = builder.rows
         if case .commit(let id) = selection, !commits.contains(where: { $0.id == id }) {
@@ -997,12 +1026,14 @@ final class RepositoryModel: Identifiable {
         return seen.intersection(byID.keys)
     }
 
-    /// The bot bar's "212,408 commits": once per load, in the background.
+    /// The bar's "212,408 commits" (what the graph's scope holds): once per load, in the background.
     private func countAllCommits() {
         guard let repository else { return }
+        let scope = historyScope
+        totalCommitCount = -1   // counting
         Task {
             let count = try? await GitCommandTrigger.$current.withValue(.background("Counting commits")) {
-                try await repository.commitCount("--all")
+                try await repository.commitCount(in: scope)
             }
             totalCommitCount = count
         }

@@ -286,6 +286,12 @@ public struct GitRepository: Sendable, Hashable {
         return output.text.split(separator: "\n").map(String.init)
     }
 
+    /// Number of commits the history shows for `scope`.
+    public func commitCount(in scope: HistoryScope) async throws -> Int {
+        let output = try await git(["rev-list", "--count"] + Self.revisionArguments(for: scope, head: headState()) + ["--"])
+        return Int(output.text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    }
+
     /// Number of commits reachable from `ref`.
     public func commitCount(_ ref: String = "HEAD") async throws -> Int {
         let output = try await git(["rev-list", "--count", ref, "--"])

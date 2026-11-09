@@ -510,7 +510,7 @@ extension RepositoryModel {
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled,
-                  let result = try? await repository.searchHistory(query, scope: scope, includeHEAD: true),
+                  let result = try? await repository.searchHistory(query, scope: scope, includeHEAD: true, history: historyScope),
                   !Task.isCancelled, search.key == key else { return }
             search.gitMatches = Set(result.matches)
             search.gitKey = key

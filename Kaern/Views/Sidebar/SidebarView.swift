@@ -154,8 +154,9 @@ struct SidebarView: View {
                     if open {
                         ForEach(members.sorted { $0.branchName.localizedStandardCompare($1.branchName) == .orderedAscending }) { ref in
                             SidebarRow(icon: Icons.rowBranch, title: ref.branchName, nested: true)
-                                .help("\(ref.name) — double-click to check out a local branch that tracks it.")
+                                .help("\(ref.name) — click to show it in the graph, double-click to check out a local branch that tracks it.")
                                 .onTapGesture(count: 2) { repository.from("Sidebar › double-click remote branch") { repository.checkoutRemoteBranch(ref) } }
+                                .onTapGesture { repository.showRemoteBranch(ref) }
                                 .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: 6, inset: 0))
                         }
                     }

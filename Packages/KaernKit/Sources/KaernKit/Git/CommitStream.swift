@@ -329,7 +329,28 @@ extension GitRepository {
             }
         case .only(let ref):
             arguments.append(ref)
+        case .local(let remoteBranches):
+            arguments.append("--branches")
+            // Each remote branch by a pattern that matches only its own name, so a branch a fetch
+            // pruned meanwhile is left out instead of failing the whole read.
+            arguments += remoteBranches.map { "--remotes=" + exactPattern($0) }
+            switch head {
+            case .detached: arguments.append("HEAD")
+            case .unknown: arguments = ["--ignore-missing"] + arguments + ["HEAD"]
+            case .leftOut, .attached: break
+            }
+        case .current:
+            // HEAD is the only revision, so --ignore-missing only lets an unborn branch read as empty.
+            arguments += ["--ignore-missing", "HEAD"]
         }
         return arguments
+    }
+
+    /// A ref pattern that matches `name` alone. git appends `/*` to a pattern without `*`, `?`
+    /// or `[` (so `origin/main` would mean the branches under it); bracketing the last character
+    /// keeps it exact. Branch names can't contain `*`, `?` or `[` themselves.
+    static func exactPattern(_ name: String) -> String {
+        guard let last = name.last else { return name }
+        return String(name.dropLast()) + "[" + String(last) + "]"
     }
 }

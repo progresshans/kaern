@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-/// Phase 6: a failed `git log` is an error (not an empty history), and Pull with rebase over
-/// uncommitted changes.
+/// Phase 6: a failed `git log` is an error (not an empty history), the graph's scopes, and Pull
+/// with rebase over uncommitted changes.
 @Suite("Phase 6")
 struct Phase6Tests {
     static let runner = RepositoryTests.runner
@@ -56,6 +56,9 @@ struct Phase6Tests {
         #expect(try await stream.next(10).isEmpty)
         #expect(stream.isFinished)
         #expect(try await repository.log(skip: 0, limit: 10, includeHEAD: true).isEmpty)
+        #expect(try await repository.commitCount(in: .all(hidden: [])) == 0)
+        #expect(try await repository.commitCount(in: .current) == 0)
+        #expect(try await repository.searchHistory("anything", scope: .all, includeHEAD: true).matches.isEmpty)
     }
 
     @Test func aDetachedHEADOnNoBranchIsInTheHistory() async throws {
@@ -74,6 +77,57 @@ struct Phase6Tests {
         #expect(GitRepository.revisionArguments(for: all, head: .attached) == ["--branches", "--remotes", "--tags"])
         #expect(GitRepository.revisionArguments(for: all, head: .detached) == ["--branches", "--remotes", "--tags", "HEAD"])
         #expect(GitRepository.revisionArguments(for: all, head: .leftOut) == ["--branches", "--remotes", "--tags"])
+        #expect(GitRepository.revisionArguments(for: .current, head: .attached) == ["--ignore-missing", "HEAD"])
+        #expect(GitRepository.revisionArguments(for: .local(remoteBranches: ["origin/main"]), head: .attached)
+            == ["--branches", "--remotes=origin/mai[n]"])
+        #expect(GitRepository.exactPattern("origin/release/2026.11") == "origin/release/2026.1[1]")
+    }
+
+    // MARK: Graph scopes
+
+    @Test func localScopeDrawsLocalBranchesAndOnlyTheNamedRemoteBranches() async throws {
+        let repository = try await BigRepositoryTests.repository(commits: 3)
+        defer { TestRepositories.remove(repository) }
+        let main = try await repository.git(["rev-parse", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tree = try await repository.git(["rev-parse", "HEAD^{tree}"]).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        func remoteOnly(_ branch: String, _ subject: String) async throws -> String {
+            let id = try await repository.git(["commit-tree", tree, "-p", main, "-m", subject]).text.trimmingCharacters(in: .whitespacesAndNewlines)
+            try await repository.git(["update-ref", "refs/remotes/origin/\(branch)", id])
+            return id
+        }
+        try await repository.git(["update-ref", "refs/remotes/origin/main", main])
+        let x = try await remoteOnly("feature/x", "only on x")
+        let xy = try await remoteOnly("feature/xy", "only on xy")
+        try await repository.git(["update-ref", "refs/tags/v1", xy])
+
+        func ids(_ scope: HistoryScope) async throws -> Set<String> {
+            Set(try await repository.historyStream(scope: scope).next(100).map(\.id))
+        }
+        let all = try await ids(.all(hidden: []))
+        #expect(all.contains(x) && all.contains(xy) && all.count == 5)
+        let local = try await ids(.local(remoteBranches: ["origin/main"]))
+        #expect(!local.contains(x) && !local.contains(xy) && local.count == 3)
+        // The name matches that branch alone, not origin/feature/xy and not the tag's commit.
+        let picked = try await ids(.local(remoteBranches: ["origin/main", "origin/feature/x"]))
+        #expect(picked.contains(x) && !picked.contains(xy) && picked.count == 4)
+        // A remote branch that's gone (a fetch pruned it) is left out instead of failing the read.
+        #expect(try await ids(.local(remoteBranches: ["origin/gone"])).count == 3)
+        #expect(try await ids(.current).count == 3)
+        #expect(try await repository.commitCount(in: .local(remoteBranches: ["origin/feature/x"])) == 4)
+        let found = try await repository.searchHistory("only on", scope: .message, includeHEAD: true,
+                                                      history: .local(remoteBranches: ["origin/feature/x"]))
+        #expect(found.matches == [x])
+    }
+
+    @Test func refsKeepWhatASymbolicRefPointsAt() async throws {
+        let repository = try await BigRepositoryTests.repository(commits: 1)
+        defer { TestRepositories.remove(repository) }
+        try await repository.git(["update-ref", "refs/remotes/origin/trunk", "HEAD"])
+        try await repository.git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"])
+        let refs = try await repository.refs()
+        let head = refs.refs.first { $0.fullName == "refs/remotes/origin/HEAD" }
+        #expect(head?.isSymbolic == true && head?.symbolicTarget == "refs/remotes/origin/trunk")
+        #expect(!refs.remoteBranches.contains { $0.fullName == "refs/remotes/origin/HEAD" })
     }
 
     // MARK: Pull with rebase over uncommitted changes
