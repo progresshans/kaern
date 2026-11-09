@@ -110,6 +110,8 @@ final class DebugDriver {
             phase4(command, args)
         case _ where DebugDriver.phase5Commands.contains(command):
             phase5(command, args)
+        case _ where DebugDriver.phase6Commands.contains(command):
+            phase6(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -899,6 +901,7 @@ final class DebugDriver {
             "lastClosedTabs": app.lastClosed?.window.tabs.count ?? 0,
             "recent": app.recent.map(\.name),
             "phase5": phase5Dump(window),
+            "phase6": phase6Dump(window),
             // The global git config and credential helpers git sees (TestSession).
             "gitConfigEnvironment": (app.runner?.environment ?? [:]).filter { $0.key.hasPrefix("GIT_CONFIG") },
             // Kaern's settings as this instance reads them: launch arguments over its own store.

@@ -9,6 +9,10 @@ import Foundation
 ///
 /// The Command Log shows it as one command that runs until history is read to the end or the
 /// stream is stopped, with the number of commits read as its output.
+///
+/// The end of git's output is the end of history only when git exits with 0. Anything else (a
+/// ref pointing at a missing object, a corrupt pack) throws ``GitError`` with git's message, so
+/// nobody mistakes a failed read for an empty or shorter history.
 public final class CommitStream: @unchecked Sendable {
     private let runner: GitRunner
     private let directory: URL
@@ -21,6 +25,16 @@ public final class CommitStream: @unchecked Sendable {
     private var process: Process?
     private var stopped = false
     private var finishedReading = false
+    /// How git exited (set by its termination handler).
+    private var termination: (status: Int32, reason: Process.TerminationReason)?
+    /// Signalled once git has exited, from its termination handler: after the end of git's
+    /// output, `read` waits on this for the exit status. (Never `waitUntilExit()` on `queue`:
+    /// it waits on a run loop that thread doesn't run.)
+    private let exitSignal = DispatchSemaphore(value: 0)
+    /// git's standard error has been read to its end.
+    private let errorsRead = DispatchGroup()
+    /// git failed: every read after that throws this.
+    private var failure: GitError?
 
     private var reader: FileHandle?
     private var buffer = Data()
@@ -51,7 +65,7 @@ public final class CommitStream: @unchecked Sendable {
         trigger = GitCommandTrigger.current
         var arguments = ["log", "--date-order", "-z", "--format=\(LogParser.format)"]
         if skip > 0 { arguments.append("--skip=\(skip)") }
-        arguments += GitRepository.revisionArguments(for: scope, includeHEAD: includeHEAD)
+        arguments += GitRepository.revisionArguments(for: scope, head: includeHEAD ? repository.headState() : .leftOut)
         arguments.append("--")
         self.arguments = arguments
     }
@@ -100,6 +114,7 @@ public final class CommitStream: @unchecked Sendable {
 
     private func read(_ count: Int) throws -> [Commit] {
         if lock.withLock({ stopped }) { throw CancellationError() }
+        if let failure { throw failure }
         try launchIfNeeded()
         var commits: [Commit] = []
         commits.reserveCapacity(min(count, 4096))
@@ -129,14 +144,33 @@ public final class CommitStream: @unchecked Sendable {
             } else {
                 // `cancel()` marks the stream stopped before it ends git, so an end of output
                 // after that is the cut, not the end of history.
+                if lock.withLock({ stopped }) {
+                    buffer.removeAll()
+                    throw CancellationError()
+                }
+                // Otherwise it's the end of history if git exits with 0.
+                let exit = waitForExit()
                 let cut = lock.withLock { () -> Bool in
                     if stopped { return true }
-                    finishedReading = true
+                    if exit.map({ $0.status == 0 && $0.reason == .exit }) ?? true { finishedReading = true }
                     return false
                 }
                 if cut {
                     buffer.removeAll()
                     throw CancellationError()
+                }
+                if let exit, exit.status != 0 || exit.reason != .exit {
+                    // git failed partway or before the first commit: what this read collected
+                    // isn't all there is, so it gives nothing.
+                    buffer.removeAll()
+                    _ = errorsRead.wait(timeout: .now() + 5)
+                    let message = String(decoding: errorOutput.value, as: UTF8.self)
+                    let error = GitError(arguments: arguments, status: exit.status,
+                                         message: exit.reason == .uncaughtSignal && message.isEmpty
+                                             ? "git log was ended by signal \(exit.status)." : message)
+                    failure = error
+                    finishIfDone()
+                    throw error
                 }
                 reachedEnd = true
             }
@@ -163,8 +197,12 @@ public final class CommitStream: @unchecked Sendable {
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
         // Never `waitUntilExit()` on this queue: it waits on a run loop the queue's thread doesn't run.
-        process.terminationHandler = { [weak self] _ in
+        // The handler runs on Foundation's own queue, so `read` can wait on `exitSignal` meanwhile.
+        process.terminationHandler = { [weak self] process in
             guard let self else { return }
+            let exit = (status: process.terminationStatus, reason: process.terminationReason)
+            self.lock.withLock { self.termination = exit }
+            self.exitSignal.signal()
             self.queue.async {
                 self.exited = true
                 self.finishIfDone()
@@ -183,8 +221,11 @@ public final class CommitStream: @unchecked Sendable {
         // Standard error is small; read it on the side so git never waits on it.
         let errorHandle = errors.fileHandleForReading
         let box = errorOutput
+        let group = errorsRead
+        group.enter()
         GitRunner.pipeQueue("log-stderr").async {
             box.set(errorHandle.readDataToEndOfFile())
+            group.leave()
         }
         if let onCommand = runner.onCommand {
             let record = GitCommandRecord(arguments: GitRedaction.redact(arguments: arguments), directory: directory.path(percentEncoded: false),
@@ -194,12 +235,22 @@ public final class CommitStream: @unchecked Sendable {
         }
     }
 
-    /// Ends the Command Log record once git has exited and the stream was read to the end or
-    /// stopped (on `queue`).
+    /// After the end of git's output, how git exited: `nil` when it didn't within 10 s (read as
+    /// the end of history, as before git's status was checked).
+    private func waitForExit() -> (status: Int32, reason: Process.TerminationReason)? {
+        if let known = lock.withLock({ termination }) { return known }
+        guard lock.withLock({ process != nil }) else { return nil }
+        guard exitSignal.wait(timeout: .now() + 10) == .success else { return nil }
+        exitSignal.signal()   // stays signalled for any later wait
+        return lock.withLock { termination }
+    }
+
+    /// Ends the Command Log record once git has exited and the stream was read to the end,
+    /// stopped or failed (on `queue`).
     private func finishIfDone() {
         guard record != nil, exited else { return }
         let stopped = lock.withLock { self.stopped }
-        guard readToEnd || stopped else { return }
+        guard readToEnd || stopped || failure != nil else { return }
         finishRecord(stopped: stopped)
     }
 
@@ -209,7 +260,7 @@ public final class CommitStream: @unchecked Sendable {
         let process = lock.withLock { self.process }
         finished.status = process.map { $0.isRunning ? 15 : $0.terminationStatus } ?? -1
         if let started { finished.duration = ContinuousClock.now - started }
-        finished.output = "\(delivered) commits read" + (stopped ? ", then stopped" : "")
+        finished.output = "\(delivered) commits read" + (stopped ? ", then stopped" : failure != nil ? ", then git failed" : "")
         finished.errorOutput = GitRedaction.redact(String(decoding: errorOutput.value.prefix(GitRunner.recordedOutputLimit / 10), as: UTF8.self))
         finished.wasStopped = stopped
         onCommand(.finished(finished))
@@ -223,8 +274,39 @@ extension GitRepository {
         CommitStream(repository: self, skip: skip, scope: scope, includeHEAD: includeHEAD)
     }
 
+    /// Where HEAD is, for what `git log` needs to name besides the branches.
+    enum HeadState: Sendable, Hashable {
+        /// The caller doesn't want HEAD's commits (unless a branch brings them).
+        case leftOut
+        /// On a branch (`ref: refs/heads/<name>`), born or not.
+        case attached
+        /// At a commit no branch may hold.
+        case detached
+        /// HEAD's file doesn't say (reftable keeps HEAD elsewhere).
+        case unknown
+    }
+
+    /// Reads `HEAD` in the repository's git directory (a linked worktree has its own).
+    func headState() -> HeadState {
+        let file = gitDirectory.appending(path: "HEAD").path(percentEncoded: false)
+        guard let data = FileManager.default.contents(atPath: file) else { return .unknown }
+        let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        // reftable leaves "ref: refs/heads/.invalid" in the file and keeps the real HEAD in its table.
+        if text == "ref: refs/heads/.invalid" { return .unknown }
+        if text.hasPrefix("ref: refs/heads/") { return .attached }
+        if text.hasPrefix("ref:") { return .unknown }
+        return .detached
+    }
+
     /// The revisions `git log` starts from for a scope.
-    static func revisionArguments(for scope: HistoryScope, includeHEAD: Bool) -> [String] {
+    ///
+    /// HEAD is named only when it adds commits the branches don't have: when it's detached, or
+    /// when the scope may leave out the branch it's on. HEAD on an unborn branch (a repository
+    /// without commits yet) is never named bare: git would fail with "bad revision 'HEAD'".
+    /// `--ignore-missing` covers that where git can't be told otherwise; it isn't used next to
+    /// `--branches`, where it would also skip a branch that points at a missing object instead
+    /// of failing.
+    static func revisionArguments(for scope: HistoryScope, head: HeadState) -> [String] {
         var arguments: [String] = []
         switch scope {
         case .all(let hidden):
@@ -238,7 +320,13 @@ extension GitRepository {
                 arguments.append("--exclude=" + ref.dropFirst("refs/remotes/".count))
             }
             arguments += ["--remotes", "--tags"]
-            if includeHEAD { arguments.append("HEAD") }
+            switch head {
+            case .leftOut: break
+            case .detached: arguments.append("HEAD")
+            // A hidden branch may be the one HEAD is on: HEAD brings it back.
+            case .attached where hidden.isEmpty: break
+            case .attached, .unknown: arguments = ["--ignore-missing"] + arguments + ["HEAD"]
+            }
         case .only(let ref):
             arguments.append(ref)
         }

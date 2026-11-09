@@ -244,6 +244,14 @@ private struct StatusState {
                 break
             }
         }
+        // `git log` failed: the graph shows what it had before (the Command Log has the command).
+        if let error = repository.historyError, repository.activity == nil {
+            icon = .warning
+            let line = error.split(whereSeparator: \.isNewline).first.map(String.init) ?? error
+            text = "Couldn’t read the history — \(line)"
+            action = Action(title: "Try Again") { repository.retryHistory() }
+            return
+        }
         // Then work in progress.
         let running = ActivityCenter.shared.runningCount
         if running > 1 {

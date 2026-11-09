@@ -168,7 +168,7 @@ public struct GitRepository: Sendable, Hashable {
             "log", "--date-order", "-z", "--format=\(LogParser.format)",
             "--max-count=\(limit)", "--skip=\(skip)",
         ]
-        arguments += Self.revisionArguments(for: scope, includeHEAD: includeHEAD)
+        arguments += Self.revisionArguments(for: scope, head: includeHEAD ? headState() : .leftOut)
         arguments.append("--")
         let output = try await git(arguments)
         return LogParser.parse(output.stdout)

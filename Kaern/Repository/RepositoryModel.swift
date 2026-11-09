@@ -142,6 +142,9 @@ final class RepositoryModel: Identifiable {
     private(set) var showsWorkingCopy = false
     private(set) var hasMoreHistory = false
     private(set) var isLoadingMoreHistory = false
+    /// The last history read failed (`git log` exited with an error, as opposed to being
+    /// stopped): the list keeps what it had, and the status bar shows git's message with Try Again.
+    private(set) var historyError: String?
     private(set) var stashes: [Stash] = []
     private(set) var worktrees: [Worktree] = []
     private(set) var remotes: [RemoteInfo] = []
@@ -457,7 +460,7 @@ final class RepositoryModel: Identifiable {
         let limit = Self.pageSize
         let stream = restartHistoryStream(repository)
         isReloadingHistory = true
-        async let history = try? stream.next(limit)
+        async let history = Self.read(stream, limit)
         async let stashes = try? repository.stashes()
         async let worktrees = repository.worktrees()
         async let remotes = repository.remoteInfos()
@@ -478,12 +481,16 @@ final class RepositoryModel: Identifiable {
         isShallow = repository.isShallow
         await refreshPullOverride()
         runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
-        if let loadedHistory {
-            commits = loadedHistory
+        switch loadedHistory {
+        case .commits(let loaded):
+            commits = loaded
             hasMoreHistory = !stream.isFinished
             historyIsStale = false
-        } else {
+            historyError = nil
+        case .cut:
             historyIsStale = true
+        case .failed(let message):
+            historyFailed(message, stream: stream)
         }
         isReloadingHistory = false
         rebuildGraph()
@@ -623,7 +630,7 @@ final class RepositoryModel: Identifiable {
             let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
             let stream = restartHistoryStream(repository)
             isReloadingHistory = true
-            async let history = try? stream.next(limit)
+            async let history = Self.read(stream, limit)
             async let stashes = try? repository.stashes()
             async let worktrees = repository.worktrees()
             async let remotes = repository.remoteInfos()
@@ -634,13 +641,18 @@ final class RepositoryModel: Identifiable {
             }
             self.refs = await refs ?? self.refs
             self.tags = await tags ?? self.tags
-            if let history = await history {
-                commits = history
+            switch await history {
+            case .commits(let loaded):
+                commits = loaded
                 hasMoreHistory = !stream.isFinished
                 totalCommitCount = nil
                 historyIsStale = false
-            } else {
+                historyError = nil
+            case .cut:
                 historyIsStale = true
+            case .failed(let message):
+                // The list keeps what it had: a failed read isn't an empty history.
+                historyFailed(message, stream: stream)
             }
             isReloadingHistory = false
             self.stashes = await stashes ?? self.stashes
@@ -748,7 +760,8 @@ final class RepositoryModel: Identifiable {
     /// The next page of history from the stream (a new one picks up where the last stopped).
     @discardableResult
     func loadMoreHistory(count: Int = RepositoryModel.pageSize) -> Task<Void, Never>? {
-        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready else { return nil }
+        // After a failed read, more comes with Try Again (or the next refresh), not every scroll.
+        guard let repository, hasMoreHistory, !isLoadingMoreHistory, phase == .ready, historyError == nil else { return nil }
         if isReloadingHistory {
             // A refresh is reading the new history; this page comes once that's in.
             wantsMoreHistory = true
@@ -762,7 +775,16 @@ final class RepositoryModel: Identifiable {
                 repository.historyStream(skip: commits.count)
             }
             historyStream = stream
-            guard let page = try? await stream.next(count), historyStream === stream else { return }
+            let read = await Self.read(stream, count)
+            guard historyStream === stream else { return }
+            let page: [Commit]
+            switch read {
+            case .commits(let commits): page = commits
+            case .cut: return
+            case .failed(let message):
+                historyFailed(message, stream: stream)
+                return
+            }
             noteTiming("pageRead", since: start)
             appendHistory(page, finished: stream.isFinished)
             noteTiming("page", since: start)
@@ -780,7 +802,8 @@ final class RepositoryModel: Identifiable {
     /// Reads older history until one of `targets` is loaded (Search stepping past the loaded
     /// commits): one read, one graph rebuild, however far it goes.
     func loadHistory(until targets: Set<String>) async -> Bool {
-        guard let repository, hasMoreHistory, !isLoadingMoreHistory, !isReloadingHistory, phase == .ready, !targets.isEmpty else {
+        guard let repository, hasMoreHistory, !isLoadingMoreHistory, !isReloadingHistory, phase == .ready, historyError == nil,
+              !targets.isEmpty else {
             return false
         }
         isLoadingMoreHistory = true
@@ -799,9 +822,13 @@ final class RepositoryModel: Identifiable {
         var read: [Commit] = []
         var found = false
         while !found, !stream.isFinished, !Task.isCancelled {
-            guard let page = try? await stream.next(5_000) else { break }
+            let result = await Self.read(stream, 5_000)
             // A refresh replaced the history meanwhile: these pages belong to the old one.
             guard historyStream === stream else { return false }
+            guard case .commits(let page) = result else {
+                if case .failed(let message) = result { historyFailed(message, stream: stream) }
+                break
+            }
             if page.isEmpty { break }
             read += page
             found = page.contains { targets.contains($0.id) }
@@ -809,6 +836,43 @@ final class RepositoryModel: Identifiable {
         appendHistory(read, finished: stream.isFinished)
         noteTiming("searchPaging", since: start)
         return found
+    }
+
+    /// What one read of history gave.
+    private enum HistoryRead {
+        case commits([Commit])
+        /// The stream was stopped before it had them (the tab went to the background).
+        case cut
+        /// git failed (git's message).
+        case failed(String)
+    }
+
+    private static func read(_ stream: CommitStream, _ count: Int) async -> HistoryRead {
+        do {
+            return .commits(try await stream.next(count))
+        } catch is CancellationError {
+            return .cut
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// `git log` failed: the list stays as it was, the status bar says why, and the failed
+    /// stream goes (Try Again or the next refresh starts a new one).
+    private func historyFailed(_ message: String, stream: CommitStream) {
+        historyError = message
+        historyIsStale = false
+        if historyStream === stream { historyStream = nil }
+        allHistoryTask?.cancel()
+        Self.log.error("History read failed in \(self.name, privacy: .public): \(message, privacy: .public)")
+    }
+
+    /// Try Again on the status bar's "Couldn’t read the history": history (and refs) again.
+    func retryHistory() {
+        guard repository != nil, phase == .ready else { return }
+        historyError = nil
+        pendingScope.formUnion([.refs, .workTree])
+        if isVisible { runPendingRefresh(trigger: "Try Again (history)") }
     }
 
     /// A new `git log` stream for a first load or a refresh (the old one ends).
@@ -839,7 +903,7 @@ final class RepositoryModel: Identifiable {
         guard AppSettings.historyLoading == .all, hasMoreHistory else { return }
         allHistoryTask?.cancel()
         allHistoryTask = Task {
-            while !Task.isCancelled, hasMoreHistory, phase == .ready {
+            while !Task.isCancelled, hasMoreHistory, phase == .ready, historyError == nil {
                 guard let task = loadMoreHistory(count: 5_000) else {
                     try? await Task.sleep(for: .milliseconds(100))
                     continue
