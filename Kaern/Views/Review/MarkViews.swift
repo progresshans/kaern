@@ -181,7 +181,7 @@ struct ImageDiffView: View {
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(K.label2)
                     }
-                    .frame(maxWidth: 760)
+                    .frame(maxWidth: Self.width(image, image))
                 }
             }
             .padding(.horizontal, 24)
@@ -262,7 +262,7 @@ struct ImageDiffView: View {
             .font(.system(size: 11.5, weight: .semibold))
             .foregroundStyle(K.label2)
         }
-        .frame(maxWidth: 760)
+        .frame(maxWidth: Self.width(old, new))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Swipe between before and after")
         .accessibilityValue("\(Int(split * 100)) percent before")
@@ -288,7 +288,12 @@ struct ImageDiffView: View {
             .foregroundStyle(K.label2)
             .frame(maxWidth: 420)
         }
-        .frame(maxWidth: 760)
+        .frame(maxWidth: max(Self.width(old, new), 240))
+    }
+
+    /// The column a picture and its captions share: the picture's own width, up to 760 pt.
+    private static func width(_ old: NSImage, _ new: NSImage) -> CGFloat {
+        min(760, max(old.size.width, new.size.width, 1))
     }
 }
 
