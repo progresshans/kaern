@@ -453,6 +453,25 @@ enum ContextMenus {
 
     /// The toolbar's branch button (ScreenSheets 브랜치 메뉴): recent branches with ↑↓, Other
     /// Branches ▸, New Branch…, Merge into…, Rebase onto…, Rename…, Delete.
+    /// The bar's Graph: menu (ScreenBigRepo): what the graph draws, each with a second line. The board
+    /// has Local branches and main and Current branch only; All branches goes back to every branch.
+    static func graphScopeMenu(_ r: RepositoryModel) -> NSMenu {
+        let menu = NSMenu(title: "Graph")
+        menu.autoenablesItems = false
+        let choices: [(GraphScope, String, String)] = [
+            (.all, "All branches", "Every remote branch (\(r.refs.remoteBranches.count.formatted())) and tag too"),
+            (.local, "Local branches and main", "Remote-only branches appear when you pick them"),
+            (.current, "Current branch only", "\(r.currentBranch ?? "HEAD") and what it contains"),
+        ]
+        for (scope, title, note) in choices {
+            let menuItem = item(title, enabled: r.isReady) { r.from("Graph menu") { r.setGraphScope(scope) } }
+            menuItem.subtitle = note
+            menuItem.state = r.graphScope == scope ? .on : .off
+            menu.addItem(menuItem)
+        }
+        return menu
+    }
+
     static func toolbarBranchMenu(_ r: RepositoryModel, onNewBranch: @escaping () -> Void, onOtherBranches: (() -> Void)? = nil) -> NSMenu {
         let menu = NSMenu(title: "Branches")
         menu.autoenablesItems = false

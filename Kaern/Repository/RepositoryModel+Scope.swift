@@ -1,7 +1,9 @@
 import Foundation
 import KaernKit
 
-/// What the graph draws (ScreenBigRepo's "Graph:" chip).
+/// What the graph draws (ScreenBigRepo's "Graph:" chip). The board's menu has `local` and
+/// `current`; `all` (the default for smaller repositories) is there too, so a repository that opened
+/// at Local + main can go back to every branch.
 enum GraphScope: String, CaseIterable {
     /// Every branch, remote branch and tag.
     case all
@@ -85,7 +87,8 @@ extension RepositoryModel {
     }
 
     /// The Graph: menu. History is read again for the new scope. Picking Local + main again
-    /// lets go of the remote branches picked meanwhile.
+    /// lets go of the remote branches picked meanwhile. The choice is kept per repository, All
+    /// branches too (a repository with many remote branches then opens with all of them).
     func setGraphScope(_ scope: GraphScope) {
         let changed = scope != graphScope || !drawnRemoteBranches.isEmpty
         graphScope = scope

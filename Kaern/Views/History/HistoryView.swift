@@ -846,17 +846,7 @@ private struct GraphBar: View {
                 .fixedSize()
             }
             if repository.showsGraphScope {
-                Menu {
-                    scopeItem(.local, "Local branches and main", note: "Remote-only branches appear when you pick them")
-                    scopeItem(.current, "Current branch only", note: "\(repository.currentBranch ?? "HEAD") and what it contains")
-                } label: {
-                    BarChip(label: "Graph:", value: repository.graphScopeLabel)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("What the graph draws")
+                GraphScopeChip(repository: repository)
             }
             Spacer()
             Text(summary).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
@@ -867,16 +857,6 @@ private struct GraphBar: View {
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
         .onChange(of: mode) {
             for model in AppModel.shared.openRepositories { model.rebuildGraph() }
-        }
-    }
-
-    /// A checked item with a second line, like the board's menu.
-    private func scopeItem(_ scope: GraphScope, _ title: String, note: String) -> some View {
-        Toggle(isOn: Binding(get: { repository.graphScope == scope }, set: { _ in
-            repository.from("Graph menu") { repository.setGraphScope(scope) }
-        })) {
-            Text(title)
-            Text(note)
         }
     }
 
@@ -901,6 +881,26 @@ private struct GraphBar: View {
         default:
             return total
         }
+    }
+}
+
+/// "Graph: Local + main ▾": opens the AppKit menu `ContextMenus.graphScopeMenu` under the chip.
+private struct GraphScopeChip: View {
+    let repository: RepositoryModel
+    @State private var anchor = MenuAnchor()
+
+    var body: some View {
+        Button {
+            guard let view = anchor.view else { return }
+            ContextMenus.graphScopeMenu(repository).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
+        } label: {
+            BarChip(label: "Graph:", value: repository.graphScopeLabel)
+                .background(MenuAnchorView(anchor: anchor))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("What the graph draws")
+        .accessibilityLabel("Graph: \(repository.graphScopeLabel)")
     }
 }
 

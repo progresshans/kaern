@@ -352,9 +352,10 @@ final class DebugDriver {
             case "stash": target = Int(spec[1]).flatMap { repository.stashes.indices.contains($0) ? .stash(repository.stashes[$0].id) : nil }
             default: target = nil
             }
-            // `toolbarBranch`: the toolbar branch button's menu (phase 4).
+            // `toolbarBranch`: the toolbar branch button's menu (phase 4); `graphScope`: the bar's Graph: menu (phase 6).
             let built = spec[0] == "toolbarBranch"
                 ? ContextMenus.toolbarBranchMenu(repository, onNewBranch: {})
+                : spec[0] == "graphScope" ? ContextMenus.graphScopeMenu(repository)
                 : target.flatMap { ContextMenus.menu(for: $0, repository: repository, window: window) }
             guard let menu = built, let nsWindow = controller.window, let view = nsWindow.contentView else { return }
             let point = NSPoint(x: x, y: view.isFlipped ? y : view.bounds.height - y)
