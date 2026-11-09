@@ -28,6 +28,25 @@ struct HistoryView: View {
         )
     }
 
+    /// Where the scroll view is, between updates. Not observed: it changes every frame while
+    /// scrolling, and only `window` should redraw the list.
+    @MainActor private final class ScrollState {
+        var visible = CGRect.zero
+        /// The row at the top the last time the anchor was written.
+        var anchorIndex = -1
+    }
+
+    @State private var position = ScrollPosition(y: 0)
+    @State private var scrollState = ScrollState()
+    /// The commit rows that exist as views: the visible ones and `overscan` on each side.
+    /// Every row has a fixed height, so the rest are space above and below. (A LazyVStack keeps
+    /// every row it ever built: jumping to the oldest of 53,000 commits held ~600 MB.)
+    @State private var window = 0..<48
+
+    private static let overscan = 16
+    /// The window moves in steps, so most scrolling doesn't change it.
+    private static let step = 4
+
     var body: some View {
         let columns = columns
         VStack(spacing: 0) {
@@ -38,95 +57,160 @@ struct HistoryView: View {
                 BotBar(repository: repository)
             }
             HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if repository.showsWorkingCopy, let row = repository.graph.first {
-                            WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
-                                           isSelected: repository.selection == .workingCopy && repository.picked.isEmpty
-                                               && repository.branchCompare == nil,
-                                           isDimmed: repository.search.isFiltering) {
-                                pick(.workingCopy)
-                            }
-                            .id("wip")
-                        }
-                        let offset = repository.showsWorkingCopy ? 1 : 0
-                        let headBranch = repository.status.branch
-                        let picked = Set(repository.picked)
-                        let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
-                        let shown = repository.displayCommits
-                        ForEach(Array(shown.enumerated()), id: \.element.id) { index, commit in
-                            let graphIndex = index + offset
-                            let row = repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil
-                            Group {
-                                if let run = repository.botRuns[commit.id] {
-                                    // ScreenBigRepo: a run of bot commits as one row; the chevron opens it.
-                                    BotRunRow(run: run, graph: row, isAlternate: index % 2 == 1,
-                                              isDimmed: repository.search.isFiltering, columns: columns)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { repository.expandedRuns.insert(run.id) }
-                                } else {
-                                    CommitRow(
-                                        commit: commit,
-                                        graph: row,
-                                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
-                                        isAlternate: index % 2 == 1,
-                                        isSelected: picked.isEmpty
-                                            ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
-                                            : picked.contains(commit.id),
-                                        isDimmed: repository.search.isDimmed(commit.id),
-                                        tint: CommitRow.Tint(comparison: comparison, id: commit.id),
-                                        columns: columns
-                                    )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { click(commit.id) }
-                                }
-                            }
-                            .onAppear {
-                                if index >= shown.count - 40 { repository.loadMoreHistory() }
-                            }
-                            .id(commit.id)
-                        }
-                        if repository.isLoadingMoreHistory {
-                            ProgressView().controlSize(.small).padding(8)
-                        }
-                    }
-                    .scrollTargetLayout()
-                }
-                .background(K.content)
-                .contextClip()
-                .focusable()
-                .focusEffectDisabled()
-                .focused($listFocused)
-                .onCopyCommand {
-                    // ⌘C in the graph copies the selected commit's SHA (or every picked one).
-                    let ids = repository.picked.isEmpty ? [repository.selectedCommitID].compactMap { $0 } : repository.picked
-                    guard !ids.isEmpty else { return [] }
-                    repository.showToast(ids.count == 1 ? "Copied \(repository.short(ids[0]))" : "Copied \(ids.count) commit hashes")
-                    return [NSItemProvider(object: ids.joined(separator: " ") as NSString)]
-                }
-                .onKeyPress(.upArrow) { move(-1, proxy: proxy) }
-                .onKeyPress(.downArrow) { move(1, proxy: proxy) }
-                .onKeyPress(.return) {
-                    // Return opens the selection in Review (Keyboard Shortcuts › In the Graph).
-                    guard repository.canReview else { return .ignored }
-                    repository.review = ReviewState(showsAllFiles: true)
-                    return .handled
-                }
-                .onAppear {
-                    if let anchor = repository.historyScrollAnchor { proxy.scrollTo(anchor, anchor: .top) }
-                }
-                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.5) { visible in
-                    if let first = visible.first { repository.historyScrollAnchor = first }
-                }
-                .onChange(of: repository.scrollRequest) { _, request in
-                    guard let request else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(request.id, anchor: .center) }
-                }
+            ScrollView {
+                rows(columns: columns)
+            }
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGRect.self) { $0.visibleRect } action: { _, visible in
+                scrollState.visible = visible
+                updateWindow()
+            }
+            .background(K.content)
+            .contextClip()
+            .focusable()
+            .focusEffectDisabled()
+            .focused($listFocused)
+            .onCopyCommand {
+                // ⌘C in the graph copies the selected commit's SHA (or every picked one).
+                let ids = repository.picked.isEmpty ? [repository.selectedCommitID].compactMap { $0 } : repository.picked
+                guard !ids.isEmpty else { return [] }
+                repository.showToast(ids.count == 1 ? "Copied \(repository.short(ids[0]))" : "Copied \(ids.count) commit hashes")
+                return [NSItemProvider(object: ids.joined(separator: " ") as NSString)]
+            }
+            .onKeyPress(.upArrow) { move(-1) }
+            .onKeyPress(.downArrow) { move(1) }
+            .onKeyPress(.return) {
+                // Return opens the selection in Review (Keyboard Shortcuts › In the Graph).
+                guard repository.canReview else { return .ignored }
+                repository.review = ReviewState(showsAllFiles: true)
+                return .handled
+            }
+            .onAppear(perform: restoreAnchor)
+            .onChange(of: repository.displayCommits.count) { updateWindow() }
+            .onChange(of: repository.scrollRequest) { _, request in
+                if let request { center(request.id) }
             }
         }
         .background(K.content)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    /// The working copy, the space above the window, the rows in it, the space below.
+    @ViewBuilder
+    private func rows(columns: HistoryColumns) -> some View {
+        let shown = repository.displayCommits
+        let range = window.clamped(to: 0..<shown.count)
+        let offset = repository.showsWorkingCopy ? 1 : 0
+        let headBranch = repository.status.branch
+        let picked = Set(repository.picked)
+        let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
+        VStack(spacing: 0) {
+            if repository.showsWorkingCopy, let row = repository.graph.first {
+                WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
+                               isSelected: repository.selection == .workingCopy && repository.picked.isEmpty
+                                   && repository.branchCompare == nil,
+                               isDimmed: repository.search.isFiltering) {
+                    pick(.workingCopy)
+                }
+            }
+            Color.clear.frame(height: CGFloat(range.lowerBound) * KMetric.graphRow)
+            ForEach(range.map { (index: $0, commit: shown[$0]) }, id: \.commit.id) { item in
+                let index = item.index, commit = item.commit
+                let graphIndex = index + offset
+                let row = repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil
+                if let run = repository.botRuns[commit.id] {
+                    // ScreenBigRepo: a run of bot commits as one row; the chevron opens it.
+                    BotRunRow(run: run, graph: row, isAlternate: index % 2 == 1,
+                              isDimmed: repository.search.isFiltering, columns: columns)
+                        .contentShape(Rectangle())
+                        .onTapGesture { repository.expandedRuns.insert(run.id) }
+                } else {
+                    CommitRow(
+                        commit: commit,
+                        graph: row,
+                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch),
+                        isAlternate: index % 2 == 1,
+                        isSelected: picked.isEmpty
+                            ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
+                            : picked.contains(commit.id),
+                        isDimmed: repository.search.isDimmed(commit.id),
+                        tint: CommitRow.Tint(comparison: comparison, id: commit.id),
+                        columns: columns
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { click(commit.id) }
+                }
+            }
+            Color.clear.frame(height: CGFloat(shown.count - range.upperBound) * KMetric.graphRow)
+            if repository.isLoadingMoreHistory {
+                ProgressView().controlSize(.small).padding(8)
+            }
+        }
+    }
+
+    // MARK: Scrolling
+
+    private var workingCopyHeight: CGFloat { repository.showsWorkingCopy ? KMetric.wipRow : 0 }
+
+    private func top(ofRow index: Int) -> CGFloat {
+        workingCopyHeight + CGFloat(index) * KMetric.graphRow
+    }
+
+    /// Moves the window to the visible rows, writes the row at the top (a tab coming back opens
+    /// there) and reads more history near the end.
+    private func updateWindow() {
+        let visible = scrollState.visible
+        guard visible.height > 0 else { return }
+        let count = repository.displayCommits.count
+        let first = max(0, Int(((visible.minY - workingCopyHeight) / KMetric.graphRow).rounded(.down)))
+        let last = max(first, Int(((visible.maxY - workingCopyHeight) / KMetric.graphRow).rounded(.up)))
+        let lower = max(0, (first - Self.overscan) / Self.step * Self.step)
+        let upper = min(count, (last + Self.overscan) / Self.step * Self.step + Self.step)
+        let next = lower..<max(lower, upper)
+        if next != window { window = next }
+        // The row more than half in view at the top; nil while the working copy is.
+        let anchor = Int(((visible.minY + KMetric.graphRow / 2 - workingCopyHeight) / KMetric.graphRow).rounded(.down))
+        if anchor != scrollState.anchorIndex {
+            scrollState.anchorIndex = anchor
+            repository.historyScrollAnchor = visible.minY + KMetric.graphRow / 2 < workingCopyHeight || anchor >= count
+                ? nil : repository.displayCommits[max(0, anchor)].id
+        }
+        if last >= count - 40 { repository.loadMoreHistory() }
+    }
+
+    /// Back on this tab: the row that was at the top is at the top again.
+    private func restoreAnchor() {
+        let shown = repository.displayCommits
+        guard let anchor = repository.historyScrollAnchor, let index = shown.firstIndex(where: { $0.id == anchor }) else { return }
+        window = max(0, index - Self.overscan)..<min(shown.count, index + 48)
+        position.scrollTo(y: top(ofRow: index))
+    }
+
+    /// Scrolls a commit (or the folded run it's in) to the middle: a search match, Quick Open, a
+    /// parent link. Far jumps don't animate.
+    private func center(_ id: String) {
+        let shown = repository.displayCommits
+        let target = repository.insideRun[id] ?? id
+        guard let index = shown.firstIndex(where: { $0.id == target }) else { return }
+        let visible = scrollState.visible
+        let contentHeight = top(ofRow: shown.count)
+        let y = min(max(0, top(ofRow: index) - (visible.height - KMetric.graphRow) / 2), max(0, contentHeight - visible.height))
+        if abs(y - visible.minY) > visible.height * 3 {
+            window = max(0, index - 40)..<min(shown.count, index + 40)
+            position.scrollTo(y: y)
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { position.scrollTo(y: y) }
+        }
+    }
+
+    /// Scrolls just enough to show a row (↑ / ↓).
+    private func reveal(top y: CGFloat, height: CGFloat) {
+        let visible = scrollState.visible
+        if y < visible.minY {
+            position.scrollTo(y: y)
+        } else if y + height > visible.maxY {
+            position.scrollTo(y: y + height - visible.height)
+        }
     }
 
     private func pick(_ selection: HistorySelection) {
@@ -147,9 +231,10 @@ struct HistoryView: View {
 
     /// ↑ / ↓ move the selection through the working copy and the commits (a folded run is
     /// stepped over).
-    private func move(_ step: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+    private func move(_ step: Int) -> KeyPress.Result {
+        let shown = repository.displayCommits
         var ids: [HistorySelection] = repository.showsWorkingCopy ? [.workingCopy] : []
-        ids += repository.displayCommits.filter { repository.botRuns[$0.id] == nil }.map { .commit($0.id) }
+        ids += shown.filter { repository.botRuns[$0.id] == nil }.map { .commit($0.id) }
         guard !ids.isEmpty else { return .ignored }
         let current = ids.firstIndex(of: repository.selection) ?? (step > 0 ? -1 : ids.count)
         let next = min(max(current + step, 0), ids.count - 1)
@@ -157,8 +242,10 @@ struct HistoryView: View {
         repository.clearPicks()
         repository.selection = selection
         switch selection {
-        case .workingCopy: proxy.scrollTo("wip")
-        case .commit(let id): proxy.scrollTo(id)
+        case .workingCopy:
+            reveal(top: 0, height: KMetric.wipRow)
+        case .commit(let id):
+            if let index = shown.firstIndex(where: { $0.id == id }) { reveal(top: top(ofRow: index), height: KMetric.graphRow) }
         }
         onPick()
         return .handled

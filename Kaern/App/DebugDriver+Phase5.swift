@@ -211,6 +211,7 @@ extension DebugDriver {
                 "searchOlder": repository.search.olderMatches, "searchPaging": repository.search.isPaging,
                 "searchMatches": repository.search.matches.count,
                 "timings": repository.debugTimings,
+                "topRow": repository.historyScrollAnchor.flatMap { id in repository.displayCommits.firstIndex { $0.id == id } } ?? 0,
                 "selection": { if case .commit(let id) = repository.selection { return repository.commits.first { $0.id == id }?.subject ?? id } else { return "wip" } }(),
             ] as [String: Any]
         }
