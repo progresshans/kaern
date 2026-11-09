@@ -694,7 +694,7 @@ struct SubmoduleChangeView: View {
         HStack(spacing: 8) {
             if !change.isInitialized {
                 PrimaryButton(title: "Initialize") {
-                    repository.from("Submodule") { repository.updateSubmoduleToRecorded(file.path, label: change.old.map { String($0.prefix(7)) } ?? "") }
+                    repository.from("Submodule") { repository.initializeSubmodule(file.path) }
                 }
             } else {
                 switch sides.stage {

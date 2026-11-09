@@ -33,6 +33,7 @@ struct SidebarView: View {
                         tagSection.id(SidebarSection.tags)
                         stashSection.id(SidebarSection.stashes)
                         worktreeSection.id(SidebarSection.worktrees)
+                        submoduleSection.id(SidebarSection.submodules)
                     }
                     .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
                 }
@@ -263,6 +264,23 @@ struct SidebarView: View {
         }
     }
 
+    // MARK: Submodules
+
+    @ViewBuilder
+    private var submoduleSection: some View {
+        if !repository.submoduleItems.isEmpty {
+            let tile = SidebarSection.submodules.tile
+            SidebarSectionView(
+                title: "Submodules", tile: tile.icon, tileSize: tile.size, color: tile.color,
+                count: repository.submoduleItems.count, isOpen: isOpen(.submodules), toggle: { toggle(.submodules) }
+            ) {
+                ForEach(repository.submoduleItems.filter { matches($0.path) }) { item in
+                    SubmoduleSidebarRow(item: item, repository: repository)
+                }
+            }
+        }
+    }
+
     // MARK: Filter
 
     private var filterField: some View {
@@ -286,6 +304,73 @@ struct SidebarView: View {
         .padding(.horizontal, 9)
         .frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.hover))
+    }
+}
+
+/// `.si.subrow`: a submodule, where it points ("2.6.4 → 2.7.0 · 3 new commits"), Initialize when it isn't
+/// cloned, and a dot: orange moved, green up to date, hollow not initialized. A moved one opens its page in
+/// Review.
+private struct SubmoduleSidebarRow: View {
+    let item: SubmoduleItem
+    let repository: RepositoryModel
+    @State private var hovering = false
+
+    private var isOn: Bool {
+        repository.selection == .workingCopy && repository.review.map { !$0.showsAllFiles && $0.path == item.path } == true
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.path)
+                    .font(.system(size: 13))
+                    .foregroundStyle(K.label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(item.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(K.label2)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if item.state == .notInitialized {
+                GhostButton(title: "Initialize") {
+                    repository.from("Sidebar") { repository.initializeSubmodule(item.path) }
+                }
+                .disabled(repository.activity != nil)
+            }
+            dot
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(height: 42)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isOn ? K.accentSoft : (hovering ? K.hover : .clear))
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            guard item.state == .moved else { return }
+            repository.clearPicks()
+            repository.selection = .workingCopy
+            repository.review = ReviewState(showsAllFiles: false, path: item.path)
+        }
+        .help(item.path)
+    }
+
+    @ViewBuilder
+    private var dot: some View {
+        switch item.state {
+        case .notInitialized:
+            Circle().strokeBorder(K.label3, lineWidth: 1.2).frame(width: 7, height: 7)
+        case .moved:
+            Circle().fill(K.mod).frame(width: 7, height: 7)
+        case .conflicted:
+            Circle().fill(K.err).frame(width: 7, height: 7)
+        case .upToDate:
+            Circle().fill(K.ok).frame(width: 7, height: 7)
+        }
     }
 }
 

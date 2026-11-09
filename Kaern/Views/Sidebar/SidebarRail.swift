@@ -11,7 +11,8 @@ struct SidebarRail: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            ForEach(SidebarSection.allCases, id: \.self) { section in
+            // Submodules only where there are some.
+            ForEach(SidebarSection.allCases.filter { $0 != .submodules || !repository.submoduleItems.isEmpty }, id: \.self) { section in
                 RailSectionButton(section: section, count: count(section), isOn: window.sidebarFlyout == section) {
                     window.sidebarFlyout = window.sidebarFlyout == section ? nil : section
                 }
@@ -32,6 +33,7 @@ struct SidebarRail: View {
         case .tags: repository.tags.count
         case .stashes: repository.stashes.count
         case .worktrees: repository.worktrees.filter { !$0.isBare }.count
+        case .submodules: repository.submoduleItems.count
         }
     }
 }
@@ -44,6 +46,7 @@ extension SidebarSection {
         case .tags: "Tags"
         case .stashes: "Stashes"
         case .worktrees: "Worktrees"
+        case .submodules: "Submodules"
         }
     }
 
@@ -55,6 +58,7 @@ extension SidebarSection {
         case .tags: (Icons.tileTag, 12, Color(nsColor: K.hex(0xc8620a)))
         case .stashes: (Icons.tileStash, 13, Color(nsColor: K.hex(0x8a4fd6)))
         case .worktrees: (Icons.tileWorktree, 13, Color(nsColor: K.hex(0x2e8f4a)))
+        case .submodules: (Icons.tileSubmodule, 12, Color(nsColor: K.hex(0x4f6b8a)))
         }
     }
 }

@@ -65,7 +65,7 @@ enum HistorySelection: Hashable {
 }
 
 enum SidebarSection: String, CaseIterable, Hashable {
-    case local, remote, tags, stashes, worktrees
+    case local, remote, tags, stashes, worktrees, submodules
 }
 
 /// Sidebar state kept per repository, so it survives tab switches.
@@ -155,6 +155,8 @@ final class RepositoryModel: Identifiable {
     var commitMarks: CommitMarks?
     /// The file Quick Look shows (Space, ⌘Y).
     var quickLookURL: URL?
+    /// The sidebar's Submodules section (ScreenMarks).
+    var submoduleItems: [SubmoduleItem] = []
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
@@ -686,6 +688,7 @@ final class RepositoryModel: Identifiable {
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
         lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
         await refreshWorkingMarks()
+        await refreshSubmodules()
     }
 
     /// Remotes again (Repository Settings added, edited or removed one).

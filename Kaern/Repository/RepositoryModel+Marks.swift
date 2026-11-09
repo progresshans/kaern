@@ -14,6 +14,16 @@ struct WorkingMarks: Equatable {
     static let empty = WorkingMarks()
 }
 
+/// A submodule as the sidebar lists it (ScreenMarks › Submodules).
+struct SubmoduleItem: Equatable, Identifiable {
+    var path: String
+    var state: Submodule.State
+    /// "2.6.4 → 2.7.0 · 3 new commits", "0.54.6 · up to date", "Not initialized".
+    var detail: String
+
+    var id: String { path }
+}
+
 /// The same for one commit's files.
 struct CommitMarks: Equatable {
     let id: String
@@ -173,6 +183,44 @@ extension RepositoryModel {
     }
 
     // MARK: Submodules
+
+    func refreshSubmodules() async {
+        guard let repository else { return }
+        var items: [SubmoduleItem] = []
+        for submodule in await repository.submodules() {
+            let detail: String
+            switch submodule.state {
+            case .notInitialized:
+                detail = "Not initialized"
+            case .conflicted:
+                detail = "Conflicted"
+            case .upToDate:
+                let change = await repository.submoduleChange(submodule.path, from: submodule.commit, to: submodule.commit, limit: 0)
+                detail = "\(change.newTag ?? String(submodule.commit.prefix(7))) · up to date"
+            case .moved:
+                // `git submodule status` names the commit checked out; the one recorded is the index's.
+                let recorded = status.entries.first { $0.path == submodule.path }?.submodule?.indexCommit
+                let change = await repository.submoduleChange(submodule.path, from: recorded, to: submodule.commit, limit: 0)
+                let from = change.oldTag ?? recorded.map { String($0.prefix(7)) } ?? "?"
+                let to = change.newTag ?? String(submodule.commit.prefix(7))
+                let movement = change.isFastForward
+                    ? Formatters.count(change.addedCount, "new commit", "new commits")
+                    : Self.submoduleNote(CommitDistance(ahead: change.addedCount, behind: change.removedCount))
+                detail = "\(from) → \(to) · \(movement)"
+            }
+            items.append(SubmoduleItem(path: submodule.path, state: submodule.state, detail: detail))
+        }
+        if items != submoduleItems { submoduleItems = items }
+    }
+
+    /// Initialize: clones the submodule at the commit this repository records.
+    func initializeSubmodule(_ submodulePath: String) {
+        perform(.network("Cloning \(submodulePath)…"), trigger: "Initialize \(submodulePath)") { repository in
+            try await repository.updateSubmodule(submodulePath)
+        } onSuccess: { [weak self] in
+            self?.showToast("Initialized \(submodulePath)")
+        }
+    }
 
     /// Update to Recorded: checks out, inside the submodule, the commit this repository records.
     func updateSubmoduleToRecorded(_ submodulePath: String, label: String) {

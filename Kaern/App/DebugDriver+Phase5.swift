@@ -12,7 +12,7 @@ extension DebugDriver {
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
         "diffWrap", "scrollWheel", "selectSubject", "quickLook", "alwaysLFS", "imageMode", "downloadLFS",
-        "useWindow", "focusGraph", "targetFrame",
+        "useWindow", "focusGraph", "targetFrame", "initSubmodule",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -110,7 +110,7 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
-        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph":
+        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph", "initSubmodule":
             guard let tab = window.activeTab else { return }
             let repository = app.repository(for: tab.path)
             switch command {
@@ -127,6 +127,9 @@ extension DebugDriver {
                 repository.from("LFS file") { repository.downloadLFS([args.joined(separator: " ")], at: commit) }
             case "focusGraph":
                 repository.historyFocusRequest += 1
+            case "initSubmodule":
+                // initSubmodule <path> — the sidebar's Initialize.
+                repository.from("Sidebar") { repository.initializeSubmodule(args.joined(separator: " ")) }
             case "quickLook":
                 // quickLook — Space: the file Review shows; again closes it.
                 _ = controller?.toggleQuickLook()
@@ -317,6 +320,7 @@ extension DebugDriver {
                 "quickLook": repository.quickLookURL?.lastPathComponent ?? "",
                 "quickLookFile": repository.quickLookFile?.path ?? "",
                 "alwaysLFS": repository.alwaysDownloadsLFS,
+                "sidebarSubmodules": repository.submoduleItems.map { "\($0.path) | \($0.detail) | \($0.state)" },
                 "alert": repository.alert.map { "\($0.title) — \($0.message)" } ?? "",
                 "toast": repository.toast?.message ?? "",
             ] as [String: Any]

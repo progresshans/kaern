@@ -99,6 +99,11 @@ enum Icons {
         .circle(5.5, 5.6, 1.1, fill: .current),
     ])
     static let tileStash = stash(1.6)
+    /// ScreenMarks' Submodules tile: a box with a box inside.
+    static let tileSubmodule = SVGIcon(14, [
+        .path("M4 1.8h6a2.2 2.2 0 0 1 2.2 2.2v6a2.2 2.2 0 0 1-2.2 2.2H4A2.2 2.2 0 0 1 1.8 10V4A2.2 2.2 0 0 1 4 1.8z", width: 1.6),
+        .filled("M6 5h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"),
+    ])
     static let tileWorktree = SVGIcon(16, [.path(
         "M2.5 4.5a1 1 0 0 1 1-1h3l1.2 1.3h4.8a1 1 0 0 1 1 1V7M2.5 4.5v7a1 1 0 0 0 1 1h3.5M10.5 8.5v5M10.5 10.5c0-1.4 1.4-2 3-2",
         width: 1.5, cap: .round, join: .round
