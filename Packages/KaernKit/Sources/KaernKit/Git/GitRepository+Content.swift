@@ -106,6 +106,24 @@ extension GitRepository {
     }
 }
 
+// MARK: - Shallow clones
+
+extension GitRepository {
+    /// A shallow clone (`git clone --depth`): history stops before the first commit.
+    public var isShallow: Bool {
+        let file = commonGitDirectory.appending(path: "shallow").path(percentEncoded: false)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file) else { return false }
+        return ((attributes[.size] as? NSNumber)?.intValue ?? 0) > 0
+    }
+
+    /// Fetch 100 More (`git fetch --deepen=<count>`) or, with `nil`, Fetch Full History
+    /// (`git fetch --unshallow`) from `remote`.
+    public func deepen(by count: Int?, remote: String, onProgress: (@Sendable (String) -> Void)? = nil) async throws {
+        let depth = count.map { "--deepen=\($0)" } ?? "--unshallow"
+        try await git(["fetch", "--progress", depth, remote], onProgress: onProgress)
+    }
+}
+
 // MARK: - Submodule moves
 
 /// What a submodule's move from one commit to another brings, as the submodule's own clone

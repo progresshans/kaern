@@ -182,6 +182,21 @@ extension RepositoryModel {
         }
     }
 
+    // MARK: Shallow clones
+
+    /// Fetch 100 More, or with `nil` Fetch Full History, at the end of a shallow clone's history.
+    func fetchMoreHistory(_ count: Int?) {
+        let remote = defaultRemote ?? "origin"
+        let title = count.map { "Fetching \($0) more commits…" } ?? "Fetching the full history…"
+        perform(.network(title), trigger: count.map { "Fetch \($0) More" } ?? "Fetch Full History") { repository in
+            try await repository.deepen(by: count, remote: remote)
+        } onSuccess: { [weak self] in
+            guard let self else { return }
+            self.isShallow = self.repository?.isShallow ?? false
+            self.showToast(count.map { _ in "Fetched older commits" } ?? "Fetched the full history")
+        }
+    }
+
     // MARK: Submodules
 
     func refreshSubmodules() async {

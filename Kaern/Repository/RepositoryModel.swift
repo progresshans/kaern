@@ -157,6 +157,8 @@ final class RepositoryModel: Identifiable {
     var quickLookURL: URL?
     /// The sidebar's Submodules section (ScreenMarks).
     var submoduleItems: [SubmoduleItem] = []
+    /// A shallow clone: the history ends with Fetch 100 More / Fetch Full History (ScreenBigRepo).
+    var isShallow = false
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
@@ -464,6 +466,7 @@ final class RepositoryModel: Identifiable {
         self.remotes = await remotes
         operation = repository.operationState()
         lastFetch = repository.lastFetchDate
+        isShallow = repository.isShallow
         await refreshPullOverride()
         runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
         if let loadedHistory {
@@ -623,6 +626,7 @@ final class RepositoryModel: Identifiable {
             self.worktrees = await worktrees
             self.remotes = await remotes
             lastFetch = repository.lastFetchDate
+            isShallow = repository.isShallow
         } else if let status = await timedStatus(repository) {
             self.status = status
             statusIsFull = true

@@ -12,7 +12,7 @@ extension DebugDriver {
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
         "diffWrap", "scrollWheel", "selectSubject", "quickLook", "alwaysLFS", "imageMode", "downloadLFS",
-        "useWindow", "focusGraph", "targetFrame", "initSubmodule",
+        "useWindow", "focusGraph", "targetFrame", "initSubmodule", "deepen",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -110,7 +110,7 @@ extension DebugDriver {
         guard let window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
-        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph", "initSubmodule":
+        case "selectSubject", "quickLook", "alwaysLFS", "downloadLFS", "focusGraph", "initSubmodule", "deepen":
             guard let tab = window.activeTab else { return }
             let repository = app.repository(for: tab.path)
             switch command {
@@ -127,6 +127,9 @@ extension DebugDriver {
                 repository.from("LFS file") { repository.downloadLFS([args.joined(separator: " ")], at: commit) }
             case "focusGraph":
                 repository.historyFocusRequest += 1
+            case "deepen":
+                // deepen <count> | deepen all — the shallow end row's Fetch 100 More / Fetch Full History.
+                repository.from("History") { repository.fetchMoreHistory(args.first.flatMap(Int.init)) }
             case "initSubmodule":
                 // initSubmodule <path> — the sidebar's Initialize.
                 repository.from("Sidebar") { repository.initializeSubmodule(args.joined(separator: " ")) }
@@ -284,6 +287,7 @@ extension DebugDriver {
                 "searchOlder": repository.search.olderMatches, "searchPaging": repository.search.isPaging,
                 "searchMatches": repository.search.matches.count,
                 "timings": repository.debugTimings,
+                "shallow": repository.isShallow,
                 "topRow": repository.historyScrollAnchor.flatMap { id in repository.displayCommits.firstIndex { $0.id == id } } ?? 0,
                 "selection": { if case .commit(let id) = repository.selection { return repository.commits.first { $0.id == id }?.subject ?? id } else { return "wip" } }(),
             ] as [String: Any]

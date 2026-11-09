@@ -146,6 +146,9 @@ struct HistoryView: View {
             Color.clear.frame(height: CGFloat(shown.count - range.upperBound) * KMetric.graphRow)
             if repository.isLoadingMoreHistory {
                 ProgressView().controlSize(.small).padding(8)
+            } else if repository.isShallow, !repository.hasMoreHistory, !shown.isEmpty {
+                ShallowEndRow(repository: repository, columns: columns,
+                              lane: repository.graph.last?.lane ?? 0)
             }
         }
     }
@@ -261,6 +264,64 @@ struct HistoryView: View {
         }
         onPick()
         return .handled
+    }
+}
+
+/// `.shend`: where a shallow clone's history stops (ScreenBigRepo): a dashed line under the last
+/// commit, what the clone has, Fetch 100 More and Fetch Full History.
+private struct ShallowEndRow: View {
+    let repository: RepositoryModel
+    let columns: HistoryColumns
+    let lane: Int
+
+    var body: some View {
+        let count = repository.commits.count
+        HStack(alignment: .top, spacing: 0) {
+            Color.clear.frame(width: columns.ref, height: 1)
+            Path { path in
+                let x = GraphMetrics.x(lane: lane)
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: 30))
+            }
+            .stroke(K.lane(lane), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [3, 3]))
+            .frame(width: columns.graph, height: 40, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("History stops here. This clone has the newest \(count.formatted()) \(count == 1 ? "commit" : "commits") (git clone --depth \(count)).")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(K.label2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let activity = repository.activity, activity.statusText.hasPrefix("Fetching") {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(activity.statusText).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                    }
+                }
+                HStack(spacing: 6) {
+                    GhostButton(title: "Fetch 100 More") {
+                        repository.from("History") { repository.fetchMoreHistory(100) }
+                    }
+                    GhostButton(title: "Fetch Full History") {
+                        repository.from("History") { repository.fetchMoreHistory(nil) }
+                    }
+                }
+                .disabled(repository.activity != nil || repository.remotes.isEmpty)
+            }
+            .padding(EdgeInsets(top: 10, leading: 12, bottom: 0, trailing: 14))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.bottom, 14)
+        .frame(minHeight: 92, alignment: .top)
+        .overlay(alignment: .top) {
+            // `border-top: 1px dashed`.
+            GeometryReader { proxy in
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: 0.5))
+                    path.addLine(to: CGPoint(x: proxy.size.width, y: 0.5))
+                }
+                .stroke(K.sepStrong, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+            .frame(height: 1)
+        }
     }
 }
 

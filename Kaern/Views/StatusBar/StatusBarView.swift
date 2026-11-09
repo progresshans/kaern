@@ -121,6 +121,10 @@ struct StatusBarView: View {
         } else if let branch = status.branch, !repository.remotes.isEmpty {
             parts.append("\(branch) isn’t published yet")
         }
+        // ScreenBigRepo: a shallow clone says how much history it has.
+        if repository.isShallow, !repository.hasMoreHistory {
+            parts.append("Shallow clone · newest " + Formatters.count(repository.commits.count, "commit", "commits"))
+        }
         // ScreenMarks: LFS files still pointers, submodules away from their recorded commit.
         let pointers = repository.workingMarks.lfsPointers.count
         if pointers > 0 {

@@ -511,6 +511,31 @@ struct DiffExtrasTests {
         }
     }
 
+    @Test func deepensAShallowCloneAndFetchesTheRest() async throws {
+        let origin = try await TestRepositories.make()
+        defer { TestRepositories.remove(origin) }
+        for number in 1...4 {
+            try origin.write("\(number)\n", to: "n.txt")
+            try await origin.commitAll("Commit \(number)")
+        }
+        let folder = FileManager.default.temporaryDirectory.appending(path: "kaern-shallow-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await Self.runner.run(["clone", "-q", "--depth", "2", "file://" + origin.root.path(percentEncoded: false), folder.path(percentEncoded: false)],
+                                  in: nil)
+        let clone = try await GitRepository.open(folder, runner: Self.runner)
+        func count() async throws -> Int {
+            Int(try await clone.git(["rev-list", "--count", "HEAD"]).text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? -1
+        }
+        #expect(clone.isShallow)
+        #expect(try await count() == 2)
+        try await clone.deepen(by: 1, remote: "origin")
+        #expect(try await count() == 3 && clone.isShallow)
+        try await clone.deepen(by: nil, remote: "origin")
+        #expect(try await count() == 4)
+        #expect(!clone.isShallow)
+        #expect(!origin.isShallow)
+    }
+
     @Test func tellsWhatASubmoduleMoveBrings() async throws {
         // The submodule's own repository: three commits, with tags on the first and the last.
         let library = try await TestRepositories.make()
