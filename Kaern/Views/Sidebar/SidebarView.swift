@@ -136,6 +136,9 @@ struct SidebarView: View {
 
     // MARK: Remote
 
+    /// A remote's branches the way ScreenBigRepo lists 1,243 of them: names with a prefix
+    /// ("release/2026.11") in a folder per prefix, folded, each showing its first six names and
+    /// "N more"; the rest loose. While filtering, folders with matches open and say "1 of 812".
     private var remoteSection: some View {
         let branches = repository.refs.remoteBranches
         let names = Array(Set(repository.remotes.map(\.name) + repository.refs.remoteNames)).sorted { a, b in
@@ -146,19 +149,14 @@ struct SidebarView: View {
             count: branches.count, isOpen: isOpen(.remote), toggle: { toggle(.remote) }
         ) {
             ForEach(names, id: \.self) { remote in
-                let members = branches.filter { $0.remoteName == remote && matches($0.name) }
+                let all = branches.filter { $0.remoteName == remote }
+                let members = filter.isEmpty ? all : all.filter { matches($0.name) }
                 let open = !filter.isEmpty || repository.sidebar.openRemotes.contains(remote)
                 if filter.isEmpty || !members.isEmpty {
                     SidebarRow(chevron: open, title: remote, strong: true, meta: host(of: remote))
                         .onTapGesture { toggleRemote(remote) }
                     if open {
-                        ForEach(members.sorted { $0.branchName.localizedStandardCompare($1.branchName) == .orderedAscending }) { ref in
-                            SidebarRow(icon: Icons.rowBranch, title: ref.branchName, nested: true)
-                                .help("\(ref.name) — click to show it in the graph, double-click to check out a local branch that tracks it.")
-                                .onTapGesture(count: 2) { repository.from("Sidebar › double-click remote branch") { repository.checkoutRemoteBranch(ref) } }
-                                .onTapGesture { repository.showRemoteBranch(ref) }
-                                .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: 6, inset: 0))
-                        }
+                        remoteRows(remote: remote, all: all, members: members)
                     }
                 }
             }
@@ -170,6 +168,63 @@ struct SidebarView: View {
                     .accessibilityAddTraits(.isButton)
             }
         }
+    }
+
+    /// Folders first (by prefix), then the loose names, like Local.
+    @ViewBuilder
+    private func remoteRows(remote: String, all: [Ref], members: [Ref]) -> some View {
+        let groups = RemoteFolders(members)
+        let totals = RemoteFolders.counts(all)
+        ForEach(groups.folders, id: \.name) { folder in
+            let key = "\(remote)/\(folder.name)"
+            let total = totals[folder.name] ?? folder.branches.count
+            let open = !filter.isEmpty || repository.sidebar.openRemoteFolders.contains(key)
+            RemoteFolderRow(title: folder.name, open: open,
+                            count: filter.isEmpty || folder.branches.count == total
+                                ? total.formatted() : "\(folder.branches.count.formatted()) of \(total.formatted())")
+                .onTapGesture { toggleRemoteFolder(key) }
+            if open {
+                let limit = RemoteFolders.firstNames + (repository.sidebar.remoteFolderExtra[key] ?? 0)
+                ForEach(folder.branches.prefix(limit)) { ref in
+                    remoteBranchRow(ref, title: String(ref.branchName.dropFirst(folder.name.count + 1)), depth: 2)
+                }
+                let rest = folder.branches.count - limit
+                if rest > 0 {
+                    // "35 more — type to filter": a click shows more, then more as the list scrolls to them.
+                    SidebarRow(title: rest.formatted() + " more" + (filter.isEmpty ? " — type to filter" : ""),
+                               depth: 2, isLink: true)
+                        .onTapGesture { showMore(key) }
+                        .onAppear { if repository.sidebar.remoteFolderExtra[key] != nil { showMore(key) } }
+                        .accessibilityAddTraits(.isButton)
+                }
+            }
+        }
+        ForEach(groups.loose) { ref in
+            remoteBranchRow(ref, title: ref.branchName, depth: 1)
+        }
+    }
+
+    private func remoteBranchRow(_ ref: Ref, title: String, depth: Int) -> some View {
+        SidebarRow(icon: Icons.rowBranch, title: title, depth: depth)
+            .help("\(ref.name) — click to show it in the graph, double-click to check out a local branch that tracks it.")
+            .onTapGesture(count: 2) { repository.from("Sidebar › double-click remote branch") { repository.checkoutRemoteBranch(ref) } }
+            .onTapGesture { repository.showRemoteBranch(ref) }
+            .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+    }
+
+    private func toggleRemoteFolder(_ key: String) {
+        guard filter.isEmpty else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            if repository.sidebar.openRemoteFolders.contains(key) {
+                repository.sidebar.openRemoteFolders.remove(key)
+            } else {
+                repository.sidebar.openRemoteFolders.insert(key)
+            }
+        }
+    }
+
+    private func showMore(_ key: String) {
+        repository.sidebar.remoteFolderExtra[key, default: 0] += RemoteFolders.batch
     }
 
     private func toggleRemote(_ remote: String) {
@@ -284,6 +339,16 @@ struct SidebarView: View {
 
     // MARK: Filter
 
+    /// Everything the filter finds, in every section.
+    private var matchCount: Int {
+        repository.refs.localBranches.count { matches($0.name) }
+            + repository.refs.remoteBranches.count { matches($0.name) }
+            + repository.tags.count { matches($0.name) }
+            + repository.stashes.count { matches($0.message) }
+            + repository.worktrees.count { !$0.isBare && (matches($0.name) || matches($0.branch ?? "")) }
+            + repository.submoduleItems.count { matches($0.path) }
+    }
+
     private var filterField: some View {
         HStack(spacing: 6) {
             Icon(Icons.search(1.4), size: 13)
@@ -293,6 +358,12 @@ struct SidebarView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(K.label)
             if !repository.sidebar.filter.isEmpty {
+                // ScreenBigRepo: "43 matches".
+                Text(Formatters.count(matchCount, "match", "matches"))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(K.label2)
+                    .lineLimit(1)
+                    .fixedSize()
                 Button {
                     repository.sidebar.filter = ""
                 } label: {
@@ -442,6 +513,8 @@ private struct SidebarRow: View {
     var chevron: Bool?
     let title: String
     var nested = false
+    /// 1 is `nested`; 2 sits inside a remote branch folder (under its folder icon).
+    var depth = 0
     /// Rows without an icon start in the icon column (Tags, Stashes, Worktrees).
     var flat = false
     var strong = false
@@ -463,15 +536,15 @@ private struct SidebarRow: View {
                     .foregroundStyle(K.label2)
                     .rotationEffect(.degrees(chevron ? 0 : -90))
                     .frame(width: 13)
-                    .padding(.leading, 10 + (nested ? 20 : 0))
+                    .padding(.leading, 10 + indent)
                     .padding(.trailing, 13)
             } else if let icon {
                 Icon(icon, size: 13)
                     .foregroundStyle(iconColor)
-                    .padding(.leading, 10 + (nested ? 20 : 0))
+                    .padding(.leading, 10 + indent)
                     .padding(.trailing, 13)
             } else {
-                Color.clear.frame(width: flat ? 10 : 36 + (nested ? 20 : 0), height: 1)
+                Color.clear.frame(width: flat ? 10 : 36 + indent, height: 1)
             }
             HStack(spacing: 7) {
                 if let subtitle {
@@ -514,6 +587,14 @@ private struct SidebarRow: View {
         .onHover { hovering = $0 }
     }
 
+    private var indent: CGFloat {
+        switch max(depth, nested ? 1 : 0) {
+        case 0: 0
+        case 1: 20
+        default: RemoteFolderRow.childIndent
+        }
+    }
+
     private var titleText: some View {
         Text(title)
             .font(font)
@@ -533,6 +614,97 @@ private struct SidebarRow: View {
         if isLink || isCurrent { return K.accentText }
         if isPlaceholder { return K.label2 }
         return K.label
+    }
+}
+
+/// A remote branch prefix folder (`.si.ind.rdir`): chevron, folder icon, name and how many
+/// branches it holds ("41", or "1 of 812" while filtering).
+private struct RemoteFolderRow: View {
+    let title: String
+    let open: Bool
+    let count: String
+    @State private var hovering = false
+
+    /// Where the rows inside start their icon (under this row's folder icon).
+    static let childIndent: CGFloat = 37
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Icon(Icons.chevronDown, size: 9)
+                .foregroundStyle(K.label2)
+                .rotationEffect(.degrees(open ? 0 : -90))
+                .frame(width: 13)
+                .padding(.leading, 30)
+                .padding(.trailing, 4)
+            Icon(Icons.folder, size: 13)
+                .foregroundStyle(K.label2)
+                .padding(.trailing, 13)
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(K.label)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(count)
+                .font(.system(size: 11.5))
+                .monospacedDigit()
+                .foregroundStyle(K.label2)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.trailing, 8)
+        }
+        .frame(height: KMetric.sidebarRow)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(open ? "expanded" : "collapsed")
+    }
+}
+
+/// One remote's branches split into prefix folders ("release/…") and loose names, sorted the
+/// way Finder sorts.
+struct RemoteFolders {
+    struct Folder {
+        let name: String
+        let branches: [Ref]
+    }
+
+    /// Names a folder shows before "N more".
+    static let firstNames = 6
+    /// How many more each "N more" (or scrolling to it) shows.
+    static let batch = 100
+
+    let folders: [Folder]
+    let loose: [Ref]
+
+    init(_ refs: [Ref]) {
+        let sorted = refs.sorted { $0.branchName.localizedStandardCompare($1.branchName) == .orderedAscending }
+        var byPrefix: [String: [Ref]] = [:]
+        var loose: [Ref] = []
+        for ref in sorted {
+            if let prefix = Self.prefix(of: ref) { byPrefix[prefix, default: []].append(ref) } else { loose.append(ref) }
+        }
+        folders = byPrefix.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .map { Folder(name: $0, branches: byPrefix[$0] ?? []) }
+        self.loose = loose
+    }
+
+    /// Branches per prefix (the folder's count when the filter shows only some).
+    static func counts(_ refs: [Ref]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for ref in refs {
+            if let prefix = prefix(of: ref) { counts[prefix, default: 0] += 1 }
+        }
+        return counts
+    }
+
+    private static func prefix(of ref: Ref) -> String? {
+        let name = ref.branchName
+        guard let slash = name.firstIndex(of: "/"), slash != name.startIndex else { return nil }
+        return String(name[..<slash])
     }
 }
 

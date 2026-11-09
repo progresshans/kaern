@@ -75,6 +75,10 @@ struct SidebarState: Equatable {
     var foldedFolders: Set<String> = []
     /// Remotes the user unfolded (remotes start folded, like the board's origin).
     var openRemotes: Set<String> = []
+    /// Remote branch folders the user unfolded ("origin/release"); they start folded.
+    var openRemoteFolders: Set<String> = []
+    /// How many names a remote branch folder shows beyond the first ones ("N more" adds to it).
+    var remoteFolderExtra: [String: Int] = [:]
     var showsAllTags = false
     var filter = ""
 }
