@@ -121,9 +121,9 @@ extension GitRepository {
 
     /// Runs a command that may stop for conflicts. Exit status 1 counts as "stopped" when it left
     /// an operation waiting (a new one, or the same one at a different commit); otherwise it's an error.
-    func runStoppable(_ arguments: [String]) async throws -> OperationOutcome {
+    func runStoppable(_ arguments: [String], onProgress: (@Sendable (String) -> Void)? = nil) async throws -> OperationOutcome {
         let before = operationState()
-        let output = try await git(arguments, accepted: [0, 1])
+        let output = try await git(arguments, accepted: [0, 1], onProgress: onProgress)
         let after = operationState()
         if output.status == 0 {
             return after == nil ? .finished : .stopped

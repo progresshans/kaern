@@ -392,7 +392,12 @@ public struct GitRepository: Sendable, Hashable {
         case fastForwardOnly
     }
 
-    public func pull(strategy: PullStrategy = .gitConfig, onProgress: (@Sendable (String) -> Void)? = nil) async throws {
+    /// `git pull`. When the merge or rebase it runs stops on conflicts, the pull returns
+    /// ``OperationOutcome/stopped`` (it waits in ``operationState()``) instead of throwing, like
+    /// ``merge(_:fastForward:)``. git refuses `--rebase` with uncommitted changes to tracked files;
+    /// ``withChangesStashed(message:_:)`` puts them aside first.
+    @discardableResult
+    public func pull(strategy: PullStrategy = .gitConfig, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> OperationOutcome {
         var arguments = ["pull", "--progress"]
         switch strategy {
         case .gitConfig: break
@@ -400,7 +405,7 @@ public struct GitRepository: Sendable, Hashable {
         case .rebase: arguments.append("--rebase")
         case .fastForwardOnly: arguments.append("--ff-only")
         }
-        try await git(arguments, onProgress: onProgress)
+        return try await runStoppable(arguments, onProgress: onProgress)
     }
 
     /// Pushes the current branch. Without an upstream, publishes it to `remote` and sets the upstream.

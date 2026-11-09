@@ -1137,16 +1137,33 @@ final class RepositoryModel: Identifiable {
     func pull(_ strategy: GitRepository.PullStrategy) {
         let before = status.headID
         let branch = status.branch
+        let upstream = status.upstream
         perform(.pulling, trigger: "Pull") { [weak self] repository in
-            try await repository.pull(strategy: strategy)
-            let after = await repository.resolve("HEAD")
-            guard let self, let before, let after, before != after, let branch else {
-                self?.showToast("Already up to date")
+            let result: (outcome: OperationOutcome, kept: String?)
+            if strategy == .rebase {
+                // git won't pull with rebase over uncommitted changes. Like Merge and Rebase, they
+                // go aside in the stash list and come back with what was staged still staged
+                // (git's own --autostash brings them back unstaged).
+                result = try await repository.withChangesStashed(message: "Before Pull") {
+                    try await repository.pull(strategy: strategy)
+                }
+            } else {
+                result = (try await repository.pull(strategy: strategy), nil)
+            }
+            guard let self else { return }
+            guard result.outcome == .finished, let after = await repository.resolve("HEAD") else {
+                // Stopped on conflicts: the editor opens; ⌘Z after finishing goes back to `before`.
+                self.stoppedOnConflicts("Pull", start: before.map { OperationStart(label: "Pull", branch: branch, head: $0, kept: result.kept) })
                 return
             }
-            let count = await repository.countCommits(from: before, to: after)
-            self.record(ReversibleStep.moveBranch(label: "Pull", branch: branch, from: before, to: after),
-                        toast: "Pulled \(Formatters.count(count, "commit", "commits")) into \(branch)")
+            guard let before, before != after, let branch else {
+                self.showToast("Already up to date")
+                return
+            }
+            // What came in: the upstream's commits that weren't here (a rebase also rewrites yours).
+            let count = await repository.countCommits(from: before, to: upstream.map { "refs/remotes/\($0)" } ?? after)
+            self.recordMove(label: "Pull", branch: branch, from: before, to: after, kept: result.kept,
+                            toast: "Pulled \(Formatters.count(count, "commit", "commits")) into \(branch)")
         }
     }
 

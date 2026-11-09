@@ -364,12 +364,17 @@ extension RepositoryModel {
 
     private func finished(_ operation: OperationState, name: String) {
         closeConflicts()
+        let wasPull = operationStart?.label == "Pull"
         if let start = operationStart {
             operationStart = nil
             Task { await recordFinishedOperation(start) }
         }
         var detail = ""
         switch operation.kind {
+        case .rebase where wasPull:
+            // Pull (rebase): your commits now sit on what was pulled; a plain push sends them.
+            let branch = operation.branch ?? status.branch ?? "The branch"
+            detail = "\(branch) has what \(status.upstream ?? "its upstream") had, with your commits on top."
         case .rebase:
             let branch = operation.branch ?? status.branch ?? "The branch"
             let onto = operation.onto.map { ontoName($0) } ?? "its base"
