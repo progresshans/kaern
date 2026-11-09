@@ -50,8 +50,8 @@ struct SelectedSignature: Equatable {
 extension RepositoryModel {
     /// Reads `%G?` for history rows that came on screen. Checking runs gpg or ssh-keygen once per
     /// signed commit, so only for rows that have been seen.
-    func loadSignatures(for ids: [String]) {
-        let missing = ids.filter { signatureCodes[$0] == nil && !signaturesInFlight.contains($0) }
+    func loadSignatures(for ids: [String], again: Bool = false) {
+        let missing = ids.filter { (again || signatureCodes[$0] == nil) && !signaturesInFlight.contains($0) }
         guard !missing.isEmpty, let repository else { return }
         signaturesInFlight.formUnion(missing)
         Task {
@@ -87,10 +87,11 @@ extension RepositoryModel {
         }
     }
 
-    /// After the allowed signers changed: every shield and the card are read again.
+    /// After the allowed signers changed: the shields seen so far and the card are read again
+    /// (the old shields stay until the new ones are in).
     func recheckSignatures() {
-        signatureCodes = [:]
         signaturesInFlight = []
+        loadSignatures(for: Array(signatureCodes.keys), again: true)
         let selected = selectedSignature?.id
         selectedSignature = nil
         if let selected { loadSelectedSignature(selected) }
