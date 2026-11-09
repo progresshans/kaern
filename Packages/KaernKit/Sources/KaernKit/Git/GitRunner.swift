@@ -386,12 +386,12 @@ public struct GitRunner: Sendable {
                 }
                 onLaunch { box.terminate() }
 
-                DispatchQueue.global(qos: .userInitiated).async {
+                GitRunner.pipeQueue("stdout").async {
                     let data = outHandle.readDataToEndOfFile()
                     collector.stdout.withLock { $0 = data }
                     group.leave()
                 }
-                DispatchQueue.global(qos: .userInitiated).async {
+                GitRunner.pipeQueue("stderr").async {
                     let data: Data
                     if let onProgress {
                         data = readIncrementally(errHandle, onLine: onProgress)
@@ -402,7 +402,7 @@ public struct GitRunner: Sendable {
                     group.leave()
                 }
                 if let inHandle, let input {
-                    DispatchQueue.global(qos: .userInitiated).async {
+                    GitRunner.pipeQueue("stdin").async {
                         try? inHandle.write(contentsOf: input)
                         try? inHandle.close()
                     }
@@ -411,6 +411,14 @@ public struct GitRunner: Sendable {
         } onCancel: {
             box.terminate()
         }
+    }
+
+    /// A queue for one pipe of one git process. Reading a pipe blocks until git closes it; a
+    /// serial queue of its own gets its own thread, so many git processes at once (the test
+    /// suite, Fetch All) can't use up the shared pool and leave a git waiting on a full pipe
+    /// that nobody reads.
+    static func pipeQueue(_ name: String) -> DispatchQueue {
+        DispatchQueue(label: "com.progresshans.kaern.git-\(name)", qos: .userInitiated)
     }
 
     /// Reads a stream to the end, reporting each `\r`/`\n` separated line along the way.

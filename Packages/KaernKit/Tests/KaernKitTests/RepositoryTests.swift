@@ -205,7 +205,8 @@ struct RepositoryTests {
         let url = FileManager.default.temporaryDirectory.appending(path: "kaern-not-a-repo-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: url) }
-        await #expect(throws: GitError.self) {
+        // Phase 5: a plain folder opens as a tab that offers Create Repository Here.
+        await #expect(throws: NotARepositoryError.self) {
             _ = try await GitRepository.open(url, runner: Self.runner)
         }
     }

@@ -152,7 +152,7 @@ public final class CommitStream: @unchecked Sendable {
         // Standard error is small; read it on the side so git never waits on it.
         let errorHandle = errors.fileHandleForReading
         let box = errorOutput
-        DispatchQueue.global(qos: .utility).async {
+        GitRunner.pipeQueue("log-stderr").async {
             box.set(errorHandle.readDataToEndOfFile())
         }
         if let onCommand = runner.onCommand {
