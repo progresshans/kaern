@@ -33,6 +33,7 @@ struct StashView: View {
                             }
                             .padding(.bottom, 20)
                         }
+                        .diffSideScrolling(resetKey: (repository.shownStash?.id ?? "") + "\(layout)")
                         .onReceive(NotificationCenter.default.publisher(for: .kaernScrollStashFile)) { note in
                             guard let path = note.object as? String else { return }
                             withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("stash:" + path, anchor: .top) }

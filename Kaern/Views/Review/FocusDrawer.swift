@@ -38,6 +38,7 @@ struct FocusDrawer: View {
                                 }
                             }
                         }
+                        .diffSideScrolling(resetKey: current.path + "\(layout)")
                     } else if files == nil {
                         ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {

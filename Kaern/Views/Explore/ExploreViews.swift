@@ -172,6 +172,7 @@ struct ExploreView: View {
                     }
                     .padding(.bottom, 20)
                 }
+                .diffSideScrolling(resetKey: (state.selected ?? "") + file.path + "\(layout)")
             } else {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }

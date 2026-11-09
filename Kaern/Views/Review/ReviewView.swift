@@ -92,6 +92,7 @@ struct ReviewView: View {
                     }
                     .padding(.bottom, 20)
                 }
+                .diffSideScrolling(resetKey: shown.map(\.path).joined(separator: "\n") + "\(layout)")
             }
         }
     }

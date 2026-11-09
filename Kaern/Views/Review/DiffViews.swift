@@ -378,22 +378,36 @@ private struct UnifiedLineRow: View {
 }
 
 /// A line's text: wrapped or on one line (Settings › Diff › Wrap long lines), with its changed
-/// words marked.
+/// words marked. On one line, the text scrolls sideways with the rest of the diff.
 struct DiffLineText: View {
     let text: String
     let kind: DiffLine.Kind
     var marks: WordMarks?
     var color: Color = K.code
     @Environment(\.diffStyle) private var style
+    @Environment(\.diffSideScroll) private var side
 
     var body: some View {
-        content
-            .foregroundStyle(color)
-            .lineLimit(style.wraps ? nil : 1)
-            .truncationMode(.tail)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .help(style.wraps ? "" : text)
+        if !style.wraps, let side {
+            content
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .fixedSize()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { side.noteLine(width: $0) }
+                .offset(x: -side.offset)
+                // Both bounds: the column's width, whatever the line's (the text goes under the clip).
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .clipped()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { side.noteColumn(width: $0) }
+        } else {
+            content
+                .foregroundStyle(color)
+                .lineLimit(style.wraps ? nil : 1)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(style.wraps ? "" : text)
+        }
     }
 
     private var content: Text {

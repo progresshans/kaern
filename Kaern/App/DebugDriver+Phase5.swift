@@ -11,6 +11,7 @@ extension DebugDriver {
         "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
+        "diffWrap", "scrollWheel",
     ]
 
     func phase5(_ command: String, _ args: [String]) {
@@ -49,6 +50,27 @@ extension DebugDriver {
                     app.open([URL(filePath: row.path, directoryHint: .isDirectory)], in: window)
                 }
             }
+            return
+        case "diffWrap":
+            // diffWrap on|off — Settings › Diff › Wrap long lines.
+            UserDefaults.kaern.set(args.first != "off", forKey: SettingsKey.diffWrap)
+            return
+        case "scrollWheel":
+            // scrollWheel x y dx dy — a trackpad scroll by (dx, dy) points at window points (top-left
+            // origin), through the event queue like a real one (event monitors see it).
+            guard args.count == 4, let nsWindow = controller?.window, let screen = nsWindow.screen ?? NSScreen.main else { return }
+            let values = args.compactMap(Double.init)
+            guard values.count == 4 else { return }
+            // Quartz event locations are global, top-left of the main display.
+            let flipped = NSPoint(x: nsWindow.frame.minX + values[0], y: nsWindow.frame.maxY - values[1])
+            let mainHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                                   wheel1: Int32(values[3]), wheel2: Int32(values[2]), wheel3: 0) else { return }
+            cg.location = CGPoint(x: flipped.x, y: mainHeight - flipped.y)
+            cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(nsWindow.windowNumber))
+            cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(nsWindow.windowNumber))
+            if let event = NSEvent(cgEvent: cg) { NSApp.postEvent(event, atStart: false) }
             return
         case "fakeFetchProblem":
             // fakeFetchProblem <tab name> signIn|network <host> — as if its last fetch failed that way.
@@ -224,6 +246,9 @@ extension DebugDriver {
                  "rows": section.rows.map { "\($0.name) | \($0.branch) | \($0.changes.map(String.init) ?? "—") | \($0.toPush.map(String.init) ?? "—") | \($0.toPull.map(String.init) ?? "—") | \($0.tone) | \($0.status) | \($0.fixTitle ?? "")" }]
             },
         ] as [String: Any]
+        result["sideScroll"] = DiffSideScroll.current.map { side -> [String: Any] in
+            ["offset": side.offset, "content": side.contentWidth, "column": side.columnWidth, "max": side.maxOffset, "lastSeen": side.lastSeen]
+        } ?? NSNull()
         result["lastFetchAll"] = AutoFetcher.shared.lastFetchAll.map { "\($0)" } ?? ""
         result["layout"] = [
             "switching": AppSettings.repositorySwitching.rawValue,
