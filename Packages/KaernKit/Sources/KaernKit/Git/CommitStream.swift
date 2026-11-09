@@ -27,6 +27,10 @@ public final class CommitStream: @unchecked Sendable {
     private var delivered = 0
     private var record: GitCommandRecord?
     private var started: ContinuousClock.Instant?
+    /// git has exited (its termination handler said so).
+    private var exited = false
+    /// The last commit was read.
+    private var readToEnd = false
     /// git's standard error, read on the side.
     private let errorOutput = ErrorBox()
 
@@ -79,7 +83,7 @@ public final class CommitStream: @unchecked Sendable {
             return process
         }
         if let running, running.isRunning { running.terminate() }
-        queue.async { self.finishRecord(stopped: true) }
+        queue.async { self.finishIfDone() }
     }
 
     deinit {
@@ -122,8 +126,11 @@ public final class CommitStream: @unchecked Sendable {
             }
         }
         delivered += commits.count
-        // The Command Log hears the end once the last commits are counted.
-        if reachedEnd { waitForExit() }
+        // The Command Log hears the end once the last commits are counted and git has exited.
+        if reachedEnd {
+            readToEnd = true
+            finishIfDone()
+        }
         return commits
     }
 
@@ -139,6 +146,14 @@ public final class CommitStream: @unchecked Sendable {
         process.standardOutput = output
         process.standardError = errors
         process.standardInput = FileHandle.nullDevice
+        // Never `waitUntilExit()` on this queue: it waits on a run loop the queue's thread doesn't run.
+        process.terminationHandler = { [weak self] _ in
+            guard let self else { return }
+            self.queue.async {
+                self.exited = true
+                self.finishIfDone()
+            }
+        }
         do {
             try process.run()
         } catch {
@@ -163,17 +178,19 @@ public final class CommitStream: @unchecked Sendable {
         }
     }
 
-    private func waitForExit() {
-        guard let process = lock.withLock({ self.process }) else { return }
-        process.waitUntilExit()
-        finishRecord(stopped: false)
+    /// Ends the Command Log record once git has exited and the stream was read to the end or
+    /// stopped (on `queue`).
+    private func finishIfDone() {
+        guard record != nil, exited else { return }
+        let stopped = lock.withLock { self.stopped }
+        guard readToEnd || stopped else { return }
+        finishRecord(stopped: stopped)
     }
 
-    private func finishRecord(stopped asked: Bool) {
+    private func finishRecord(stopped: Bool) {
         guard var finished = record, let onCommand = runner.onCommand else { return }
         record = nil
-        let (process, stopped) = lock.withLock { (self.process, asked || self.stopped) }
-        if stopped, let process, process.isRunning { process.waitUntilExit() }
+        let process = lock.withLock { self.process }
         finished.status = process.map { $0.isRunning ? 15 : $0.terminationStatus } ?? -1
         if let started { finished.duration = ContinuousClock.now - started }
         finished.output = "\(delivered) commits read" + (stopped ? ", then stopped" : "")
