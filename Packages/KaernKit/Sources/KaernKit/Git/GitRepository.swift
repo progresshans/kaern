@@ -461,12 +461,16 @@ public struct GitRepository: Sendable, Hashable {
         try await git(arguments)
     }
 
+    /// Applies (or pops) `stash`, the entry with its commit, wherever it is in the list now.
     public func applyStash(_ stash: Stash, pop: Bool) async throws {
-        try await git(["stash", pop ? "pop" : "apply", stash.reference])
+        let entry = try await entryNow(stash)
+        try await git(["stash", pop ? "pop" : "apply", entry.reference])
     }
 
+    /// Drops `stash`, the entry with its commit, wherever it is in the list now.
     public func dropStash(_ stash: Stash) async throws {
-        try await git(["stash", "drop", stash.reference])
+        let entry = try await entryNow(stash)
+        try await git(["stash", "drop", entry.reference])
     }
 
     // MARK: - Branches

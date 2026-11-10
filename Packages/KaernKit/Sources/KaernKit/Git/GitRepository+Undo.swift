@@ -153,6 +153,16 @@ extension GitRepository {
         (try? await stashes())?.first { $0.id == object }
     }
 
+    /// `stash` as the list has it now. Its number (`stash@{n}`) counts from the top, so in a list
+    /// read earlier it may name another entry by now (a stash made since takes stash@{0}): a stash
+    /// is named by its number only right after this.
+    func entryNow(_ stash: Stash) async throws -> Stash {
+        guard let entry = await self.stash(withObject: stash.id) else {
+            throw GitError(arguments: ["stash"], status: -1, message: "\(stash.reference) isn't in the stash list anymore.")
+        }
+        return entry
+    }
+
     /// Applies (and drops) the stash entry with commit `object`, restoring what was staged too.
     public func popStash(object: String) async throws {
         guard let stash = await stash(withObject: object) else {

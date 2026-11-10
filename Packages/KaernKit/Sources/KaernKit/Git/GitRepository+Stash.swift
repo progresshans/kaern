@@ -121,6 +121,7 @@ extension GitRepository {
     /// Create Branch from Stash: a new branch at the commit the stash was made on, checked out,
     /// with the stash applied and dropped (`git stash branch`).
     public func createBranch(_ name: String, from stash: Stash) async throws {
-        try await git(["stash", "branch", name, stash.reference])
+        let entry = try await entryNow(stash)
+        try await git(["stash", "branch", name, entry.reference])
     }
 }
