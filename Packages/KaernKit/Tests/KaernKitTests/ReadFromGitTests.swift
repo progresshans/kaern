@@ -66,6 +66,26 @@ struct ReadFromGitTests {
         #expect(repository.read("b.txt") == "b\n")
     }
 
+    @Test func anInteractiveRebaseKeepsACommitMadeAfterItsListWasRead() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("a\n", to: "a.txt")
+        let base = try await repository.commitAll("base")
+        try repository.write("b\n", to: "b.txt")
+        try await repository.commitAll("second")
+        let steps = try await repository.commitsToRebase(onto: base).map { RebaseStep(commit: $0) }
+        try repository.write("c\n", to: "c.txt")
+        let made = try await repository.commitAll("made after the list was read")
+        // git would drop the commit the list doesn't have: nothing is rebased.
+        await #expect(throws: GitError.self) { _ = try await repository.interactiveRebase(onto: base, steps: steps, autostash: false) }
+        #expect(await repository.resolve("HEAD") == made)
+        #expect(repository.operationState() == nil)
+        // With the list read again it goes ahead.
+        let again = try await repository.commitsToRebase(onto: base).map { RebaseStep(commit: $0) }
+        #expect(try await repository.interactiveRebase(onto: base, steps: again, autostash: false) == .finished)
+        #expect(repository.read("c.txt") == "c\n")
+    }
+
     @Test func theBranchNameIsTheBranchsWhenATagHasTheSameName() async throws {
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }

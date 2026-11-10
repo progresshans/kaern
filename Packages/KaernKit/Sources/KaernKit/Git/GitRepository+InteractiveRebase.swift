@@ -48,6 +48,13 @@ extension GitRepository {
     /// `git rebase -i` with Kaern's list instead of an editor. Reword's new messages are applied
     /// right after each pick. Stops like any rebase: on conflicts, and at `edit` lines.
     public func interactiveRebase(onto base: String, steps: [RebaseStep], autostash: Bool) async throws -> OperationOutcome {
+        // The steps were listed earlier (when the sheet opened). git drops every commit the list
+        // leaves out, so a commit made on the branch since would be lost: only the same commits go.
+        let now = try await commitsToRebase(onto: base).map(\.id)
+        guard now.count == steps.count, Set(now) == Set(steps.map(\.commit.id)) else {
+            throw GitError(arguments: ["rebase", "-i", base], status: -1,
+                           message: "The branch changed since its commits were listed, so Kaern didn't rebase it. Open the rebase again to see them all.")
+        }
         let folder = gitDirectory.appending(path: "kaern-rebase", directoryHint: .isDirectory)
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
