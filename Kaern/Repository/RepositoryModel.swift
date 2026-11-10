@@ -403,6 +403,11 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private(set) var debugFullLoads = 0
     @ObservationIgnored private(set) var debugRefreshes = 0
     @ObservationIgnored private(set) var debugLightRefreshes = 0
+    /// An action, a first load, a refresh or a history read is under way (the debug dump: scripts
+    /// wait for this to clear instead of sleeping).
+    var debugIsBusy: Bool {
+        activity != nil || phase == .opening || phase == .loading || refreshTask != nil || isReloadingHistory || isLoadingMoreHistory
+    }
     /// How long loading steps took, in seconds (the debug dump's measurements).
     @ObservationIgnored var debugTimings: [String: Double] = [:]
 

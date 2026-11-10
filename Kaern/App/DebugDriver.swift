@@ -10,16 +10,32 @@ import OSLog
 /// Post a distributed notification named `com.progresshans.kaern.debug` whose object is a
 /// command line, e.g. `snapshot /tmp/a.png`, `activate 3`, `toggleGroup godj`,
 /// `moveBlock 0 2`, `appearance dark`, `dump /tmp/state.json`, `quit`.
+///
+/// Launched with `-KaernDebugChannel <id>` as well, the instance listens on
+/// `com.progresshans.kaern.debug.<id>` instead, so several test instances can run side by side
+/// and each takes only the commands sent to its own channel.
 @MainActor
 final class DebugDriver {
     static let shared = DebugDriver()
     private static let log = Logger(subsystem: "com.progresshans.kaern", category: "debug")
     private var observer: NSObjectProtocol?
 
+    /// The `-KaernDebugChannel <id>` launch argument (`nil`: every test instance's shared name).
+    static var channel: String? {
+        guard let channel = UserDefaults.standard.string(forKey: "KaernDebugChannel"), !channel.isEmpty else { return nil }
+        return channel
+    }
+
+    /// The notification this instance takes commands from.
+    static var notificationName: Notification.Name {
+        let shared = "com.progresshans.kaern.debug"
+        return Notification.Name(channel.map { shared + "." + $0 } ?? shared)
+    }
+
     func start() {
-        observer = DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.progresshans.kaern.debug"), object: nil, queue: .main
-        ) { note in
+        let name = Self.notificationName
+        Self.log.info("debug commands on \(name.rawValue, privacy: .public)")
+        observer = DistributedNotificationCenter.default().addObserver(forName: name, object: nil, queue: .main) { note in
             let command = note.object as? String ?? ""
             MainActor.assumeIsolated { DebugDriver.shared.run(command) }
         }
@@ -150,6 +166,10 @@ final class DebugDriver {
             }
         case "dump":
             dump(to: args.first ?? "/tmp/kaern-state.json")
+        case "ping":
+            // ping <file> — writes the file. Commands run in the order they were sent, so once it's
+            // there, every command sent before it has run: a script waits for that, not for a time.
+            try? Data("ok".utf8).write(to: URL(filePath: args.first ?? "/tmp/kaern-ping"), options: .atomic)
         case "tooltip":
             DebugTooltip.shared.pinned = args.isEmpty ? nil : args.joined(separator: " ")
         case "snapshotPopover":
@@ -820,6 +840,7 @@ final class DebugDriver {
                         "name": tab.name,
                         "group": tab.group.flatMap { model.group($0)?.name } ?? "",
                         "phase": "\(repository.phase)",
+                        "busy": repository.debugIsBusy,
                         "visible": repository.isVisible,
                         "fullLoads": repository.debugFullLoads,
                         "refreshes": repository.debugRefreshes,
@@ -907,10 +928,38 @@ final class DebugDriver {
             "gitConfigEnvironment": (app.runner?.environment ?? [:]).filter { $0.key.hasPrefix("GIT_CONFIG") },
             // Kaern's settings as this instance reads them: launch arguments over its own store.
             "settings": UserDefaults.kaern.dictionaryRepresentation().filter { $0.key.hasPrefix("Kaern") }.mapValues { "\($0)" },
+            "driver": driverDump(),
         ]
         if let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) {
-            try? data.write(to: URL(filePath: path))
+            // In one step, so a script that polls for the file never reads half of it.
+            try? data.write(to: URL(filePath: path), options: .atomic)
         }
+    }
+
+    /// What a script needs to wait for the app instead of sleeping: whether the shown repository
+    /// is in the middle of something, the git commands still running and the newest one (two
+    /// dumps with the same one: nothing started in between), and where typed text goes.
+    private func driverDump() -> [String: Any] {
+        let entries = CommandLog.shared.entries
+        let responder = controller?.window?.firstResponder
+        // A text field being edited: its field editor has the keyboard.
+        let editor = responder as? NSTextView
+        let field = editor?.delegate as? NSTextField
+        return [
+            "channel": Self.channel ?? "",
+            "busy": window?.activeTab.map { app.repository(for: $0.path).debugIsBusy } ?? false,
+            "running": entries.filter(\.record.isRunning).map(\.record.commandLine),
+            "lastCommand": entries.last?.id.uuidString ?? "",
+            "commandCount": entries.count,
+            "fetchingAll": AutoFetcher.shared.isFetchingAll,
+            // Popovers, menus, Settings, the Command Log…: what is on screen besides the main windows.
+            "visibleWindows": NSApp.windows.filter(\.isVisible).map { "\(type(of: $0)) \($0.title)" },
+            "firstResponder": responder.map { String(describing: type(of: $0)) } ?? "",
+            "typing": editor != nil,
+            "fieldText": editor?.string ?? "",
+            "fieldPlaceholder": field?.placeholderString ?? field?.placeholderAttributedString?.string ?? "",
+            "appearance": NSApp.effectiveAppearance.isDark ? "dark" : "light",
+        ]
     }
 }
 #endif
