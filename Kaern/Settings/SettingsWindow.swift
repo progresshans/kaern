@@ -186,6 +186,7 @@ private struct GeneralPane: View {
     @AppStorage(SettingsKey.autoFetchMinutes, store: .kaern) private var autoFetchMinutes = 5
     @AppStorage("KaernPullStrategy", store: .kaern) private var pull = PullChoice.fastForwardIfPossible
     @AppStorage(SettingsKey.theme, store: .kaern) private var theme = AppTheme.system
+    @State private var checksForUpdates = UpdateController.shared.automaticallyChecksForUpdates
 
     var body: some View {
         SettingsGrid {
@@ -261,7 +262,16 @@ private struct GeneralPane: View {
                 SegmentedChoice(options: [(AppTheme.system, "System"), (.light, "Light"), (.dark, "Dark")], selection: $theme, label: "Appearance")
                     .padding(.top, 1)
             }
+            if UpdateController.isAvailable {
+                SettingsRow(label: "Updates:") {
+                    Checkbox("Check for updates automatically", isOn: $checksForUpdates)
+                    Button("Check Now") { UpdateController.shared.checkForUpdates() }
+                        .disabled(!UpdateController.shared.canCheckForUpdates)
+                    Hint("Kaern looks for a new version once a day and asks before installing it.")
+                }
+            }
         }
+        .onChange(of: checksForUpdates) { UpdateController.shared.automaticallyChecksForUpdates = checksForUpdates }
         .onChange(of: theme) { AppSettings.applyTheme() }
         .onChange(of: switching) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.repositorySwitching) }
         .onChange(of: autoFetch) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.autoFetch) }

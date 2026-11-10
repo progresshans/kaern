@@ -38,7 +38,12 @@ enum MainMenu {
 
     private static func appMenu(showSettings: @escaping () -> Void) -> NSMenu {
         let menu = NSMenu(title: "Kaern")
-        menu.addItem(system("About Kaern", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(MenuAction.item("About Kaern") { AboutPanel.show() })
+        if UpdateController.isAvailable {
+            menu.addItem(MenuAction.item("Check for Updates…", enabled: { UpdateController.shared.canCheckForUpdates }) {
+                UpdateController.shared.checkForUpdates()
+            })
+        }
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Settings…", key: ",", run: showSettings))
         menu.addItem(.separator())

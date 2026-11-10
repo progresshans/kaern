@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         AppModel.shared.launch()
         QuickLookCopies.removeOld()
+        // Release builds only (UpdateController.isAvailable).
+        UpdateController.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

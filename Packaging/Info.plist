@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sparkle (Packaging/README.md). Xcode merges these keys with the Info.plist it generates. -->
+	<!-- Where the source is (About Kaern). Change it together with SUFeedURL if the repository moves. -->
+	<key>KaernSourceURL</key>
+	<string>https://github.com/progresshans/kaern</string>
+	<key>SUFeedURL</key>
+	<string>https://progresshans.github.io/kaern/appcast.xml</string>
+	<!-- The public half of the EdDSA key that signs updates: script/release.sh keys writes it here. Without it the updater doesn't start. -->
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+</dict>
+</plist>

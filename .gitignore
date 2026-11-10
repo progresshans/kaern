@@ -6,3 +6,7 @@
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Releases (script/release.sh) and their local settings
+/release/
+.env

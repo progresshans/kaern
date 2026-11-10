@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		8F0000000000000000000012 /* KaernKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8F0000000000000000000011 /* KaernKit */; };
+		8F0000000000000000000016 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 8F0000000000000000000015 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +30,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8F0000000000000000000012 /* KaernKit in Frameworks */,
+				8F0000000000000000000016 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -73,6 +75,7 @@
 			name = Kaern;
 			packageProductDependencies = (
 				8F0000000000000000000011 /* KaernKit */,
+				8F0000000000000000000015 /* Sparkle */,
 			);
 			productName = Kaern;
 			productReference = 8F0000000000000000000004 /* Kaern.app */;
@@ -104,6 +107,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8F0000000000000000000010 /* XCLocalSwiftPackageReference "Packages/KaernKit" */,
+				8F0000000000000000000014 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8F0000000000000000000003 /* Products */;
@@ -202,9 +206,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Packaging/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Kaern;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 HyeonJin Han. Licensed under the GNU AGPL v3 or later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -232,9 +237,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Packaging/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Kaern;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 HyeonJin Han. Licensed under the GNU AGPL v3 or later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -280,10 +286,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		8F0000000000000000000014 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		8F0000000000000000000011 /* KaernKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = KaernKit;
+		};
+		8F0000000000000000000015 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8F0000000000000000000014 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
