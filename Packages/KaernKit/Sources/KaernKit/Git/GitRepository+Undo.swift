@@ -148,14 +148,64 @@ extension GitRepository {
         return after
     }
 
+    /// The stash entry with `message` made since `previous` was the top of the list, or `nil`.
+    /// For putting things back after a stop: a stop that comes right after `git stash push` keeps
+    /// the read that finds the new entry from starting, so the entry looks like none was made.
+    /// This reads in a task of its own.
+    func stashMade(since previous: String?, message: String) async -> String? {
+        let found = try? await Self.uncancelled { () async -> String? in
+            guard let top = await self.resolve("refs/stash"), top != previous,
+                  let entry = await self.stash(withObject: top), entry.message.hasSuffix(message) else { return nil }
+            return top
+        }
+        return found ?? nil
+    }
+
+    /// Reset Hard: what `git reset --hard <target>` would lose goes to Stashes first
+    /// (`stashBeforeHardReset`), then the reset runs. When the reset doesn't happen (git fails, or
+    /// it's stopped before it starts), the stash comes straight back, so no "Before reset" entry is
+    /// left for a reset that didn't happen. Returns the stash's commit (`nil`: nothing was put aside).
+    public func resetHard(to target: String, message: String) async throws -> String? {
+        let head = await resolve("HEAD")
+        let stashBefore = await resolve("refs/stash")
+        do {
+            let stash = try await stashBeforeHardReset(to: target, message: message)
+            try await reset(to: target, mode: .hard)
+            return stash
+        } catch {
+            let failure = error
+            // Looked up again, in a task of its own: after a stop, git commands in this one don't
+            // start, so a stash made just before can look like none was made.
+            guard let stash = await stashMade(since: stashBefore, message: message) else { throw failure }
+            // Back only while the branch and its files are as they were: a reset that got that far is done.
+            let back = (try? await Self.uncancelled { () async throws -> Bool in
+                let untouched = (try? await self.git(["diff-index", "--quiet", "HEAD", "--"], accepted: [0, 1]))?.status == 0
+                guard await self.resolve("HEAD") == head, untouched else { return false }
+                try await self.popStash(object: stash)
+                return true
+            }) ?? false
+            guard back else {
+                throw GitError(arguments: ["stash", "pop"], status: -1,
+                               message: "\(Self.describe(failure)) Your uncommitted changes are kept in the stash list as “\(message)”.")
+            }
+            throw failure
+        }
+    }
+
     /// Puts aside what `git reset --hard <target>` would lose, in one stash entry, and returns its
     /// commit (`nil` when nothing would be lost): the uncommitted changes of tracked files, and the
     /// untracked or ignored files the reset would write over or delete (`untrackedInTheWay(of:)`).
     /// git does that to them without a word, an ignored `.env` written again by hand included.
-    /// Other untracked and ignored files stay where they are, as the reset leaves them.
+    /// Other untracked and ignored files stay where they are, as the reset leaves them. A git
+    /// repository of its own in the way (`repositoryInTheWay`) stops it before anything changes:
+    /// git can't stash one, and the reset would delete it or write over its files.
     public func stashBeforeHardReset(to target: String, message: String) async throws -> String? {
         let inTheWay = try await untrackedInTheWay(of: target)
         guard !inTheWay.isEmpty else { return try await stashAll(message: message, includeUntracked: false) }
+        if let repository = repositoryInTheWay(inTheWay) {
+            throw GitError(arguments: ["reset", "--hard", target], status: -1,
+                           message: "\(repository) is a git repository of its own inside this one, and the reset would delete it or write over its files. git can’t put a repository aside, so Kaern didn’t reset anything. Move it out of the folder first.")
+        }
         // `--all` takes ignored files too; the paths keep it to those in the way and to the
         // tracked changes (staged or not), so nothing else leaves the working tree.
         let unstaged = Records.splitNUL(try await git(["diff", "--name-only", "--no-renames", "-z"]).stdout)
@@ -209,6 +259,43 @@ extension GitRepository {
             return true
         }
         return false
+    }
+
+    /// A git repository of its own in the working tree (a clone kept in the folder, a submodule's
+    /// folder) that `git reset --hard` would delete or write into for `inTheWay`: one around a
+    /// path in the way, or one in a folder in the way. `git stash` skips it (an embedded
+    /// repository), so nothing would bring it back. Its path, or `nil` when there's none.
+    func repositoryInTheWay(_ inTheWay: [String]) -> String? {
+        for path in inTheWay {
+            var prefix = ""
+            for part in path.split(separator: "/").dropLast() {
+                prefix += (prefix.isEmpty ? "" : "/") + part
+                if isRepositoryFolder(prefix) { return prefix }
+            }
+            if itemIsFolder(path) == true, let inside = repositoryFolder(at: path) { return inside }
+        }
+        return nil
+    }
+
+    /// Whether the folder `path` is the top of a git repository of its own (`.git`, a folder or a
+    /// file, in it).
+    private func isRepositoryFolder(_ path: String) -> Bool {
+        FileManager.default.fileExists(atPath: root.appending(path: path).appending(path: ".git").path(percentEncoded: false))
+    }
+
+    /// The first git repository at the folder `path` or inside it.
+    private func repositoryFolder(at path: String) -> String? {
+        if isRepositoryFolder(path) { return path }
+        let folder = root.appending(path: path, directoryHint: .isDirectory)
+        guard let items = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil) else { return nil }
+        let base = folder.standardizedFileURL.path(percentEncoded: false)
+        for case let url as URL in items where url.lastPathComponent == ".git" {
+            let holder = url.deletingLastPathComponent().standardizedFileURL.path(percentEncoded: false)
+            guard holder.hasPrefix(base) else { return path }
+            let inner = holder.dropFirst(base.count).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return inner.isEmpty ? path : path + "/" + inner
+        }
+        return nil
     }
 
     /// The stash entry whose commit is `object`.

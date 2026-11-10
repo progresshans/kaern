@@ -220,11 +220,12 @@ nonisolated extension ReversibleStep {
             return ReversibleStep(label: label) { repository in
                 try await requireHead(repository, branch: branch, at: from, label)
                 var newStash: String?
-                if mode == .hard {
-                    newStash = try await repository.stashBeforeHardReset(to: to, message: "Before reset to \(to.prefix(7))")
-                }
                 let index = mode == .mixed ? await repository.writeIndexTree() : nil
-                try await repository.reset(to: to, mode: mode)
+                if mode == .hard {
+                    newStash = try await repository.resetHard(to: to, message: "Before reset to \(to.prefix(7))")
+                } else {
+                    try await repository.reset(to: to, mode: mode)
+                }
                 return reset(label: label, branch: branch, from: from, to: to, mode: mode, indexBefore: index ?? indexBefore,
                              stash: newStash)
             }

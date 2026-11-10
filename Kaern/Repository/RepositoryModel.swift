@@ -857,6 +857,10 @@ final class RepositoryModel: Identifiable {
 
     private func lightRefresh() async {
         guard let repository, !noticeMissingFolder() else { return }
+        // Scheduled while the tab was hidden, and it has been shown since: the visible tab read the
+        // full status when it was shown (and reads it on every change), so the folded one would
+        // only replace it.
+        guard !(isVisible && phase == .ready) else { return }
         debugLightRefreshes += 1
         let made = ownChanges
         show(try? await repository.status(untrackedFiles: .normal), isFull: false, readAt: made)

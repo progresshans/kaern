@@ -397,15 +397,27 @@ extension RepositoryModel {
     /// ⌘Z for an operation that stopped on the way: back to where it started. Changes that were
     /// put aside come back now that it's done.
     private func recordFinishedOperation(_ start: OperationStart) async {
-        guard let repository, let after = await repository.resolve("HEAD"), after != start.head else { return }
+        guard let repository, let after = await repository.resolve("HEAD") else { return }
         var kept = start.kept
+        var clashed = false
         if let object = kept {
-            if (try? await repository.popStash(object: object)) != nil { kept = nil }
+            // Back unless what the operation committed changed the same files (git would leave
+            // conflict markers in them with no conflict to resolve).
+            switch try? await repository.popKeptChanges(object, since: start.head) {
+            case true?: kept = nil
+            case false?: clashed = true
+            case nil: break
+            }
             noteOwnChange()
         }
-        if let kept {
+        if after == start.head {
+            // It ended where it began (Skip of its only commit): nothing for ⌘Z to take back, but the
+            // changes put aside before it came back all the same.
+            if kept != nil { showToast("Kaern couldn’t bring back your uncommitted changes, so they’re still in Stashes") }
+        } else if let kept {
             record(.moveBranchKeepingStash(label: start.label, branch: start.branch, from: start.head, to: after, stash: kept), toast: nil)
-            showToast("Your uncommitted changes touch the same files, so they’re still in Stashes")
+            showToast(clashed ? "Your uncommitted changes touch the same files, so they’re still in Stashes"
+                              : "Kaern couldn’t bring back your uncommitted changes, so they’re still in Stashes")
         } else {
             record(.moveBranch(label: start.label, branch: start.branch, from: start.head, to: after), toast: nil)
         }

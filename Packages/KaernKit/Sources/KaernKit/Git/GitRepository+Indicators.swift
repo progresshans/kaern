@@ -316,6 +316,7 @@ extension GitRepository {
             }
         }
         let ignored = await worktree.ignoredItems()
+        let stashBefore = await worktree.resolve("refs/stash")
         let stash = try await worktree.stashAll(message: message, includeUntracked: true)
         let folder = worktree.root
         var trashed: [RemovedWorktree.TrashedItem] = []
@@ -327,10 +328,13 @@ extension GitRepository {
             }
             try await removeWorktree(path)
         } catch {
-            // Nothing was removed: everything goes back, even after a stop.
+            // Nothing was removed: everything goes back, even after a stop (which can come right
+            // after `git stash push`, before the read that finds the entry: it's looked up again).
             let failure = error
             Self.putBack(trashed, into: folder)
-            if let stash {
+            var aside = stash
+            if aside == nil, failure is CancellationError { aside = await worktree.stashMade(since: stashBefore, message: message) }
+            if let stash = aside {
                 do {
                     try await Self.uncancelled { try await worktree.popStash(object: stash) }
                 } catch {

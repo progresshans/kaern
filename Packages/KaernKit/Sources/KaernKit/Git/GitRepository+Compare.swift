@@ -123,16 +123,21 @@ extension GitRepository {
     public func withChangesStashed(message: String, _ work: @Sendable () async throws -> OperationOutcome) async throws
         -> (outcome: OperationOutcome, kept: String?) {
         let before = await resolve("HEAD")
+        let stashBefore = await resolve("refs/stash")
         let stash = try await stashAll(message: message, includeUntracked: false)
         let outcome: OperationOutcome
         do {
             outcome = try await work()
         } catch {
-            guard let stash else { throw error }
             let failure = error
+            // A stop right after `git stash push` keeps the read that finds the entry from
+            // starting: then it's looked up again.
+            var aside = stash
+            if aside == nil, failure is CancellationError { aside = await stashMade(since: stashBefore, message: message) }
+            guard let stash = aside else { throw failure }
             if failure is CancellationError, operationState() != nil { return (.stopped, stash) }
-            // After a stop every git command in this task is ended too: they come back from a
-            // task of their own.
+            // After a stop no git command starts in this task: they come back from a task of
+            // their own.
             do {
                 try await Self.uncancelled { try await self.popStash(object: stash) }
             } catch {
@@ -143,18 +148,28 @@ extension GitRepository {
         }
         guard let stash else { return (outcome, nil) }
         guard outcome == .finished else { return (outcome, stash) }
-        if let before, let after = await resolve("HEAD"), before != after {
-            let touched = Set(Records.splitNUL(try await git(["diff", "--name-only", "-z", "--no-renames", before, after, "--"]).stdout))
-            let stashed = Set(Records.splitNUL(try await git(["stash", "show", "--name-only", "-z", stash]).stdout))
-            if !touched.isDisjoint(with: stashed) { return (outcome, stash) }
-        }
+        let popped: Bool
         do {
-            try await popStash(object: stash)
+            popped = try await popKeptChanges(stash, since: before)
         } catch {
             throw GitError(arguments: ["stash", "pop"], status: -1,
                            message: "It worked, but your uncommitted changes clash with it. They’re kept in the stash list as “\(message)”.")
         }
-        return (outcome, nil)
+        return (outcome, popped ? nil : stash)
+    }
+
+    /// Brings back uncommitted changes put aside before an operation (`stash`) now that it's done,
+    /// unless what it committed since `before` changed the same files: git would leave conflict
+    /// markers in them, so the changes stay in the stash list (⌘Z of the operation brings them
+    /// back where they fit). Returns whether they came back; throws when git couldn't pop them.
+    public func popKeptChanges(_ stash: String, since before: String?) async throws -> Bool {
+        if let before, let after = await resolve("HEAD"), before != after {
+            let touched = Set(Records.splitNUL(try await git(["diff", "--name-only", "-z", "--no-renames", before, after, "--"]).stdout))
+            let stashed = Set(Records.splitNUL(try await git(["stash", "show", "--name-only", "-z", stash]).stdout))
+            if !touched.isDisjoint(with: stashed) { return false }
+        }
+        try await popStash(object: stash)
+        return true
     }
 
     /// The branch HEAD is on, or `nil` when it's detached (`git symbolic-ref`).

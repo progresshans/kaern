@@ -59,9 +59,12 @@ extension GitRepository {
         do {
             return try await applyStashUndoably(stash, pop: pop)
         } catch {
-            let conflicted = await unmergedPaths()
+            // Read in a task of its own: after a stop, git commands in this task don't start, and a
+            // pop that got as far as its conflicts still needs the conflict editor.
+            let conflicted = (try? await Self.uncancelled { await self.unmergedPaths() }) ?? []
             guard !conflicted.isEmpty, let indexBefore, !indexBefore.isEmpty else { throw error }
-            let tracked = Records.splitNUL((try? await git(["stash", "show", "--name-only", "-z", stash.id]).stdout) ?? Data())
+            let shown = try? await Self.uncancelled { try await self.git(["stash", "show", "--name-only", "-z", stash.id]).stdout }
+            let tracked = Records.splitNUL(shown ?? Data())
             throw StashApplyConflict(stash: stash, wasPop: pop, conflicted: conflicted, tracked: tracked,
                                      addedUntracked: untrackedPaths.filter { !existing.contains($0) },
                                      indexBefore: indexBefore, unstagedBefore: unstagedBefore)
@@ -109,8 +112,11 @@ extension GitRepository {
                 try await storeStash(entry.id, message: entry.id == stash.id ? message : entry.message)
             }
         } catch {
-            await restoreMissingStashes(moving)
-            throw error
+            // Also after a stop: git commands in a stopped task don't start, so the entries
+            // dropped so far come back from a task of their own.
+            let failure = error
+            _ = try? await Self.uncancelled { await self.restoreMissingStashes(moving) }
+            throw failure
         }
     }
 

@@ -376,6 +376,15 @@ public struct GitRunner: Sendable {
                     }
                 }
 
+                // Stopped before git started (the task was cancelled already, so the stop came
+                // first and found nothing to end): git doesn't start at all. Started anyway, it
+                // would run to its end and only then report the stop, its work done.
+                if box.wasStopped {
+                    group.leave()
+                    group.leave()
+                    continuation.resume(returning: Execution(output: GitOutput(status: -1, stdout: Data(), stderr: Data()), wasStopped: true))
+                    return
+                }
                 do {
                     try process.run()
                 } catch {
@@ -388,6 +397,8 @@ public struct GitRunner: Sendable {
                     ))
                     return
                 }
+                // A stop that came while git was starting found nothing running yet: end it now.
+                if box.wasStopped { box.terminate() }
                 onLaunch { box.terminate() }
 
                 GitRunner.pipeQueue("stdout").async {

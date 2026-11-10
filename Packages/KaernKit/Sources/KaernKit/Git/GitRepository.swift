@@ -43,7 +43,7 @@ public struct GitRepository: Sendable, Hashable {
     }
 
     /// Runs `work` where a stop can't reach it. Putting changes back after a stop must not be
-    /// stopped too: every git command in a cancelled task is ended as soon as it starts.
+    /// stopped too: a git command in a cancelled task doesn't start (`GitRunner`).
     static func uncancelled<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
         try await Task { try await work() }.value
     }
