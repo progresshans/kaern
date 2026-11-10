@@ -403,6 +403,8 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private(set) var debugFullLoads = 0
     @ObservationIgnored private(set) var debugRefreshes = 0
     @ObservationIgnored private(set) var debugLightRefreshes = 0
+    /// The last marker file the file watcher reported (see `filesChanged`).
+    @ObservationIgnored private(set) var debugWatchMarker = ""
     /// An action, a first load, a refresh or a history read is under way (the debug dump: scripts
     /// wait for this to clear instead of sleeping).
     var debugIsBusy: Bool {
@@ -608,6 +610,13 @@ final class RepositoryModel: Identifiable {
     }
 
     private func filesChanged(_ paths: [String]) {
+        #if DEBUG
+        // The debug driver's marker file (in the git folder, where `classify` ignores it): once it
+        // shows here, every file change made before it has been delivered too.
+        if let marker = paths.last(where: { $0.contains("/kaern-debug-sync-") }) {
+            debugWatchMarker = (marker as NSString).lastPathComponent
+        }
+        #endif
         guard let repository, !noticeMissingFolder() else { return }
         let scope = repository.classify(paths)
         guard !scope.isEmpty else { return }

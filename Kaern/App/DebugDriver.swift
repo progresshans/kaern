@@ -13,7 +13,8 @@ import OSLog
 ///
 /// Launched with `-KaernDebugChannel <id>` as well, the instance listens on
 /// `com.progresshans.kaern.debug.<id>` instead, so several test instances can run side by side
-/// and each takes only the commands sent to its own channel.
+/// and each takes only the commands sent to its own channel. `-KaernDebugIgnorePointer YES`
+/// keeps the real mouse out of it.
 @MainActor
 final class DebugDriver {
     static let shared = DebugDriver()
@@ -38,6 +39,26 @@ final class DebugDriver {
         observer = DistributedNotificationCenter.default().addObserver(forName: name, object: nil, queue: .main) { note in
             let command = note.object as? String ?? ""
             MainActor.assumeIsolated { DebugDriver.shared.run(command) }
+        }
+        if UserDefaults.standard.bool(forKey: "KaernDebugIgnorePointer") { ignoreRealPointer() }
+    }
+
+    /// The mark on the pointer events the driver posts itself (`scrollWheel` goes through the
+    /// event queue; clicks and drags go straight to the window).
+    static let ownEventMark: Int64 = 0x4B41_4552
+    private var pointerMonitor: Any?
+
+    /// `-KaernDebugIgnorePointer YES`: the real pointer does nothing in this instance — no hover,
+    /// no click, no scroll. A test window sits wherever the mouse happens to rest, and a hovered
+    /// row would change a picture, or what Return picks in Quick Open.
+    private func ignoreRealPointer() {
+        let pointer: NSEvent.EventTypeMask = [
+            .mouseMoved, .mouseEntered, .mouseExited, .cursorUpdate, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+            .rightMouseDown, .rightMouseUp, .rightMouseDragged, .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+            .scrollWheel, .magnify, .rotate, .swipe, .smartMagnify, .pressure, .gesture,
+        ]
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: pointer) { event in
+            event.cgEvent?.getIntegerValueField(.eventSourceUserData) == Self.ownEventMark ? event : nil
         }
     }
 
@@ -551,7 +572,9 @@ final class DebugDriver {
             repository.hookFailure = nil
             repository.from("Debug") { repository.commit(runHooks: args.first != "without") }
         case "toast":
-            repository.showToast(rest, undo: false)
+            // toast <text…> shows a toast; toast alone puts the one on screen away (as its time running
+            // out does), so a picture doesn't show one left from an earlier step.
+            if rest.isEmpty { repository.toast = nil } else { repository.showToast(rest, undo: false) }
         default:
             break
         }
@@ -938,16 +961,22 @@ final class DebugDriver {
 
     /// What a script needs to wait for the app instead of sleeping: whether the shown repository
     /// is in the middle of something, the git commands still running and the newest one (two
-    /// dumps with the same one: nothing started in between), and where typed text goes.
+    /// dumps with the same one: nothing started in between), whether its file watcher has caught
+    /// up, and where typed text goes.
     private func driverDump() -> [String: Any] {
         let entries = CommandLog.shared.entries
         let responder = controller?.window?.firstResponder
         // A text field being edited: its field editor has the keyboard.
         let editor = responder as? NSTextView
         let field = editor?.delegate as? NSTextField
+        let shown = window?.activeTab.map { app.repository(for: $0.path) }
         return [
             "channel": Self.channel ?? "",
-            "busy": window?.activeTab.map { app.repository(for: $0.path).debugIsBusy } ?? false,
+            "busy": shown?.debugIsBusy ?? false,
+            // For a script to know the file watcher has caught up: it writes kaern-debug-sync-<n>
+            // into this folder and waits for the name to show as watchMarker.
+            "gitDirectory": AppSettings.watchesFiles ? shown?.repository?.gitDirectory.path(percentEncoded: false) ?? "" : "",
+            "watchMarker": shown?.debugWatchMarker ?? "",
             "running": entries.filter(\.record.isRunning).map(\.record.commandLine),
             "lastCommand": entries.last?.id.uuidString ?? "",
             "commandCount": entries.count,

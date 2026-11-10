@@ -95,6 +95,8 @@ extension DebugDriver {
                                    wheel1: Int32(values[3]), wheel2: Int32(values[2]), wheel3: 0) else { return }
             cg.location = CGPoint(x: flipped.x, y: mainHeight - flipped.y)
             cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            // The driver's own: it passes when the real pointer is kept out (-KaernDebugIgnorePointer).
+            cg.setIntegerValueField(.eventSourceUserData, value: DebugDriver.ownEventMark)
             cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(nsWindow.windowNumber))
             cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(nsWindow.windowNumber))
             if let event = NSEvent(cgEvent: cg) { NSApp.postEvent(event, atStart: false) }
