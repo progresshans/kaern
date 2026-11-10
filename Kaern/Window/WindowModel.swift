@@ -196,7 +196,11 @@ final class WindowModel: Identifiable {
         let siblings = tabs.filter { $0.id != id && ($0.path as NSString).deletingLastPathComponent == folder }
         guard !siblings.isEmpty else { return }
         let counts = Dictionary(grouping: siblings.compactMap(\.group), by: { $0 }).mapValues(\.count)
-        if let best = counts.max(by: { $0.value < $1.value })?.key, group(best) != nil {
+        // On a tie: the group named after the folder, else the leftmost in the strip (a
+        // dictionary's order changes from launch to launch, so `max` alone picked at random).
+        let most = counts.values.max() ?? 0
+        let tied = tabs.compactMap(\.group).filter { counts[$0] == most }
+        if let best = tied.first(where: { group($0)?.name == tab.parentName }) ?? tied.first, group(best) != nil {
             add(id, to: best)
         } else {
             let used = Set(groups.map(\.color))

@@ -12,6 +12,8 @@ import Foundation
 ///     hold statusNow    the status read right after a change waits once git has answered
 ///     hold decideNow    that read waits once its status is shown, before what follows from it
 ///                       (the conflict editor opening after a stop on conflicts)
+///     hold lineStats    the next read of the line counts waits once git has answered, before they're
+///                       shown (that one only: reads after it go on)
 ///     release [point]   what waits there goes on, and the point isn't held anymore
 ///                       (every point when none is named)
 ///     refresh           a full refresh of the shown repository, as when Kaern becomes active
@@ -46,7 +48,7 @@ extension DebugDriver {
 extension RepositoryModel {
     /// Where the debug driver can make a refresh wait (`hold <point>`).
     enum DebugHold: String, CaseIterable {
-        case status, decide, statusNow, decideNow
+        case status, decide, statusNow, decideNow, lineStats
     }
 
     /// Waits while the debug driver holds `point`; returns at once when it doesn't.
@@ -83,6 +85,9 @@ final class DebugHolds {
 
     func wait(at point: RepositoryModel.DebugHold, in repository: String) async {
         guard held[repository]?.contains(point) == true else { return }
+        // `lineStats` holds the next read only: the ones after it, which a check makes overlap it,
+        // go on.
+        if point == .lineStats { held[repository]?.remove(point) }
         await withCheckedContinuation { continuation in
             waiting[repository, default: [:]][point, default: []].append(continuation)
         }

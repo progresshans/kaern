@@ -39,16 +39,44 @@ extension RepositoryModel {
     /// Counts the other working trees' uncommitted changes (the sidebar's "2 changes" and dot).
     func refreshWorktreeChanges() async {
         guard let runner = repository?.runner else { return }
+        worktreeChangeReads += 1
+        let read = worktreeChangeReads
         var counts: [String: Int] = [:]
         for tree in otherWorktrees where FileManager.default.fileExists(atPath: tree.path) {
             guard let other = try? await GitRepository.open(URL(filePath: tree.path, directoryHint: .isDirectory), runner: runner),
                   let status = try? await other.status(untrackedFiles: .normal) else { continue }
             counts[tree.path] = status.entries.count
         }
+        // A read that started later has the newer counts (or will have them).
+        guard read == worktreeChangeReads else { return }
         if counts != worktreeChanges { worktreeChanges = counts }
         if let selected = selectedWorktree {
             if otherWorktrees.contains(where: { $0.path == selected }) { await loadWorktreeDetails(selected) } else { selectedWorktree = nil }
         }
+    }
+
+    /// While this tab shows (and Settings › Advanced › File changes is on), the other worktrees'
+    /// folders are watched: a file saved there updates that worktree's count in the sidebar, as
+    /// a file saved here updates this one's status. Ones inside this working tree are left to
+    /// its own watcher.
+    func updateWorktreeWatching() {
+        let root = currentWorktreePath + "/"
+        let paths = isVisible && AppSettings.watchesFiles
+            ? otherWorktrees.map(\.path).filter { !canonicalPath($0).hasPrefix(root) && FileManager.default.fileExists(atPath: $0) }.sorted()
+            : []
+        guard paths != watchedWorktreePaths else { return }
+        worktreeWatcher?.stop()
+        worktreeWatcher = nil
+        watchedWorktreePaths = paths
+        guard !paths.isEmpty else { return }
+        // A second of quiet first: a build writing there shouldn't run git status over and over.
+        let watcher = FileSystemWatcher(paths: paths, latency: 1.0) { [weak self] changed in
+            // Their git state (`.git` inside them) doesn't change the count of changed files.
+            guard changed.contains(where: { !$0.contains("/.git/") && !$0.hasSuffix("/.git") }) else { return }
+            Task { @MainActor in await self?.refreshWorktreeChanges() }
+        }
+        watcher.start()
+        worktreeWatcher = watcher
     }
 
     /// A worktree picked in the sidebar: its page in the right panel (this tab's own clears it).

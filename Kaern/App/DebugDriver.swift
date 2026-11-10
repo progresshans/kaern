@@ -983,6 +983,8 @@ final class DebugDriver {
             "watchMarker": shown?.debugWatchMarker ?? "",
             // The points where a refresh of the shown repository waits now (`hold <point>`).
             "holding": shown.map { DebugHolds.shared.waiting(in: $0.id) } ?? [],
+            // The shown repository's unstaged line counts, "+a −d" by path (the list's numbers).
+            "lineStats": (shown?.lineStats.unstaged ?? [:]).mapValues { "+\($0.additions ?? -1) −\($0.deletions ?? -1)" },
             "running": entries.filter(\.record.isRunning).map(\.record.commandLine),
             "lastCommand": entries.last?.id.uuidString ?? "",
             "commandCount": entries.count,

@@ -188,6 +188,12 @@ final class RepositoryModel: Identifiable {
     var worktreeDetails: WorktreeDetails?
     private(set) var stashes: [Stash] = []
     private(set) var worktrees: [Worktree] = []
+    /// Watches the other worktrees' folders while this tab shows, so their change counts follow edits made
+    /// there (``updateWorktreeWatching()``); the repository's own watcher doesn't see those folders.
+    @ObservationIgnored var worktreeWatcher: FileSystemWatcher?
+    @ObservationIgnored var watchedWorktreePaths: [String] = []
+    /// Counts reads of the other worktrees' changes, so an older one that ends last doesn't land.
+    @ObservationIgnored var worktreeChangeReads = 0
     private(set) var remotes: [RemoteInfo] = []
     private(set) var operation: OperationState?
     private(set) var lastFetch: Date?
@@ -409,6 +415,9 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lightTask: Task<Void, Never>?
     @ObservationIgnored private var lightAgain = false
+    /// The line-count read under way, and whether another round was asked for meanwhile (``refreshLineStats()``).
+    @ObservationIgnored private var lineStatsTask: Task<Void, Never>?
+    @ObservationIgnored private var lineStatsAgain = false
     @ObservationIgnored private var detailsTask: Task<Void, Never>?
     @ObservationIgnored private var detailsCache: [String: (CommitDetails, [FileChange])] = [:]
     @ObservationIgnored private static let log = Logger(subsystem: "com.progresshans.kaern", category: "repository")
@@ -569,6 +578,7 @@ final class RepositoryModel: Identifiable {
         async let refs = firstRefs != nil ? firstRefs : try? await repository.refs()
         async let tags = try? repository.tags()
         let limit = Self.pageSize
+        let readScope = historyScope
         let stream = restartHistoryStream(repository)
         isReloadingHistory = true
         async let history = Self.read(stream, limit)
@@ -583,6 +593,7 @@ final class RepositoryModel: Identifiable {
         self.tags = await tags ?? self.tags
         self.stashes = await stashes ?? self.stashes
         self.worktrees = await worktrees
+        updateWorktreeWatching()
         self.remotes = await remotes
         operation = repository.operationState()
         lastFetch = repository.lastFetchDate
@@ -603,7 +614,7 @@ final class RepositoryModel: Identifiable {
         isReloadingHistory = false
         rebuildGraph()
         phase = .ready
-        selectPendingCommit()
+        selectPendingCommit(readWith: readScope)
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
         if made == ownChanges {
@@ -647,6 +658,7 @@ final class RepositoryModel: Identifiable {
             watcher?.stop()
             watcher = nil
         }
+        updateWorktreeWatching()
     }
 
     /// Without the file watcher: everything is checked when Kaern comes back to the front.
@@ -686,6 +698,7 @@ final class RepositoryModel: Identifiable {
     }
 
     private func visibilityChanged() {
+        updateWorktreeWatching()
         guard isVisible else {
             // A tab in the background lets go of its git log; scrolling later starts a new one.
             historyStream?.cancel()
@@ -772,11 +785,14 @@ final class RepositoryModel: Identifiable {
         let start = ContinuousClock.now
         // File events start refreshes while actions run too: one may end while git reads.
         let made = ownChanges
+        // What the history read below draws (a remote branch picked meanwhile is in the next read).
+        var readScope: HistoryScope?
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
             // As much history as was loaded (a refresh shouldn't shrink what you scrolled to).
             let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
+            readScope = historyScope
             let stream = restartHistoryStream(repository)
             isReloadingHistory = true
             async let history = Self.read(stream, limit)
@@ -803,6 +819,7 @@ final class RepositoryModel: Identifiable {
             isReloadingHistory = false
             self.stashes = await stashes ?? self.stashes
             self.worktrees = await worktrees
+            updateWorktreeWatching()
             self.remotes = await remotes
             lastFetch = repository.lastFetchDate
             isShallow = repository.isShallow
@@ -811,8 +828,8 @@ final class RepositoryModel: Identifiable {
         }
         operation = repository.operationState()
         rebuildGraph()
-        if scope.contains(.refs) {
-            selectPendingCommit()
+        if scope.contains(.refs), let readScope {
+            selectPendingCommit(readWith: readScope)
             loadAllHistoryIfAsked()
             historyReloaded()
         }
@@ -885,7 +902,7 @@ final class RepositoryModel: Identifiable {
     }
 
     func refreshLineStats() async {
-        guard let repository else { return }
+        guard repository != nil else { return }
         guard isVisible else {
             // A tab loaded in the background (the preload after launch): line counts, LFS and
             // submodule marks come when it's shown.
@@ -893,8 +910,39 @@ final class RepositoryModel: Identifiable {
             return
         }
         lineStatsAreStale = false
+        // One read at a time: two that overlapped (a refresh and the status read after staging)
+        // could end in the wrong order, and the older counts and marks stayed on screen. A call
+        // while one runs asks it for another round and waits for that round, so what it returns
+        // to was read after it was called.
+        if let running = lineStatsTask {
+            lineStatsAgain = true
+            await running.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                lineStatsAgain = false
+                await readLineStats()
+            } while lineStatsAgain
+            lineStatsTask = nil
+        }
+        lineStatsTask = task
+        await task.value
+    }
+
+    /// Line counts, LFS and submodule marks, and the other worktrees' change counts.
+    private func readLineStats() async {
+        guard let repository else { return }
         let untracked = status.entries.filter(\.isUntracked).map(\.path)
-        lineStats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
+        let stats = await repository.stagedAndUnstagedLineStats(untracked: untracked)
+        #if DEBUG
+        // The debug driver's `hold lineStats`: git has answered, and the counts wait here.
+        await debugHold(.lineStats)
+        #endif
+        // Asked for again while git read: the next round's counts are newer, so these aren't shown.
+        guard !lineStatsAgain else { return }
+        lineStats = stats
         await refreshWorkingMarks()
         await refreshSubmodules()
         await refreshWorktreeChanges()
@@ -1051,9 +1099,11 @@ final class RepositoryModel: Identifiable {
         if isVisible { runPendingRefresh(trigger: trigger) }
     }
 
-    /// After history was read again: the commit a picked remote branch points at.
-    private func selectPendingCommit() {
-        guard let id = selectAfterReload else { return }
+    /// After history was read again: the commit a picked remote branch points at. Only a read
+    /// made with the graph's scope as it is now has that branch: a refresh that was already
+    /// reading when the branch was picked leaves the selection to the read that follows it.
+    private func selectPendingCommit(readWith scope: HistoryScope) {
+        guard let id = selectAfterReload, scope == historyScope else { return }
         selectAfterReload = nil
         reveal(id)
     }
@@ -1428,6 +1478,9 @@ final class RepositoryModel: Identifiable {
         allHistoryTask?.cancel()
         watcher?.stop()
         watcher = nil
+        worktreeWatcher?.stop()
+        worktreeWatcher = nil
+        watchedWorktreePaths = []
         refreshTask?.cancel()
         lightTask?.cancel()
         detailsTask?.cancel()
