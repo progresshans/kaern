@@ -669,7 +669,12 @@ final class RepositoryModel: Identifiable {
     func refreshStatusNow() async {
         guard let repository else { return }
         await GitCommandTrigger.$current.withValue(.background("Refreshing after a change")) {
-            if let status = try? await repository.status() {
+            let status = try? await repository.status()
+            #if DEBUG
+            // The debug driver's `hold statusNow`: git has answered, and the answer waits here.
+            await debugHold(.statusNow)
+            #endif
+            if let status {
                 self.status = status
                 statusIsFull = true
             }
@@ -754,6 +759,11 @@ final class RepositoryModel: Identifiable {
         await refreshLineStats()
         diffsAreStale = true
         refreshDiffsIfNeeded()
+        #if DEBUG
+        // The debug driver's `hold decide`: what was read is shown, and what the screens
+        // conclude from it waits here.
+        await debugHold(.decide)
+        #endif
         screenStateChanged()
         Self.log.debug("Refreshed \(self.name, privacy: .public) \(scope.rawValue) in \(ContinuousClock.now - start, privacy: .public)")
     }
@@ -1024,6 +1034,10 @@ final class RepositoryModel: Identifiable {
             let value = await repository.config("core.fsmonitor")?.lowercased()
             fsmonitorOn = value != nil && value != "false"
         }
+        #if DEBUG
+        // The debug driver's `hold status`: git has answered, and the answer waits here.
+        await debugHold(.status)
+        #endif
         return status
     }
 

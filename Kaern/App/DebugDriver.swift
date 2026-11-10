@@ -149,6 +149,8 @@ final class DebugDriver {
             phase5(command, args)
         case _ where DebugDriver.phase6Commands.contains(command):
             phase6(command, args)
+        case _ where DebugDriver.holdCommands.contains(command):
+            holds(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -977,6 +979,8 @@ final class DebugDriver {
             // into this folder and waits for the name to show as watchMarker.
             "gitDirectory": AppSettings.watchesFiles ? shown?.repository?.gitDirectory.path(percentEncoded: false) ?? "" : "",
             "watchMarker": shown?.debugWatchMarker ?? "",
+            // The points where a refresh of the shown repository waits now (`hold <point>`).
+            "holding": shown.map { DebugHolds.shared.waiting(in: $0.id) } ?? [],
             "running": entries.filter(\.record.isRunning).map(\.record.commandLine),
             "lastCommand": entries.last?.id.uuidString ?? "",
             "commandCount": entries.count,
