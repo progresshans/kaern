@@ -242,13 +242,24 @@ extension RepositoryModel {
         }
     }
 
-    private func resetNow(to id: String, mode: GitRepository.ResetMode, head: String, branch: String) {
+    /// `shownHead` and `branch` are what the status showed when the reset was asked for. What the
+    /// reset does goes by git, read here: that status can be older than the working tree (a
+    /// refresh still reading, the file watcher off, a file saved a moment ago).
+    private func resetNow(to id: String, mode: GitRepository.ResetMode, head shownHead: String, branch: String) {
         let label = "Reset \(branch) to \(short(id)) (\(mode.rawValue))"
-        let dirty = status.entries.contains { !$0.isUntracked }
         perform(.working("Resetting \(branch)…"), trigger: label) { [weak self] repository in
+            // The branch the question named, not whatever is checked out by now.
+            guard await repository.currentBranchName() == branch else {
+                throw GitError(arguments: ["reset", "--\(mode.rawValue)"], status: -1,
+                               message: "\(branch) isn’t checked out anymore, so Kaern didn’t reset anything.")
+            }
+            // Where the branch is now: ⌘Z goes back there (a commit made in Terminal included).
+            let head = await repository.resolve("HEAD") ?? shownHead
             let leaving = await repository.countCommits(from: id, to: head)
             var stash: String?
-            if mode == .hard, dirty {
+            if mode == .hard {
+                // Whatever git finds uncommitted goes to Stashes first, listed or not; with nothing
+                // to put aside, no stash is made.
                 stash = try await repository.stashAll(message: "Before reset to \(id.prefix(7))", includeUntracked: false)
             }
             let index = mode == .mixed ? await repository.writeIndexTree() : nil
