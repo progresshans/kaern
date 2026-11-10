@@ -221,7 +221,7 @@ nonisolated extension ReversibleStep {
                 try await requireHead(repository, branch: branch, at: from, label)
                 var newStash: String?
                 if mode == .hard {
-                    newStash = try await repository.stashAll(message: "Before reset to \(to.prefix(7))", includeUntracked: false)
+                    newStash = try await repository.stashBeforeHardReset(to: to, message: "Before reset to \(to.prefix(7))")
                 }
                 let index = mode == .mixed ? await repository.writeIndexTree() : nil
                 try await repository.reset(to: to, mode: mode)

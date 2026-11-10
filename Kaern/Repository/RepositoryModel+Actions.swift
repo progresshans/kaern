@@ -272,9 +272,10 @@ extension RepositoryModel {
             let leaving = await repository.countCommits(from: id, to: head)
             var stash: String?
             if mode == .hard {
-                // Whatever git finds uncommitted goes to Stashes first, listed or not; with nothing
-                // to put aside, no stash is made.
-                stash = try await repository.stashAll(message: "Before reset to \(id.prefix(7))", includeUntracked: false)
+                // Whatever git finds uncommitted goes to Stashes first, listed or not, with the
+                // untracked and ignored files the reset would write over; with nothing to put aside,
+                // no stash is made.
+                stash = try await repository.stashBeforeHardReset(to: id, message: "Before reset to \(id.prefix(7))")
             }
             let index = mode == .mixed ? await repository.writeIndexTree() : nil
             try await repository.reset(to: id, mode: mode)

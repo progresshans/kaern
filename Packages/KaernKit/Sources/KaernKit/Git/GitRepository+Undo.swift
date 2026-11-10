@@ -148,6 +148,69 @@ extension GitRepository {
         return after
     }
 
+    /// Puts aside what `git reset --hard <target>` would lose, in one stash entry, and returns its
+    /// commit (`nil` when nothing would be lost): the uncommitted changes of tracked files, and the
+    /// untracked or ignored files the reset would write over or delete (`untrackedInTheWay(of:)`).
+    /// git does that to them without a word, an ignored `.env` written again by hand included.
+    /// Other untracked and ignored files stay where they are, as the reset leaves them.
+    public func stashBeforeHardReset(to target: String, message: String) async throws -> String? {
+        let inTheWay = try await untrackedInTheWay(of: target)
+        guard !inTheWay.isEmpty else { return try await stashAll(message: message, includeUntracked: false) }
+        // `--all` takes ignored files too; the paths keep it to those in the way and to the
+        // tracked changes (staged or not), so nothing else leaves the working tree.
+        let unstaged = Records.splitNUL(try await git(["diff", "--name-only", "--no-renames", "-z"]).stdout)
+        let staged = Records.splitNUL(try await git(["diff", "--cached", "--name-only", "--no-renames", "-z"]).stdout)
+        let paths = Set(unstaged + staged + inTheWay).sorted().map { ":(literal)" + $0 }
+        let before = await resolve("refs/stash")
+        try await git(["stash", "push", "--all", "-q", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
+                      input: Data(paths.joined(separator: "\0").utf8))
+        guard let after = await resolve("refs/stash"), after != before else { return nil }
+        return after
+    }
+
+    /// Untracked or ignored files (and folders holding some) that `git reset --hard <target>`
+    /// would write over or delete: what is at a path where `target` has a file and the index has
+    /// none, and a file where `target` needs a folder.
+    func untrackedInTheWay(of target: String) async throws -> [String] {
+        let wanted = Records.splitNUL(try await git(["ls-tree", "-r", "--name-only", "-z", target]).stdout)
+        let tracked = Set(Records.splitNUL(try await git(["ls-files", "-z"]).stdout))
+        var found = Set<String>()
+        for path in wanted where !tracked.contains(path) {
+            if let isFolder = itemIsFolder(path) {
+                // An empty folder loses nothing (and a path matching no file would stop the stash).
+                if !isFolder || folderHoldsFiles(path) { found.insert(path) }
+                continue
+            }
+            var prefix = ""
+            for part in path.split(separator: "/").dropLast() {
+                prefix += (prefix.isEmpty ? "" : "/") + part
+                guard let isFolder = itemIsFolder(prefix) else { break }   // nothing there: git makes the folder
+                if !isFolder {
+                    if !tracked.contains(prefix) { found.insert(prefix) }
+                    break
+                }
+            }
+        }
+        return found.sorted()
+    }
+
+    /// `nil` when nothing is at `path` in the working tree; whether it's a folder otherwise (a
+    /// link counts as a file, as git sees it).
+    private func itemIsFolder(_ path: String) -> Bool? {
+        let full = root.appending(path: path).path(percentEncoded: false)
+        guard let type = (try? FileManager.default.attributesOfItem(atPath: full))?[.type] as? FileAttributeType else { return nil }
+        return type == .typeDirectory
+    }
+
+    private func folderHoldsFiles(_ path: String) -> Bool {
+        let folder = root.appending(path: path, directoryHint: .isDirectory)
+        guard let items = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey]) else { return false }
+        for case let url as URL in items where (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true {
+            return true
+        }
+        return false
+    }
+
     /// The stash entry whose commit is `object`.
     public func stash(withObject object: String) async -> Stash? {
         (try? await stashes())?.first { $0.id == object }
