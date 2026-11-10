@@ -735,6 +735,11 @@ final class RepositoryModel: Identifiable {
             rebuildGraph()
             await refreshLineStats()
         }
+        #if DEBUG
+        // The debug driver's `hold decideNow`: the status is shown, and what follows from it
+        // waits here (the conclusions below, then the caller's: the conflict editor opening).
+        await debugHold(.decideNow)
+        #endif
         // Only the status was read: the conflict editor follows it. (The stash view follows the
         // stash list, which a refresh reads.)
         conflictsChanged()
