@@ -280,11 +280,7 @@ extension RepositoryModel {
     func stoppedOnConflicts(_ what: String, start: OperationStart? = nil) {
         conflictSession = nil
         operationStart = start
-        Task {
-            // The status that lists the conflicts comes first.
-            await refreshStatusNow()
-            openConflicts()
-        }
+        openConflictsAfterRefresh()
         if start?.kept != nil {
             showToast("\(what) stopped on conflicts · your uncommitted changes wait in Stashes until it’s done")
         }
@@ -321,7 +317,7 @@ extension RepositoryModel {
             guard let self else { return }
             self.conflictSession = nil
             if outcome == .stopped, !(await repository.unmergedPaths()).isEmpty {
-                self.reopenConflictsAfterRefresh()
+                self.openConflictsAfterRefresh()
                 self.showToast("Skipped \(skipped) · the next commit has conflicts too")
             } else if outcome == .stopped {
                 self.closeConflicts()
@@ -342,7 +338,7 @@ extension RepositoryModel {
             self.conflictSession = nil
             if outcome == .stopped {
                 if !(await repository.unmergedPaths()).isEmpty {
-                    self.reopenConflictsAfterRefresh()
+                    self.openConflictsAfterRefresh()
                 } else {
                     self.closeConflicts()
                     self.showToast("The \(name.lowercased()) stopped at the next step")
@@ -353,11 +349,14 @@ extension RepositoryModel {
         }
     }
 
-    /// Opens the editor again once the status shows the next commit's conflicts.
-    private func reopenConflictsAfterRefresh() {
+    /// After a stop on conflicts: opens the editor once the status that lists the conflicts is
+    /// in (that reads the operation too). If Kaern changes the repository again before the editor
+    /// opens (Undo Pop or Abort while the line counts are still being read), the status is read
+    /// once more, so the editor opens on what's in conflict then, or not at all.
+    func openConflictsAfterRefresh() {
         Task {
-            // Reads the operation too.
-            await refreshStatusNow()
+            var isIn = await refreshStatusNow()
+            while isIn, !statusIsCurrent { isIn = await refreshStatusNow() }
             openConflicts()
         }
     }

@@ -713,10 +713,11 @@ final class RepositoryModel: Identifiable {
     }
 
     /// Re-reads the status right away (after staging, after an action stopped on conflicts): the
-    /// file event would come 0.3 s later.
-    func refreshStatusNow() async {
-        guard let repository else { return }
-        await GitCommandTrigger.$current.withValue(.background("Refreshing after a change")) {
+    /// file event would come 0.3 s later. Returns whether git gave a status.
+    @discardableResult
+    func refreshStatusNow() async -> Bool {
+        guard let repository else { return false }
+        let isIn = await GitCommandTrigger.$current.withValue(.background("Refreshing after a change")) {
             var made: Int
             var status: WorkingTreeStatus?
             repeat {
@@ -730,10 +731,11 @@ final class RepositoryModel: Identifiable {
                 await debugHold(.statusNow)
                 #endif
             } while made != ownChanges
-            show(status, isFull: true, readAt: made)
+            let isIn = show(status, isFull: true, readAt: made)
             operation = repository.operationState()
             rebuildGraph()
             await refreshLineStats()
+            return isIn
         }
         #if DEBUG
         // The debug driver's `hold decideNow`: the status is shown, and what follows from it
@@ -745,6 +747,7 @@ final class RepositoryModel: Identifiable {
         conflictsChanged()
         diffsAreStale = true
         refreshDiffsIfNeeded()
+        return isIn
     }
 
     /// Runs the refreshes that file events asked for, one at a time, until none are left.

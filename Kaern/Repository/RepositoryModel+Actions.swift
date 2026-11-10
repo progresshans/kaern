@@ -553,10 +553,7 @@ extension RepositoryModel {
             guard let self, let conflict = error as? StashApplyConflict else { return false }
             self.stashConflict = conflict
             self.conflictSession = nil
-            Task {
-                await self.refreshStatusNow()
-                self.openConflicts()
-            }
+            self.openConflictsAfterRefresh()
             return true
         }
     }
