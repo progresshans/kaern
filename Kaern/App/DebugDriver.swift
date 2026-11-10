@@ -871,6 +871,7 @@ final class DebugDriver {
                         "refreshes": repository.debugRefreshes,
                         "lightRefreshes": repository.debugLightRefreshes,
                         "staleReads": repository.debugStaleReads,
+                        "crossedRefreshes": repository.debugCrossedRefreshes,
                         "mark": "\(repository.tabMark)",
                         "commits": repository.commits.count,
                         "changes": repository.changeCount,

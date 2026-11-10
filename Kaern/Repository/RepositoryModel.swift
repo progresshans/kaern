@@ -417,8 +417,10 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private(set) var debugRefreshes = 0
     @ObservationIgnored private(set) var debugLightRefreshes = 0
     /// How many `git status` answers weren't shown because Kaern changed the repository after
-    /// git began reading (see `ownChanges`).
+    /// git began reading (see `ownChanges`), and how many refreshes concluded nothing because
+    /// it did while they ran.
     @ObservationIgnored private(set) var debugStaleReads = 0
+    @ObservationIgnored private(set) var debugCrossedRefreshes = 0
     /// The last marker file the file watcher reported (see `filesChanged`).
     @ObservationIgnored private(set) var debugWatchMarker = ""
     /// An action, a first load, a refresh or a history read is under way (the debug dump: scripts
@@ -821,6 +823,7 @@ final class RepositoryModel: Identifiable {
             // Kaern changed the repository while this ran: what it read is from before that, or
             // from the middle of it, and nothing is concluded from it. Once more, for the status
             // as it is now and for what the screens make of it.
+            debugCrossedRefreshes += 1
             pendingScope.insert(.workTree)
         }
         Self.log.debug("Refreshed \(self.name, privacy: .public) \(scope.rawValue) in \(ContinuousClock.now - start, privacy: .public)")
@@ -1255,8 +1258,9 @@ final class RepositoryModel: Identifiable {
                 }
                 try await GitProgressReporter.$current.withValue(reporter) {
                     try await GitCommandTrigger.$current.withValue(command) {
-                        // However it ends: before the model shows what came of it (a stop on
-                        // conflicts, a toast), what git read earlier stops counting.
+                        // However it ends, the action's git commands are done here. What git
+                        // read earlier stops counting before `onFailure` shows a stop on
+                        // conflicts and before `activity` is nil again.
                         defer { noteOwnChange() }
                         try await work(repository)
                     }
