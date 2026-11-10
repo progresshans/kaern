@@ -402,6 +402,7 @@ extension RepositoryModel {
         var kept = start.kept
         if let object = kept {
             if (try? await repository.popStash(object: object)) != nil { kept = nil }
+            noteOwnChange()
         }
         if let kept {
             record(.moveBranchKeepingStash(label: start.label, branch: start.branch, from: start.head, to: after, stash: kept), toast: nil)
@@ -430,6 +431,9 @@ extension RepositoryModel {
 
     /// After a refresh: the editor keeps up with conflicts resolved elsewhere (Terminal, an editor).
     func conflictsChanged() {
+        // Only a status read after everything Kaern did itself says what's resolved. One from
+        // before a stash pop stopped on its conflict lists no conflicted file either.
+        guard statusIsCurrent else { return }
         if let conflict = stashConflict, conflictedPaths.isEmpty, activity == nil {
             // Resolved outside Kaern (or by Mark Resolved).
             stashConflict = nil

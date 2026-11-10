@@ -31,16 +31,19 @@ extension RepositoryModel {
         }
     }
 
-    /// After a refresh: the stash view follows its stash (or shows that it's gone), and the
-    /// conflict editor follows the conflicts.
+    /// After a refresh that read the repository as Kaern left it (not one an action ended in the
+    /// middle of): the stash view follows its stash (or shows that it's gone), and the conflict
+    /// editor follows the conflicts.
     func screenStateChanged() {
         if case .stash(let id) = screen {
             if let stash = stashes.first(where: { $0.id == id }) {
                 if stashDetails?.stash.id != id || stashDetails?.stash.index != stash.index || stashDetails?.stash.message != stash.message {
                     loadStashDetails(id)
                 }
-            } else if let first = stashes.first, stashDetails?.stash.id == id {
-                // Dropped or popped: the next stash shows, like the board's list.
+            } else if activity == nil, let first = stashes.first, stashDetails?.stash.id == id {
+                // Dropped or popped: the next stash shows, like the board's list. Not while an
+                // action runs: a rename takes its stash out of the list and puts it back, and a
+                // pop closes the view itself. The refresh after the action looks again.
                 screen = .stash(first.id)
             }
         }

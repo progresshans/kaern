@@ -216,7 +216,11 @@ extension RepositoryModel {
             await GitCommandTrigger.$current.withValue(trigger) {
                 let before = await repository.writeIndexTree()
                 do {
-                    try await work(repository)
+                    do {
+                        // However it ends: a status git read before this isn't shown anymore.
+                        defer { noteOwnChange() }
+                        try await work(repository)
+                    }
                     if let before, let after = await repository.writeIndexTree(), after != before {
                         recordQuietly(.index(label: label, paths: paths, before: before, after: after))
                     }

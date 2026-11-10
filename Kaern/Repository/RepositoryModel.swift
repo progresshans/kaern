@@ -393,6 +393,19 @@ final class RepositoryModel: Identifiable {
     /// Not Now on the fsmonitor suggestion (kept in the settings by folder).
     private(set) var fsmonitorDismissed = false
     @ObservationIgnored private var pendingScope: ChangeScope = []
+    /// How often Kaern itself has changed the repository (``noteOwnChange()``: an action ended,
+    /// staging ran). A `git status` that began before such a change may be from before it, or
+    /// from the middle of it. So whoever reads one notes the count first, and the answer is
+    /// shown only if the count hasn't moved (``show(_:isFull:readAt:)``); the read that follows
+    /// the change brings the status. The file watcher starts refreshes while actions run: one of
+    /// them came back with a status from just before a stash pop stopped on a conflict, no
+    /// conflict in it, and the conflict bar went away as "resolved".
+    @ObservationIgnored private var ownChanges = 0
+    /// ``ownChanges`` when the read `status` came from began.
+    @ObservationIgnored private var statusReadAt = 0
+    /// `status` was read after everything Kaern itself has done to the repository. Only then
+    /// does it say that a conflict is gone (``conflictsChanged()``).
+    var statusIsCurrent: Bool { statusReadAt == ownChanges }
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var lightTask: Task<Void, Never>?
     @ObservationIgnored private var lightAgain = false
@@ -403,6 +416,9 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private(set) var debugFullLoads = 0
     @ObservationIgnored private(set) var debugRefreshes = 0
     @ObservationIgnored private(set) var debugLightRefreshes = 0
+    /// How many `git status` answers weren't shown because Kaern changed the repository after
+    /// git began reading (see `ownChanges`).
+    @ObservationIgnored private(set) var debugStaleReads = 0
     /// The last marker file the file watcher reported (see `filesChanged`).
     @ObservationIgnored private(set) var debugWatchMarker = ""
     /// An action, a first load, a refresh or a history read is under way (the debug dump: scripts
@@ -433,6 +449,30 @@ final class RepositoryModel: Identifiable {
         } else if bigChanges != nil {
             bigChanges = nil
         }
+    }
+
+    /// Kaern has just changed the repository itself: an action's git commands are done (however
+    /// they ended), or staging has run. What git read before this point isn't shown anymore
+    /// (see `ownChanges`), so call it as soon as the change is over, before the model shows what
+    /// came of it.
+    func noteOwnChange() {
+        ownChanges += 1
+    }
+
+    /// Shows a status git read, unless Kaern changed the repository after git began reading
+    /// (`made`: ``ownChanges`` at that time): then it may be from before that change, and the
+    /// read that follows the change brings the status. Returns whether it's shown.
+    @discardableResult
+    private func show(_ status: WorkingTreeStatus?, isFull: Bool, readAt made: Int) -> Bool {
+        guard let status else { return false }
+        guard made == ownChanges else {
+            debugStaleReads += 1
+            return false
+        }
+        self.status = status
+        statusIsFull = isFull
+        statusReadAt = made
+        return true
     }
 
     // MARK: Derived state
@@ -516,6 +556,7 @@ final class RepositoryModel: Identifiable {
         guard let repository else { return }
         debugFullLoads += 1
         let loadStart = ContinuousClock.now
+        let made = ownChanges
         if phase != .ready { phase = .loading }
         // The graph's scope depends on how many remote branches there are, so on the first load
         // the refs come before history.
@@ -535,10 +576,7 @@ final class RepositoryModel: Identifiable {
 
         let loadedStatus = await status
         let loadedHistory = await history
-        if let loadedStatus {
-            self.status = loadedStatus
-            statusIsFull = true
-        }
+        show(loadedStatus, isFull: true, readAt: made)
         self.refs = await refs ?? self.refs
         self.tags = await tags ?? self.tags
         self.stashes = await stashes ?? self.stashes
@@ -566,7 +604,14 @@ final class RepositoryModel: Identifiable {
         selectPendingCommit()
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
-        pendingScope = []
+        if made == ownChanges {
+            // What changed while this read is in what it read.
+            pendingScope = []
+        } else if isVisible {
+            // Not what Kaern did itself meanwhile (a fetch that ended while this tab loaded): the
+            // refresh that action asked for is still to come.
+            runPendingRefresh(trigger: "After loading the repository")
+        }
         historyReloaded()
         await refreshBranchFacts()
         await refreshLineStats()
@@ -665,24 +710,32 @@ final class RepositoryModel: Identifiable {
         }
     }
 
-    /// Re-reads the status right away (after staging): the file event would come 0.3 s later.
+    /// Re-reads the status right away (after staging, after an action stopped on conflicts): the
+    /// file event would come 0.3 s later.
     func refreshStatusNow() async {
         guard let repository else { return }
         await GitCommandTrigger.$current.withValue(.background("Refreshing after a change")) {
-            let status = try? await repository.status()
-            #if DEBUG
-            // The debug driver's `hold statusNow`: git has answered, and the answer waits here.
-            await debugHold(.statusNow)
-            #endif
-            if let status {
-                self.status = status
-                statusIsFull = true
-            }
+            var made: Int
+            var status: WorkingTreeStatus?
+            repeat {
+                // Once more when Kaern changed the repository while git read: the caller goes on
+                // with this status (the conflict editor opens on it), so it has to be from after
+                // that change.
+                made = ownChanges
+                status = try? await repository.status()
+                #if DEBUG
+                // The debug driver's `hold statusNow`: git has answered, and the answer waits here.
+                await debugHold(.statusNow)
+                #endif
+            } while made != ownChanges
+            show(status, isFull: true, readAt: made)
             operation = repository.operationState()
             rebuildGraph()
             await refreshLineStats()
         }
-        screenStateChanged()
+        // Only the status was read: the conflict editor follows it. (The stash view follows the
+        // stash list, which a refresh reads.)
+        conflictsChanged()
         diffsAreStale = true
         refreshDiffsIfNeeded()
     }
@@ -707,6 +760,8 @@ final class RepositoryModel: Identifiable {
         guard let repository else { return }
         debugRefreshes += 1
         let start = ContinuousClock.now
+        // File events start refreshes while actions run too: one may end while git reads.
+        let made = ownChanges
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
@@ -719,10 +774,7 @@ final class RepositoryModel: Identifiable {
             async let worktrees = repository.worktrees()
             async let remotes = repository.remoteInfos()
             async let status = timedStatus(repository)
-            if let status = await status {
-                self.status = status
-                statusIsFull = true
-            }
+            show(await status, isFull: true, readAt: made)
             self.refs = await refs ?? self.refs
             self.tags = await tags ?? self.tags
             switch await history {
@@ -744,9 +796,8 @@ final class RepositoryModel: Identifiable {
             self.remotes = await remotes
             lastFetch = repository.lastFetchDate
             isShallow = repository.isShallow
-        } else if let status = await timedStatus(repository) {
-            self.status = status
-            statusIsFull = true
+        } else {
+            show(await timedStatus(repository), isFull: true, readAt: made)
         }
         operation = repository.operationState()
         rebuildGraph()
@@ -764,7 +815,14 @@ final class RepositoryModel: Identifiable {
         // conclude from it waits here.
         await debugHold(.decide)
         #endif
-        screenStateChanged()
+        if made == ownChanges {
+            screenStateChanged()
+        } else {
+            // Kaern changed the repository while this ran: what it read is from before that, or
+            // from the middle of it, and nothing is concluded from it. Once more, for the status
+            // as it is now and for what the screens make of it.
+            pendingScope.insert(.workTree)
+        }
         Self.log.debug("Refreshed \(self.name, privacy: .public) \(scope.rawValue) in \(ContinuousClock.now - start, privacy: .public)")
     }
 
@@ -789,10 +847,8 @@ final class RepositoryModel: Identifiable {
     private func lightRefresh() async {
         guard let repository, !noticeMissingFolder() else { return }
         debugLightRefreshes += 1
-        if let status = try? await repository.status(untrackedFiles: .normal) {
-            self.status = status
-            statusIsFull = false
-        }
+        let made = ownChanges
+        show(try? await repository.status(untrackedFiles: .normal), isFull: false, readAt: made)
         operation = repository.operationState()
     }
 
@@ -1199,6 +1255,9 @@ final class RepositoryModel: Identifiable {
                 }
                 try await GitProgressReporter.$current.withValue(reporter) {
                     try await GitCommandTrigger.$current.withValue(command) {
+                        // However it ends: before the model shows what came of it (a stop on
+                        // conflicts, a toast), what git read earlier stops counting.
+                        defer { noteOwnChange() }
                         try await work(repository)
                     }
                 }

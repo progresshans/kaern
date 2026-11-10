@@ -870,6 +870,7 @@ final class DebugDriver {
                         "fullLoads": repository.debugFullLoads,
                         "refreshes": repository.debugRefreshes,
                         "lightRefreshes": repository.debugLightRefreshes,
+                        "staleReads": repository.debugStaleReads,
                         "mark": "\(repository.tabMark)",
                         "commits": repository.commits.count,
                         "changes": repository.changeCount,
