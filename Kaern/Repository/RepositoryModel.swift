@@ -1326,10 +1326,14 @@ final class RepositoryModel: Identifiable {
     }
 
     func pull(_ strategy: GitRepository.PullStrategy) {
-        let before = status.headID
-        let branch = status.branch
+        let shownHead = status.headID
+        let shownBranch = status.branch
         let upstream = status.upstream
         perform(.pulling, trigger: "Pull") { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
             let result: (outcome: OperationOutcome, kept: String?)
             if strategy == .rebase {
                 // git won't pull with rebase over uncommitted changes. Like Merge and Rebase, they
@@ -1380,8 +1384,10 @@ final class RepositoryModel: Identifiable {
         if refs.localBranch(named: local) != nil {
             checkout(branch: local)
         } else {
-            let previous = headPosition
+            let shown = headPosition
             perform(.switching(local), trigger: "Checkout \(ref.name)") { [weak self] repository in
+                // HEAD as git has it now, not as the status showed it (see `headNow`).
+                let previous = await Self.headNow(in: repository).map { HeadPosition(branch: $0.branch, id: $0.id) } ?? shown
                 try await repository.switchToRemoteBranch(ref.name, localName: local)
                 guard let previous, let tip = await repository.resolve("HEAD") else { return }
                 self?.record(ReversibleStep.createdBranch(label: "Checkout \(ref.name)", name: local, at: tip, upstream: ref.name,
@@ -1392,9 +1398,12 @@ final class RepositoryModel: Identifiable {
     }
 
     func createBranch(_ name: String, at startPoint: String? = nil) {
-        let previous = headPosition
+        let shown = headPosition
         let label = "Create Branch \(name)"
         perform(.creatingBranch(name), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let previous = now.map { HeadPosition(branch: $0.branch, id: $0.id) } ?? shown
             try await repository.createBranch(name, startPoint: startPoint, checkout: true)
             guard let previous, let tip = await repository.resolve("HEAD") else { return }
             self?.record(ReversibleStep.createdBranch(label: label, name: name, at: tip, upstream: nil, previous: previous),

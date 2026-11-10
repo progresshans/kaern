@@ -12,6 +12,11 @@ nonisolated enum HeadPosition: Equatable, Sendable {
         case .detached(let id): String(id.prefix(7))
         }
     }
+
+    /// On `branch`, or detached at `id` when there's none.
+    init(branch: String?, id: String) {
+        self = branch.map { .branch($0) } ?? .detached(id)
+    }
 }
 
 /// The toast at the bottom of the window (`.toast`), with Undo when the action can be taken back.
@@ -379,7 +384,16 @@ extension RepositoryModel {
     var undoTitle: String { undoSteps.last.map { "Undo \($0.label)" } ?? "Nothing to Undo" }
     var redoTitle: String { redoSteps.last.map { "Redo \($0.label)" } ?? "Nothing to Redo" }
 
-    /// Where HEAD is now.
+    /// HEAD when an action runs, read from git: its branch (`nil` when detached) and its commit
+    /// (`nil` on an unborn branch). The status an action was asked from can be older than the
+    /// repository (a refresh still reading, the file watcher off, something done in Terminal a
+    /// moment ago), so what an action records for ⌘Z comes from here.
+    static func headNow(in repository: GitRepository) async -> (branch: String?, id: String)? {
+        guard let id = await repository.resolve("HEAD") else { return nil }
+        return (await repository.currentBranchName(), id)
+    }
+
+    /// Where HEAD is now, as the status shows it.
     var headPosition: HeadPosition? {
         switch status.head {
         case .branch(let name): .branch(name)

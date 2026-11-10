@@ -264,13 +264,17 @@ extension RepositoryModel {
         let message = composer.message
         let amend = composer.amend
         let count = status.stagedCount
-        let branch = status.branch
-        let before = status.headID
+        let shownBranch = status.branch
+        let shownHead = status.headID
         let label = amend ? "Amend “\(composer.summary.trimmingCharacters(in: .whitespaces))”"
             : "Commit “\(composer.summary.trimmingCharacters(in: .whitespaces))”"
         hookFailure = nil
         perform(amend ? .amending : .committing, trigger: amend ? "Amend Previous Commit" : (count == 1 ? "Commit 1 File" : "Commit \(count) Files")) {
             [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
             let hooks = runHooks ? await repository.commitHooks().filter {
                 $0.isInstalled && ($0.name == "pre-commit" || $0.name == "commit-msg")
             } : []

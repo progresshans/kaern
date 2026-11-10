@@ -184,9 +184,9 @@ extension RepositoryModel {
 
     /// Start Rebase.
     func startInteractiveRebase(_ draft: RebaseDraft) {
-        guard draft.canStart, let before = status.headID else { return }
+        guard draft.canStart, let shownHead = status.headID else { return }
         sheet = nil
-        let branch = status.branch
+        let shownBranch = status.branch
         let steps = draft.steps.map { step -> RebaseStep in
             guard step.action == .reword, let subject = step.message else { return step }
             var step = step
@@ -201,9 +201,13 @@ extension RepositoryModel {
         // "Squash 2 Commits" when that's all it does, else "Rebase feature/x" (⌘Z's name).
         let folds = draft.steps.filter { $0.action.joinsPrevious }.count
         let onlyFolds = folds > 0 && draft.steps.allSatisfy { $0.action == .pick || $0.action.joinsPrevious }
-        let label = onlyFolds ? "Squash \(folds + 1) Commits" : "Rebase \(branch ?? "HEAD")"
+        let label = onlyFolds ? "Squash \(folds + 1) Commits" : "Rebase \(shownBranch ?? "HEAD")"
         let stash = draft.stashChanges && !status.isClean
-        perform(.working("Rebasing \(branch ?? "HEAD")…"), trigger: label) { [weak self] repository in
+        perform(.working("Rebasing \(shownBranch ?? "HEAD")…"), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
             let work: @Sendable () async throws -> OperationOutcome = {
                 try await repository.interactiveRebase(onto: draft.base, steps: steps, autostash: false)
             }

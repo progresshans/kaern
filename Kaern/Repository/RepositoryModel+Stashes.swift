@@ -75,9 +75,12 @@ extension RepositoryModel {
     }
 
     func createBranch(_ name: String, from stash: Stash) {
-        guard let previous = headPosition else { return }
+        guard let shown = headPosition else { return }
         let label = "Create Branch \(name) from \(stash.reference)"
         perform(.creatingBranch(name), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let previous = now.map { HeadPosition(branch: $0.branch, id: $0.id) } ?? shown
             try await repository.createBranch(name, from: stash)
             guard let self, let tip = await repository.resolve("HEAD") else { return }
             self.screen = nil

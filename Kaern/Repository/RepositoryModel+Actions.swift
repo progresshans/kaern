@@ -153,14 +153,17 @@ extension RepositoryModel {
     private func row(_ id: String) -> Int { commits.firstIndex { $0.id == id } ?? Int.max }
 
     func checkout(branch name: String) {
-        guard let previous = headPosition, previous != .branch(name) else { return }
-        if case .branch(let old) = previous {
+        guard let shown = headPosition, shown != .branch(name) else { return }
+        if case .branch(let old) = shown {
             switchedBranches.removeAll { $0 == old || $0 == name }
             switchedBranches.insert(old, at: 0)
         }
         let changes = status.entries.count
         let label = "Checkout \(name)"
         perform(.switching(name), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let previous = now.map { HeadPosition(branch: $0.branch, id: $0.id) } ?? shown
             try await repository.switchBranch(name)
             self?.record(.checkout(label: label, from: previous, to: .branch(name)),
                          toast: "Switched to \(name)" + (changes > 0 ? " · your \(Formatters.count(changes, "change", "changes")) came along" : ""))
@@ -168,9 +171,12 @@ extension RepositoryModel {
     }
 
     func checkout(commit id: String) {
-        guard let previous = headPosition else { return }
+        guard let shown = headPosition else { return }
         let label = "Checkout \(short(id))"
         perform(.switching(short(id)), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let previous = now.map { HeadPosition(branch: $0.branch, id: $0.id) } ?? shown
             try await repository.detach(at: id)
             self?.record(.checkout(label: label, from: previous, to: .detached(id)),
                          toast: "HEAD is now at \(String(id.prefix(7))) (detached) · new commits won’t belong to a branch")
@@ -180,11 +186,15 @@ extension RepositoryModel {
     /// Cherry-picks commits onto the current branch, oldest first.
     func cherryPick(_ ids: [String]) {
         let list = ids.compactMap(commit).sorted { row($0.id) > row($1.id) }
-        guard !list.isEmpty, let before = status.headID else { return }
-        let branch = status.branch
-        let onto = branch ?? "HEAD"
+        guard !list.isEmpty, let shownHead = status.headID else { return }
+        let shownBranch = status.branch
         let label = list.count == 1 ? "Cherry-pick \(list[0].shortID)" : "Cherry-pick \(list.count) Commits"
         perform(.working("Cherry-picking \(list.count == 1 ? list[0].shortID : "\(list.count) commits")…"), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
+            let onto = branch ?? "HEAD"
             // git won't pick with staged changes: they're put aside in the stash list and come back.
             let result = try await repository.withChangesStashed(message: "Before \(label)") {
                 try await repository.cherryPick(list)
@@ -204,10 +214,14 @@ extension RepositoryModel {
     /// Reverts commits on the current branch, newest first, one new commit each.
     func revert(_ ids: [String]) {
         let list = ids.compactMap(commit).sorted { row($0.id) < row($1.id) }
-        guard !list.isEmpty, let before = status.headID else { return }
-        let branch = status.branch
+        guard !list.isEmpty, let shownHead = status.headID else { return }
+        let shownBranch = status.branch
         let label = list.count == 1 ? "Revert \(list[0].shortID)" : "Revert \(list.count) Commits"
         perform(.working("Reverting \(list.count == 1 ? list[0].shortID : "\(list.count) commits")…"), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
             let result = try await repository.withChangesStashed(message: "Before \(label)") {
                 try await repository.revert(list)
             }
@@ -279,11 +293,15 @@ extension RepositoryModel {
     /// Merges `revision` (a branch, remote branch or commit) into the current branch;
     /// `noFastForward` always makes a merge commit.
     func merge(_ revision: String, noFastForward: Bool = false) {
-        guard let before = status.headID else { return }
-        let branch = status.branch
-        let into = branch ?? "HEAD"
+        guard let shownHead = status.headID else { return }
+        let shownBranch = status.branch
         let label = "Merge \(revision)"
-        perform(.working("Merging \(revision) into \(into)…"), trigger: label) { [weak self] repository in
+        perform(.working("Merging \(revision) into \(shownBranch ?? "HEAD")…"), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
+            let into = branch ?? "HEAD"
             // Like a cherry-pick: uncommitted changes go aside and come back staged as they were
             // (git's own --autostash brings them back unstaged).
             let result = try await repository.withChangesStashed(message: "Before \(label)") {
@@ -306,9 +324,15 @@ extension RepositoryModel {
 
     /// Replays the current branch on top of `revision`.
     func rebase(onto revision: String) {
-        guard let before = status.headID, let branch = status.branch else { return }
+        guard let shownHead = status.headID, let shownBranch = status.branch else { return }
         let label = "Rebase onto \(revision)"
-        perform(.working("Rebasing \(branch) onto \(revision)…"), trigger: label) { [weak self] repository in
+        perform(.working("Rebasing \(shownBranch) onto \(revision)…"), trigger: label) { [weak self] repository in
+            // HEAD as git has it now, not as the status showed it (see `headNow`).
+            let now = await Self.headNow(in: repository)
+            let before = now?.id ?? shownHead
+            let branch = now.map { $0.branch } ?? shownBranch
+            // A HEAD detached since is rebased as git would; the texts call it HEAD.
+            let name = branch ?? "HEAD"
             var replayed = 0
             if let base = await repository.mergeBase(before, revision) {
                 replayed = await repository.countCommits(from: base, to: before)
@@ -322,11 +346,11 @@ extension RepositoryModel {
                 return
             }
             guard after != before else {
-                self.showToast("\(branch) is already on top of \(revision)")
+                self.showToast("\(name) is already on top of \(revision)")
                 return
             }
             self.recordMove(label: label, branch: branch, from: before, to: after, kept: result.kept,
-                            toast: "Rebased \(branch) onto \(revision) · \(Formatters.count(replayed, "commit", "commits")) replayed")
+                            toast: "Rebased \(name) onto \(revision) · \(Formatters.count(replayed, "commit", "commits")) replayed")
         }
     }
 
@@ -335,8 +359,11 @@ extension RepositoryModel {
         guard let ref = refs.localBranch(named: name), name != status.branch else { return }
         let merged = isOnCurrentBranch(ref.target)
         perform(.working("Deleting \(name)…"), trigger: "Delete \(name)") { [weak self] repository in
+            // The tip as git has it now: ⌘Z makes the branch again there, with any commit made on it
+            // since the refs were read (git deletes a branch's reflog with it, so nothing else has them).
+            let tip = await repository.resolve("refs/heads/\(name)") ?? ref.target
             try await repository.deleteBranch(name, force: true)
-            self?.record(.deletedBranch(name: name, tip: ref.target, upstream: ref.upstream),
+            self?.record(.deletedBranch(name: name, tip: tip, upstream: ref.upstream),
                          toast: "Deleted \(name)" + (merged ? "" : " (it wasn’t merged)") + " · ⌘Z brings it back")
         }
     }
