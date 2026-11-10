@@ -159,10 +159,13 @@ extension GitRepository {
 
     /// The branch HEAD is on, or `nil` when it's detached (`git symbolic-ref`).
     public func currentBranchName() async -> String? {
-        guard let output = try? await git(["symbolic-ref", "--quiet", "--short", "HEAD"], accepted: [0, 1]),
+        // The whole ref, not `--short`: git shortens to "heads/x" when a tag is also called x,
+        // and the branch is x (as `git status` says).
+        guard let output = try? await git(["symbolic-ref", "--quiet", "HEAD"], accepted: [0, 1]),
               output.status == 0 else { return nil }
-        let name = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+        let ref = output.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ref.hasPrefix("refs/heads/"), ref.count > "refs/heads/".count else { return nil }
+        return String(ref.dropFirst("refs/heads/".count))
     }
 }
 
