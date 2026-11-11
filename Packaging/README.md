@@ -69,8 +69,10 @@ updater, and they show no Check for Updates… item.
    - Delete the exported `.p12` and the key file once they're in.
 7. **A dry run:** Actions › Release › Run workflow. It builds and packages on a GitHub Mac, signed ad hoc and with no
    secrets, and keeps the DMG as the run's artifact for a week.
-   - It runs on GitHub's `xcode-27` image, the Xcode the project is built with. If GitHub renames it, change `runs-on`
-     in the workflow.
+   - It runs on GitHub's `xcode-27` image: macOS 27 with Xcode 27, a public preview. There's no `macos-27` label yet,
+     and the `macos-26` image has only Xcode 26.
+   - The workflow pins Xcode 27.1 (`DEVELOPER_DIR`), the Xcode the project is built with on your Mac. When you update
+     Xcode, update it there too. When GitHub releases a `macos-27` image, change `runs-on`.
    - The release commits the appcast to `main`. If `main` gets branch protection, let GitHub Actions push to it.
 
 ## Each release
