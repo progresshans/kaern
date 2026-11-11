@@ -21,10 +21,11 @@ updater, and they show no Check for Updates… item.
 
 1. **Signing:** a "Developer ID Application" certificate in your login keychain. You have one; `security
    find-identity -v -p codesigning` lists it. The script picks it up, or set `KAERN_SIGN_IDENTITY`.
-2. **Notarization:** a notarytool keychain profile. It isn't tied to an app, so PowerLens's profile works too: set
-   `KAERN_NOTARY_PROFILE="powerlens-notary"` in `.env`. Or make one:
+2. **Notarization:** a notarytool keychain profile, `progresshans-notary` (another name: `KAERN_NOTARY_PROFILE` in
+   `.env`). It holds your Apple ID's credentials, not an app's, so one profile serves every app you notarize. Make
+   it once:
    ```
-   xcrun notarytool store-credentials kaern-notary --apple-id <Apple ID> --team-id <team ID>
+   xcrun notarytool store-credentials progresshans-notary --apple-id <Apple ID> --team-id <team ID>
    ```
    It asks for an app-specific password made at account.apple.com.
 3. **The update key:** run `script/release.sh keys`.
@@ -33,15 +34,21 @@ updater, and they show no Check for Updates… item.
    - It writes the public half into `Packaging/Info.plist`. Commit that.
    - Back up the private key (`… generate_keys --account kaern -x <file>`, the command is printed). Losing it means
      existing installs can't take updates anymore.
-4. **The repository:** create `github.com/progresshans/kaern` and push `main`. Then turn on GitHub Pages from
-   `main` / `docs`, so `https://progresshans.github.io/kaern/appcast.xml` serves `docs/appcast.xml`.
+4. **The repository:** create `github.com/progresshans/kaern` and push `main`.
+5. **GitHub Pages:** in the repository's Settings › Pages, set Source to "Deploy from a branch", the branch to
+   `main` and the folder to `/docs`. GitHub then serves the `docs/` folder as a website, so `docs/appcast.xml` is at
+   `https://progresshans.github.io/kaern/appcast.xml`, Kaern's `SUFeedURL`.
+   - Pages serves a branch's root or its `docs/`; `docs/` keeps the site to the appcast.
+   - Until the first release, the appcast offers no version.
    - For another place, change `SUFeedURL` and `KaernSourceURL` in `Packaging/Info.plist` and
      `KAERN_GITHUB_REPOSITORY` in `.env`.
 
 ## Each release
 
-1. Raise `MARKETING_VERSION` (e.g. 1.1) and `CURRENT_PROJECT_VERSION` (1, 2, 3…; Sparkle compares this one) in the
-   project, and commit.
+1. Raise the version in the project, and commit:
+   - `MARKETING_VERSION`, the version people see: three numbers, as in 1.0.1 for fixes and 1.1.0 for new features.
+   - `CURRENT_PROJECT_VERSION`, the build number: one more each release (2, 3, 4…). Sparkle compares this one, so a
+     release whose build number isn't higher isn't offered as an update.
 2. Optional: write release notes in `release/notes/<version>.md`. The appcast shows them in the update window.
 3. Run `script/release.sh`. It takes a few minutes, most of it waiting for Apple, and leaves in `release/<version>/`:
    - `Kaern-<version>.dmg` and `Kaern-<version>.zip`;
@@ -63,10 +70,12 @@ made that way warns on other Macs.
 It stops, saying why, when:
 - the working tree has changes;
 - `SUPublicEDKey` is empty;
-- the version is tagged already;
+- the version isn't three numbers, or it's tagged already;
+- the build number isn't higher than the newest in the appcast;
 - there's no Developer ID identity;
 - the archive or the export fails;
 - the app isn't signed with the hardened runtime, a secure timestamp and a Developer ID;
-- the app's version or public key isn't the project's.
+- the app's version or public key isn't the project's;
+- the new appcast entry isn't signed: the update key in your keychain isn't the one in `Packaging/Info.plist`.
 
 After notarizing, it staples the app and the DMG, and checks the app with `spctl`.

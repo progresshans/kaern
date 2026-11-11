@@ -25,7 +25,7 @@ APP_NAME="Kaern"
 DERIVED="$ROOT/release/DerivedData"
 INFO_PLIST="$ROOT/Packaging/Info.plist"
 REPOSITORY="${KAERN_GITHUB_REPOSITORY:-progresshans/kaern}"
-NOTARY_PROFILE="${KAERN_NOTARY_PROFILE:-kaern-notary}"
+NOTARY_PROFILE="${KAERN_NOTARY_PROFILE:-progresshans-notary}"
 KEY_ACCOUNT="${KAERN_SPARKLE_KEY_ACCOUNT:-kaern}"
 SIGN_IDENTITY="${KAERN_SIGN_IDENTITY:-}"
 
@@ -48,6 +48,20 @@ build_setting() {
 }
 
 plist_value() { /usr/libexec/PlistBuddy -c "Print :$1" "$2" 2>/dev/null || true; }
+
+# The highest build number (sparkle:version) an appcast offers; nothing when it offers none.
+published_build() {
+  [[ -f "$1" ]] || return 0
+  grep -oE 'sparkle:version(>|=")[0-9]+' "$1" | grep -oE '[0-9]+$' | sort -n | tail -1 || true
+}
+
+# Whether an appcast's entry for an archive carries its EdDSA signature. generate_appcast leaves it out, with only
+# a warning, when the app's SUPublicEDKey isn't the signing key's; Sparkle refuses such an update when installing.
+signed_in_appcast() {
+  local entry
+  entry="$(grep -F "/$2\"" "$1" || true)"
+  [[ "$entry" == *'sparkle:edSignature="'* ]]
+}
 
 keys() {
   local tool public
@@ -81,8 +95,18 @@ release() {
     [[ "$skip_notarization" == 1 ]] || fail "Packaging/Info.plist has no SUPublicEDKey: run script/release.sh keys first"
     printf 'release: a try without SUPublicEDKey (that app won\x27t take updates)\n'
   fi
-  if [[ "$skip_notarization" == 0 ]] && git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
-    fail "v$version is tagged already: raise MARKETING_VERSION (and CURRENT_PROJECT_VERSION) first"
+  if [[ "$skip_notarization" == 0 ]]; then
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "MARKETING_VERSION is $version: use three numbers, as in 1.0.1"
+    [[ "$build" =~ ^[0-9]+$ ]] || fail "CURRENT_PROJECT_VERSION is $build: use a whole number"
+    if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+      fail "v$version is tagged already: raise MARKETING_VERSION (and CURRENT_PROJECT_VERSION) first"
+    fi
+    # Sparkle offers an update only when its build number (CFBundleVersion) is higher than the installed one's.
+    local published
+    published="$(published_build docs/appcast.xml)"
+    if [[ -n "$published" ]] && (( build <= published )); then
+      fail "build $build isn't higher than the newest in docs/appcast.xml ($published): raise CURRENT_PROJECT_VERSION"
+    fi
   fi
 
   if [[ -z "$SIGN_IDENTITY" ]]; then
@@ -181,6 +205,9 @@ PLIST
     if [[ -f "$notes" ]]; then cp "$notes" "$work/$APP_NAME-$version.md"; else notes=""; fi
     "$(sparkle_tool generate_appcast)" --account "$KEY_ACCOUNT" --embed-release-notes \
       --download-url-prefix "https://github.com/$REPOSITORY/releases/download/v$version/" "$work"
+    signed_in_appcast "$work/appcast.xml" "$(basename "$zip")" \
+      || fail "the appcast's entry for $version isn't signed: is the key in your keychain (account \"$KEY_ACCOUNT\") the one in Packaging/Info.plist?"
+    [[ "$(published_build "$work/appcast.xml")" == "$build" ]] || fail "the appcast doesn't offer build $build"
     mkdir -p docs
     cp "$work/appcast.xml" docs/appcast.xml
   else
