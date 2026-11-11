@@ -1,0 +1,203 @@
+# Kaern's releases. Pushing a version tag (v1.0.1) builds the app on a GitHub Mac, signs it with the Developer ID,
+# notarizes it, publishes the DMG and the ZIP as a GitHub release, then commits the appcast that offers it as an update
+# (docs/appcast.xml, served by GitHub Pages) to main.
+#
+# Run by hand (Actions › Release › Run workflow), it's a dry run: the same build signed ad hoc, with no secrets and
+# nothing published; the DMG is kept as the run's artifact.
+#
+# The setup (the release environment and its secrets) is in Packaging/README.md.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Dry run (signed ad hoc, nothing published)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and package
+        run: |
+          xcodebuild -version
+          ./script/release.sh --unsigned
+
+      - name: Keep the DMG
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dry-run
+          path: release/*/Kaern-*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build, sign and notarize
+    if: github.event_name == 'push'
+    runs-on: xcode-27
+    timeout-minutes: 90
+    # The secrets are this environment's: limit it to v* tags (and add yourself as a reviewer) in the settings.
+    environment: release
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME isn't on main: only commits on main are released"
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          # The appcast as published (main's): the build number must be higher, and the release is added to it.
+          published="$RUNNER_TEMP/published-appcast.xml"
+          git show origin/main:docs/appcast.xml > "$published" 2>/dev/null || rm -f "$published"
+          echo "KAERN_PUBLISHED_APPCAST=$published" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      - name: Put the Developer ID certificate in a keychain of this run
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/kaern-release.keychain-db"
+          password="$(openssl rand -base64 24)"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          trap 'rm -f "$p12"' EXIT
+          printf '%s' "$P12_BASE64" | base64 --decode > "$p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          echo "KAERN_NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Store the notarization key
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/notary.p8"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$NOTARY_KEY" > "$key"
+          xcrun notarytool store-credentials progresshans-notary --keychain "$KAERN_NOTARY_KEYCHAIN" \
+            --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+
+      - name: Build, sign, notarize and package
+        env:
+          KAERN_RELEASE_TAG: ${{ github.ref_name }}
+          KAERN_NOTARY_PROFILE: progresshans-notary
+        run: ./script/release.sh
+
+      - name: Add the release to the appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/sparkle.key"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$key"
+          KAERN_SPARKLE_KEY_FILE="$key" ./script/release.sh appcast
+
+      - name: Keep the release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            release/${{ steps.tag.outputs.version }}/Kaern-${{ steps.tag.outputs.version }}.dmg
+            release/${{ steps.tag.outputs.version }}/Kaern-${{ steps.tag.outputs.version }}.zip
+            release/${{ steps.tag.outputs.version }}/SHA256SUMS
+            release/${{ steps.tag.outputs.version }}/notes.md
+            release/${{ steps.tag.outputs.version }}/appcast.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove the keychain
+        if: always()
+        run: |
+          if [[ -n "${KAERN_NOTARY_KEYCHAIN:-}" ]]; then security delete-keychain "$KAERN_NOTARY_KEYCHAIN" || true; fi
+
+  publish:
+    name: Publish the release and the appcast
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pages: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Get the release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+
+      # First the files, then the appcast that points at them. Both steps can run again after a failure.
+      - name: Publish the GitHub release
+        run: |
+          set -euo pipefail
+          files=("$RUNNER_TEMP/release/Kaern-$VERSION.dmg" "$RUNNER_TEMP/release/Kaern-$VERSION.zip" "$RUNNER_TEMP/release/SHA256SUMS")
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --title "Kaern $VERSION" \
+              --notes-file "$RUNNER_TEMP/release/notes.md"
+          fi
+
+      - name: Publish the appcast
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/release/appcast.xml" docs/appcast.xml
+          if git diff --quiet -- docs/appcast.xml; then
+            echo "The appcast on main already offers $VERSION."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Offer $VERSION as an update" -- docs/appcast.xml
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git pull --rebase origin main
+          done
+          echo "::error::Couldn't push the appcast to main"
+          exit 1
+
+      - name: Ask GitHub Pages to serve it
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null \
+            || echo "::warning::GitHub Pages took no build request: check Settings › Pages (Deploy from a branch, main, /docs)"
