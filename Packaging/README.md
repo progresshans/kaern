@@ -22,12 +22,18 @@ updater, and they show no Check for Updates… item.
 1. **Signing:** a "Developer ID Application" certificate in your login keychain. You have one; `security
    find-identity -v -p codesigning` lists it. The script picks it up, or set `KAERN_SIGN_IDENTITY`.
 2. **Notarization:** a notarytool keychain profile, `progresshans-notary` (another name: `KAERN_NOTARY_PROFILE` in
-   `.env`). It holds your Apple ID's credentials, not an app's, so one profile serves every app you notarize. Make
-   it once:
+   `.env`). It holds your account's credentials, not an app's, so one profile serves every app you notarize. Make it
+   once with an App Store Connect API key:
    ```
-   xcrun notarytool store-credentials progresshans-notary --apple-id <Apple ID> --team-id <team ID>
+   xcrun notarytool store-credentials progresshans-notary --key <AuthKey_….p8> --key-id <key ID> --issuer <issuer ID>
    ```
-   It asks for an app-specific password made at account.apple.com.
+   - The key is a team key with the Developer role, made in App Store Connect › Users and Access › Integrations ›
+     App Store Connect API (the Account Holder requests API access once). The issuer ID is above the list of team
+     keys; the key ID is in the `.p8` file's name.
+   - Once stored, notarytool reads the key from the keychain, not the `.p8` file. Keep the file somewhere safe for
+     the other places that need it.
+   - Unlike an app-specific password, the key reaches no iCloud data and keeps working when your Apple ID password
+     changes. A password works too: `--apple-id <Apple ID> --team-id <team ID>`, and it asks for the password.
 3. **The update key:** run `script/release.sh keys`.
    - The first time, it makes the EdDSA key in your login keychain (account `kaern`, separate from PowerLens's).
      macOS may ask you to allow that.
