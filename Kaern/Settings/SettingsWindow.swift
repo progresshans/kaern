@@ -205,7 +205,7 @@ private struct GeneralPane: View {
                      : "Last time’s \(switching == .tabs ? "tabs wait" : "repositories wait") behind the Reopen button of the welcome window.")
             }
             SettingsRow(label: "Switch repositories:") {
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
                     ForEach(RepositorySwitching.allCases, id: \.self) { mode in
                         SwitchingModeButton(mode: mode, isOn: switching == mode)
                             .onTapGesture { switching = mode }
@@ -314,13 +314,13 @@ private struct SwitchingModeButton: View {
             Text(title)
                 .font(KFont.weighted(11.5, isOn ? 0.4 : 0.23))
                 .foregroundStyle(isOn ? K.accentText : K.label)
-            if mode == .tabs {
-                Text("DEFAULT")
-                    .font(KFont.weighted(9.5, 0.4))
-                    .tracking(0.3)
-                    .foregroundStyle(K.label3)
-                    .padding(.top, -3)
-            }
+            // Every option keeps this line, so the three are the same height and line up; only Tabs shows it.
+            Text("DEFAULT")
+                .font(KFont.weighted(9.5, 0.4))
+                .tracking(0.3)
+                .foregroundStyle(K.label3)
+                .padding(.top, -3)
+                .opacity(mode == .tabs ? 1 : 0)
         }
         .frame(width: 86)
         .padding(EdgeInsets(top: 6, leading: 4, bottom: 5, trailing: 4))

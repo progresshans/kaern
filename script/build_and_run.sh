@@ -36,7 +36,7 @@ xcodebuild \
   -project "$ROOT_DIR/Kaern.xcodeproj" \
   -scheme "$APP_NAME" \
   -configuration Debug \
-  -destination "platform=macOS" \
+  -destination "platform=macOS,arch=arm64" \
   -derivedDataPath "$DERIVED_DATA" \
   -quiet \
   build
