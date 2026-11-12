@@ -186,6 +186,7 @@ jobs:
               exit 1
             fi
             # The first release: the branch starts with the appcast alone.
+            echo "There's no gh-pages branch yet: starting it."
             git switch -q --orphan gh-pages
           fi
           cp "$appcast" appcast.xml

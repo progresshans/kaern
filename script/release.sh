@@ -207,14 +207,45 @@ safe, and delete the file. Losing the key means installed copies can't take upda
 DONE
 }
 
-# The DMG to download: the app and a link to Applications.
+# The DMG's window, as Finder's WindowBounds: x and y of its bottom-left corner (y up from the bottom of the screen),
+# then its width and its height with the 32 pt title bar: the content is 640 x 400, the size of the background in
+# Packaging/DMG. Then where the two icons' centers are in it. script/make_dmg_background.swift draws to match.
+DMG_WINDOW="200,360,640,432"
+DMG_APP="180,170"
+DMG_APPLICATIONS="460,170"
+
+# The DMG to download: Kaern and a link to Applications in a window with the background of Packaging/DMG, and Kaern's
+# icon on the disk. script/dmg_layout.swift writes the window's layout (its .DS_Store) itself, so no Finder is needed:
+# a headless GitHub Mac makes the same DMG.
 make_dmg() {
-  local app="$1" dmg="$2" stage="$3"
-  mkdir -p "$stage"
+  local app="$1" dmg="$2" work
+  # In a temporary folder: the layout records where the image was mounted, and that goes out with the DMG.
+  work="$(mktemp -d "${TMPDIR:-/tmp}/kaern-dmg.XXXXXX")"
+  local stage="$work/stage" image="$work/image.dmg" mount="$work/$APP_NAME"
+  mkdir -p "$stage/.background" "$mount"
   ditto "$app" "$stage/$APP_NAME.app"
   ln -s /Applications "$stage/Applications"
-  hdiutil create -volname "$APP_NAME" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg" >/dev/null
-  rm -rf "$stage"
+  tiffutil -cathidpicheck "$ROOT/Packaging/DMG/background.png" "$ROOT/Packaging/DMG/background@2x.png" \
+    -out "$stage/.background/background.tiff"
+  cp "$app/Contents/Resources/AppIcon.icns" "$stage/.VolumeIcon.icns"
+  # Read-write first, with room for the layout written once it's mounted.
+  local size=$(( $(du -sm "$stage" | cut -f1) + 20 ))
+  hdiutil create -volname "$APP_NAME" -srcfolder "$stage" -fs HFS+ -format UDRW -size "${size}m" -ov "$image" >/dev/null
+  diskutil image attach --nobrowse --mountPoint "$mount" "$image" >/dev/null
+  # Whatever fails here, the image is detached before the script stops.
+  local laid_out=false
+  # The disk's icon is .VolumeIcon.icns with the custom-icon flag (kHasCustomIcon) in its root's Finder info.
+  if swift "$ROOT/script/dmg_layout.swift" --volume "$mount" --background .background/background.tiff \
+       --window "$DMG_WINDOW" --icon-size 128 --text-size 13 \
+       --item "$APP_NAME.app=$DMG_APP" --item "Applications=$DMG_APPLICATIONS" \
+     && xattr -wx com.apple.FinderInfo 0000000000000000040000000000000000000000000000000000000000000000 "$mount"; then
+    laid_out=true
+  fi
+  rm -rf "$mount/.fseventsd" "$mount/.Trashes" 2>/dev/null || true
+  hdiutil detach "$mount" -quiet || hdiutil detach "$mount" -force -quiet
+  [[ "$laid_out" == true ]] || fail "the DMG's window couldn't be laid out (script/dmg_layout.swift)"
+  hdiutil convert "$image" -format UDZO -imagekey zlib-level=9 -ov -o "$dmg" >/dev/null
+  rm -rf "$work"
 }
 
 # A release build. mode: release (Developer ID, notarized), try (Developer ID, not notarized), unsigned (ad hoc).
@@ -337,7 +368,7 @@ PLIST
   say "Packaging"
   # For Sparkle: the app (stapled) in a ZIP.
   ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
-  make_dmg "$app" "$dmg" "$out/dmg"
+  make_dmg "$app" "$dmg"
   if [[ "$mode" != unsigned ]]; then
     codesign --force --timestamp --sign "$SIGN_IDENTITY" "$dmg"
     codesign --verify --verbose=2 "$dmg"

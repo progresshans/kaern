@@ -22,6 +22,7 @@ There are two kinds of versions:
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, the notes, and tries on your Mac. |
 | `CHANGELOG.md` | Each version's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
+| `Packaging/DMG/` | The background of the DMG's window, at 1x and 2x (`script/make_dmg_background.swift` draws it). |
 | `gh-pages` branch | The appcast, served by GitHub Pages at `https://progresshans.github.io/kaern/appcast.xml`. Only the release workflow commits to it. |
 | `.env` (from `.env.example`) | Your settings for tries on your Mac. |
 
@@ -128,6 +129,19 @@ while the release was being built, publishing stops: run the whole workflow agai
 **To take a version back** from the appcast, revert the commit on `gh-pages` that offered it (or edit `appcast.xml`
 there in GitHub's editor). Pages serves the change in a few minutes, and copies stop being offered that version. Copies
 that installed it keep it until a newer one comes.
+
+## The DMG
+
+Opening the DMG shows a window with Kaern and a link to Applications. Stones from Kaern's icon lead from one to the
+other, the last one blue, above "Drag Kaern to Applications". The disk itself shows Kaern's icon.
+- The background (`Packaging/DMG/background.png` and `background@2x.png`) is light in both appearances. Over a
+  background picture, Finder draws the icons' labels in black even in Dark Mode, and a picture's clear parts in white.
+  After changing the design, run `swift script/make_dmg_background.swift` and commit the pictures.
+- `script/dmg_layout.swift` writes the window's layout (its `.DS_Store`: size, icon size, where the icons are, the
+  background) into the mounted image itself, without Finder, so a headless GitHub Mac makes the same DMG.
+  `DMG_WINDOW`, `DMG_APP` and `DMG_APPLICATIONS` in `script/release.sh` set the window and where the icons go; the
+  background is drawn for them. The window is 432 pt tall: the 400 pt picture and the 32 pt title bar.
+- The image is made in a temporary folder: the layout records where it was mounted, and that ships with the DMG.
 
 ## On your Mac
 
