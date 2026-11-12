@@ -96,11 +96,11 @@ struct WelcomeView: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(K.accentSoft))
     }
 
+    /// "Version 1.1.0", or "Version 1.1.0-beta.2". The build number is made from the version (script/release.sh), so it
+    /// would add only a long number here; Kaern › About Kaern still shows it.
     private var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let build = info?["CFBundleVersion"] as? String ?? "1"
-        return "Version \(version) (\(build))"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        return "Version \(version)"
     }
 
     private var reopensAtLaunch: Binding<Bool> {
