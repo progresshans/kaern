@@ -7,6 +7,7 @@ import SwiftUI
 struct WelcomeView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
+    @AppStorage(SettingsKey.onLaunch, store: .kaern) private var onLaunch = LaunchBehavior.reopen
     @State private var filter = ""
 
     var body: some View {
@@ -49,11 +50,14 @@ struct WelcomeView: View {
             }
             .padding(.top, 14)
             Spacer(minLength: 0)
-            Text(gitText)
-                .font(.system(size: 11.5))
-                .foregroundStyle(K.label2)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // The board's checkbox, as Settings › General › On launch: on, last time's repositories
+            // open by themselves; off, they wait here behind Reopen.
+            Toggle(isOn: reopensAtLaunch) {
+                Text(AppSettings.repositorySwitching == .tabs ? "Reopen last time’s tabs at launch" : "Reopen last time’s repositories at launch")
+                    .font(.system(size: 12))
+                    .foregroundStyle(K.label2)
+            }
+            .toggleStyle(.checkbox)
         }
         .padding(EdgeInsets(top: 16, leading: 26, bottom: 18, trailing: 26))
     }
@@ -99,9 +103,8 @@ struct WelcomeView: View {
         return "Version \(version) (\(build))"
     }
 
-    private var gitText: String {
-        guard let git = app.git else { return "Looking for git…" }
-        return "git \(git.version ?? "") · \(Formatters.abbreviatedPath(git.url.path(percentEncoded: false)))"
+    private var reopensAtLaunch: Binding<Bool> {
+        Binding(get: { onLaunch == .reopen }, set: { onLaunch = $0 ? .reopen : .welcome })
     }
 
     // MARK: Recent
