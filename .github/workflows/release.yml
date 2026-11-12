@@ -2,8 +2,7 @@
 # notarizes it, publishes the DMG and the ZIP as a GitHub release, then commits the appcast that offers it as an update
 # (docs/appcast.xml, served by GitHub Pages) to main.
 #
-# Run by hand (Actions › Release › Run workflow), it's a dry run: the same build signed ad hoc, with no secrets and
-# nothing published; the DMG is kept as the run's artifact.
+# The same build, signed ad hoc and with no secrets, runs on each push to main (ci.yml).
 #
 # The setup (the release environment and its secrets) is in Packaging/README.md.
 name: Release
@@ -12,50 +11,19 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-  workflow_dispatch:
 
 permissions:
   contents: read
-
-# The Macs: GitHub's xcode-27 image, macOS 27 with Xcode 27 (a public preview; there's no macos-27 label yet, and the
-# macos-26 image has only Xcode 26). Xcode 27.1 is pinned, the one the project is built with on the developer's Mac,
-# so a new default on the image doesn't change the build. Update it with the developer's Xcode, and runs-on when
-# GitHub releases a macos-27 image.
-env:
-  DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  dry-run:
-    name: Dry run (signed ad hoc, nothing published)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: xcode-27
-    timeout-minutes: 60
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Build and package
-        run: |
-          xcodebuild -version
-          ./script/release.sh --unsigned
-
-      - name: Keep the DMG
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: dry-run
-          path: release/*/Kaern-*.dmg
-          if-no-files-found: error
-          retention-days: 7
-
   build:
     name: Build, sign and notarize
-    if: github.event_name == 'push'
+    # GitHub's macOS 27 image with its default Xcode 27, as in ci.yml. It's a public preview, named xcode-27 until
+    # GitHub releases a macos-27 label; then change runs-on in both.
     runs-on: xcode-27
     timeout-minutes: 90
     # The secrets are this environment's: limit it to v* tags (and add yourself as a reviewer) in the settings.

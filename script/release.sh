@@ -193,6 +193,10 @@ PLIST
   [[ "$(plist_value CFBundleShortVersionString "$app/Contents/Info.plist")" == "$version" ]] || fail "the app's version isn't $version"
   [[ "$(plist_value CFBundleVersion "$app/Contents/Info.plist")" == "$build" ]] || fail "the app's build number isn't $build"
   [[ "$(plist_value SUPublicEDKey "$app/Contents/Info.plist")" == "$public_key" ]] || fail "the app's SUPublicEDKey isn't the one in Packaging/Info.plist"
+  # Apple silicon only (ARCHS in the project). Sparkle's framework stays universal, as it comes.
+  local archs
+  archs="$(lipo -archs "$app/Contents/MacOS/$APP_NAME")"
+  [[ "$archs" == arm64 ]] || fail "the app is built for $archs: Kaern is built for Apple silicon (arm64) only"
   if [[ "$mode" != unsigned ]]; then
     local details
     details="$(codesign -dv --verbose=4 "$app" 2>&1)"

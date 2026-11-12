@@ -1,0 +1,66 @@
+# Kaern's checks, on each pull request and each push to main:
+# - the KaernKit tests, and a Debug build of the app (with the debug driver the flow checks use);
+# - the release build as a version tag makes it (script/release.sh), but signed ad hoc and not notarized, so it needs
+#   no secrets.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request or branch replaces the checks still running.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and build
+    # GitHub's macOS 27 image with its default Xcode 27, as in release.yml. It's a public preview, named xcode-27 until
+    # GitHub releases a macos-27 label; then change runs-on in both.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show the Mac and its tools
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+
+      - name: Test KaernKit
+        run: swift test --package-path Packages/KaernKit
+
+      - name: Build the app (Debug)
+        run: |
+          xcodebuild build -project Kaern.xcodeproj -scheme Kaern -configuration Debug \
+            -destination "platform=macOS,arch=arm64" -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO -quiet
+
+  release-build:
+    name: Release build (signed ad hoc)
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the scripts and Info.plist
+        run: |
+          for script in script/*.sh; do bash -n "$script"; done
+          plutil -lint Packaging/Info.plist
+
+      - name: Build and package
+        run: ./script/release.sh --unsigned

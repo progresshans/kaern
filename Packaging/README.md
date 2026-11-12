@@ -4,13 +4,16 @@ Kaern is distributed outside the Mac App Store. Each release has two files:
 - a DMG to download;
 - a ZIP that Sparkle installs as an update.
 
+Releases run on Apple silicon Macs (arm64 only) with macOS 26 or later.
+
 The app in both is signed with a Developer ID and notarized by Apple. GitHub Actions makes the releases: pushing a
 version tag (`v1.0.1`) builds the release on a GitHub Mac and publishes it as a GitHub release. It then adds the release
 to the appcast (`docs/appcast.xml`, served by GitHub Pages), which Kaern reads to find updates.
 
 | Where | What |
 |---|---|
-| `.github/workflows/release.yml` | On a `v` tag: build, sign and notarize → GitHub release → appcast on `main`. Run by hand: a dry run that builds without signing. |
+| `.github/workflows/release.yml` | On a `v` tag: build, sign and notarize → GitHub release → appcast on `main`. |
+| `.github/workflows/ci.yml` | On each pull request and each push to `main`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, and tries on your Mac. |
 | `Packaging/ReleaseNotes/<version>.md` | Each release's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
@@ -67,12 +70,11 @@ updater, and they show no Check for Updates… item.
      | `SPARKLE_PRIVATE_KEY` | The update key's private half, from step 3. |
 
    - Delete the exported `.p12` and the key file once they're in.
-7. **A dry run:** Actions › Release › Run workflow. It builds and packages on a GitHub Mac, signed ad hoc and with no
-   secrets, and keeps the DMG as the run's artifact for a week.
-   - It runs on GitHub's `xcode-27` image: macOS 27 with Xcode 27, a public preview. There's no `macos-27` label yet,
-     and the `macos-26` image has only Xcode 26.
-   - The workflow pins Xcode 27.1 (`DEVELOPER_DIR`), the Xcode the project is built with on your Mac. When you update
-     Xcode, update it there too. When GitHub releases a `macos-27` image, change `runs-on`.
+7. **A build on GitHub:** after pushing `main`, check Actions › CI. Besides the KaernKit tests and a Debug build, it
+   makes the release build as a tag would, signed ad hoc and with no secrets, on the same kind of GitHub Mac.
+   - Both workflows run on GitHub's `xcode-27` image: macOS 27 with its default Xcode 27. It's a public preview and,
+     for now, the only macOS 27 image. When GitHub releases a `macos-27` label, change `runs-on` in both.
+   - Mac runners are free for public repositories; a private one spends its Actions minutes at ten times the rate.
    - The release commits the appcast to `main`. If `main` gets branch protection, let GitHub Actions push to it.
 
 ## Each release
@@ -102,7 +104,7 @@ gets its files replaced, and an appcast already on `main` isn't committed twice.
 ## On your Mac
 
 `script/release.sh` makes the same build here and publishes nothing:
-- `script/release.sh --unsigned`: signed ad hoc, with no certificate (what the dry run does).
+- `script/release.sh --unsigned`: signed ad hoc, with no certificate (what CI does).
 - `script/release.sh --skip-notarization`: signed with your Developer ID, not sent to Apple. A DMG made this way warns
   on other Macs.
 - `script/release.sh`: signed and notarized with your profile, as GitHub Actions does it. It needs what a release
@@ -123,7 +125,8 @@ For every build, it stops when:
 - there's no Developer ID identity (except `--unsigned`);
 - the archive or the export fails;
 - the app isn't signed with the hardened runtime, a secure timestamp and a Developer ID (except `--unsigned`);
-- the app's version, build number or public key isn't the project's.
+- the app's version, build number or public key isn't the project's;
+- the app isn't built for Apple silicon only (`arm64`). Sparkle's framework stays universal, as it comes.
 
 After notarizing, it staples the app and the DMG, and checks the app with `spctl`. The appcast step stops when the new
 entry isn't signed, which means the update key isn't the one whose public half is in the app.
