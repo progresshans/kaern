@@ -19,6 +19,8 @@ final class AppModel {
     private(set) var recent: [Session.RecentRepository] = []
     /// The window whose menu commands apply (the key window, or the last one that was).
     private(set) var activeWindow: MainWindowController?
+    /// The start window, while it's open (`showWelcome`).
+    private(set) var welcome: WelcomeWindowController?
     /// Settings › Advanced › Use the SSH agent as this launch started git (changes apply next launch).
     private(set) var launchUsesSSHAgent = true
 
@@ -38,29 +40,30 @@ final class AppModel {
 
     // MARK: Launch and quit
 
-    /// Restores the last session (or opens one empty window) and locates git.
+    /// Restores the last session (or shows the start window) and locates git.
     func launch() {
-        var session = store.load()
+        let session = store.load()
         lastClosed = session.lastClosed
         recent = session.recent
 
+        // A window without tabs isn't brought back: the start window stands for no repository.
+        var states = session.windows.filter { !$0.tabs.isEmpty }
         // General › On launch: anything but "Reopen" keeps last time's front window behind the
-        // empty window's Reopen button instead of opening it.
+        // start window's Reopen button instead of opening it.
         let behavior = AppSettings.onLaunch
-        if behavior != .reopen, let front = session.windows.first(where: { !$0.tabs.isEmpty }) {
+        if behavior != .reopen, let front = states.first {
             lastClosed = Session.ClosedWindow(window: front, date: .now)
-            session.windows = []
+            states = []
         }
 
         // Back to front, so the first saved window ends up in front and key.
-        if behavior != .nothing || !session.windows.isEmpty {
-            let states = session.windows.isEmpty ? [Session.WindowState(id: UUID())] : session.windows
-            for state in states.reversed() {
-                let model = WindowModel(state: state)
-                for tab in model.tabs { _ = repository(for: tab.path) }
-                addWindow(model)
-            }
+        for state in states.reversed() {
+            let model = WindowModel(state: state)
+            for tab in model.tabs { _ = repository(for: tab.path) }
+            addWindow(model)
         }
+        // Nothing to reopen: the start window, unless On launch is "Open nothing".
+        if windows.isEmpty, behavior != .nothing { showWelcome() }
         updateVisibility()
         // Repositories open in the session belong in the recent list too.
         for controller in windows {
@@ -160,18 +163,9 @@ final class AppModel {
         return controller
     }
 
+    /// File › New Window: the start window, where what opens next becomes the new window.
     func newWindow() {
-        _ = newWindowModel()
-    }
-
-    /// Opens an empty window in front and returns its model.
-    @discardableResult
-    func newWindowModel() -> WindowModel {
-        let model = WindowModel()
-        let controller = addWindow(model)
-        controller.window?.makeKeyAndOrderFront(nil)
-        scheduleSave()
-        return model
+        showWelcome()
     }
 
     func windowBecameKey(_ controller: MainWindowController) {
@@ -191,21 +185,83 @@ final class AppModel {
         scheduleSave()
     }
 
-    /// The Dock icon was clicked with no window open: an empty window.
+    /// The Dock icon was clicked with no window open: the start window.
     func reopen() {
-        if windows.isEmpty { newWindow() }
+        if windows.isEmpty { showWelcome() }
     }
 
-    /// Opens the last closed window's tabs in `window` (the empty state's Reopen button).
+    /// Opens the last closed window's tabs in `window` (the start window's Reopen button), where
+    /// that window was.
     func reopenLastSession(in window: WindowModel) {
         guard let closed = lastClosed else { return }
         let state = closed.window
         for tab in state.tabs { _ = repository(for: tab.path) }
+        if window.frame == nil { window.frame = state.frame }
         window.restore(from: state)
         lastClosed = nil
         startRepositories()
         updateVisibility()
         scheduleSave()
+    }
+
+    // MARK: The start window
+
+    /// Shows the start window, or brings it to the front, and returns the window model it holds:
+    /// Open, Clone, Create and Reopen fill that model, and its first tab makes it a main window.
+    @discardableResult
+    func showWelcome() -> WindowModel {
+        if let welcome {
+            welcome.window?.makeKeyAndOrderFront(nil)
+            return welcome.model
+        }
+        let model = pendingWindowModel()
+        let controller = WelcomeWindowController(model: model, app: self)
+        welcome = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        return model
+    }
+
+    /// A window model that becomes a main window when its first tab opens: the start window's, or
+    /// one that opens folders while no window is open (Finder, the Repositories window).
+    func pendingWindowModel() -> WindowModel {
+        let model = WindowModel()
+        model.onActiveTabChange = { [weak self, weak model] in
+            guard let self, let model, model.activeTab != nil else { return }
+            self.adopt(model)
+        }
+        return model
+    }
+
+    /// The first tab opened in a pending model: the model becomes a main window, in front, and the
+    /// start window that held it closes. It happens as the tab opens, so the window's repositories
+    /// are never taken for unused (`releaseUnusedRepositories`).
+    private func adopt(_ model: WindowModel) {
+        guard !windows.contains(where: { $0.model === model }) else { return }
+        let controller = addWindow(model)
+        controller.window?.makeKeyAndOrderFront(nil)
+        if let welcome, welcome.model === model {
+            self.welcome = nil
+            welcome.close()
+        }
+        scheduleSave()
+    }
+
+    func welcomeWillClose(_ controller: WelcomeWindowController) {
+        if welcome === controller { welcome = nil }
+    }
+
+    /// Where File › Open, Clone, Create and Open Recent put what they open: the start window when
+    /// it's in front (or no main window is open), else the front main window.
+    var openingWindow: WindowModel? {
+        if let welcome, welcome.window?.isKeyWindow == true || activeWindow == nil { return welcome.model }
+        return activeWindow?.model
+    }
+
+    /// The window that shows `model`: a main window, or the start window.
+    func hostWindow(for model: WindowModel) -> NSWindow? {
+        if let controller = windows.first(where: { $0.model === model }) { return controller.window }
+        return welcome?.model === model ? welcome?.window : nil
     }
 
     // MARK: Repositories
@@ -297,7 +353,7 @@ final class AppModel {
         panel.allowsMultipleSelection = true
         panel.prompt = "Open"
         panel.message = "Choose one or more repository folders to open as tabs."
-        let host = windows.first { $0.model === window }?.window
+        let host = hostWindow(for: window)
         let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             guard response == .OK else { return }
             self?.open(panel.urls, in: window)
@@ -308,6 +364,7 @@ final class AppModel {
     // MARK: Tabs
 
     func close(_ tabIDs: [UUID], in window: WindowModel) {
+        let before = window.state
         var stack = closedTabs[window.id] ?? []
         for id in tabIDs {
             guard let tab = window.tab(id) else { continue }
@@ -315,6 +372,14 @@ final class AppModel {
         }
         closedTabs[window.id] = Array(stack.suffix(30))
         window.close(tabIDs)
+        // The last tab: its window closes and, when no other window is open, the start window
+        // comes with them behind its Reopen button.
+        if window.tabs.isEmpty, let controller = windows.first(where: { $0.model === window }) {
+            lastClosed = Session.ClosedWindow(window: before, date: .now)
+            controller.window?.close()
+            if windows.isEmpty { showWelcome() }
+            return
+        }
         releaseUnusedRepositories()
         updateVisibility()
     }
@@ -385,7 +450,7 @@ final class AppModel {
         scheduleSave()
     }
 
-    /// Keeps each recent repository's folder group current (the empty window groups the list
+    /// Keeps each recent repository's folder group current (the start window groups the list
     /// by it).
     private func refreshRecentGroups() {
         for controller in windows {

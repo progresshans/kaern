@@ -60,7 +60,7 @@ nonisolated enum SettingsKey {
 enum LaunchBehavior: String, CaseIterable {
     /// The windows and tabs from last time (the default).
     case reopen
-    /// One empty window; last time's tabs wait behind its Reopen button.
+    /// The start window; last time's tabs wait behind its Reopen button.
     case welcome
     /// No window until the Dock icon is clicked or a repository is opened.
     case nothing

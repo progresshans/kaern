@@ -48,7 +48,8 @@ struct WindowRootView: View {
         } isTargeted: { isDropTarget = $0 }
     }
 
-    /// The tab row, then the repository (its toolbar first) or the welcome view.
+    /// The tab row, then the repository (its toolbar first). A window has no tab only while it
+    /// closes after its last one: the start window (WelcomeWindowController) stands for no repository.
     private var tabsLayout: some View {
         VStack(spacing: 0) {
             TabBar(window: window)
@@ -58,7 +59,7 @@ struct WindowRootView: View {
                     RepositoryScreen(window: window, repository: app.repository(for: tab.path))
                         .id(tab.path)
                 } else {
-                    EmptyStateView(window: window)
+                    K.win
                 }
                 // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
                 WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
@@ -98,7 +99,7 @@ struct WindowRootView: View {
                             RepositoryScreen(window: window, repository: app.repository(for: tab.path), showsToolbar: false, showsStatusBar: false)
                                 .id(tab.path)
                         } else {
-                            EmptyStateView(window: window)
+                            K.win
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

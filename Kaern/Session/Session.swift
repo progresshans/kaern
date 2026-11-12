@@ -10,10 +10,10 @@ struct Session: Codable, Equatable {
     var version = Session.currentVersion
     /// Open windows, front to back.
     var windows: [WindowState] = []
-    /// The last window the user closed with tabs in it, so the empty window can offer
+    /// The last window the user closed with tabs in it, so the start window can offer
     /// "Reopen N Tabs".
     var lastClosed: ClosedWindow?
-    /// Recently opened repositories, newest first (the empty window's list).
+    /// Recently opened repositories, newest first (the start window's list).
     var recent: [RecentRepository] = []
 
     struct WindowState: Codable, Equatable, Identifiable {

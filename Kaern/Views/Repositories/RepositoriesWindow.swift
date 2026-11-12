@@ -606,7 +606,8 @@ private struct AddMenuButton: View {
 
     private func inFrontWindow(_ action: @escaping (WindowModel) -> Void) {
         let controller = app.activeWindow ?? app.windows.first
-        let model = controller?.model ?? app.newWindowModel()
+        // No main window: Clone and Create show their sheets in the start window.
+        let model = controller?.model ?? app.showWelcome()
         controller?.window?.makeKeyAndOrderFront(nil)
         action(model)
     }
@@ -750,7 +751,7 @@ private struct RepositoryRowView: View {
             FailureHelp.reveal(model)
         } else if !row.isMissing {
             let controller = app.activeWindow ?? app.windows.first
-            let window = controller?.model ?? app.newWindowModel()
+            let window = controller?.model ?? app.pendingWindowModel()
             app.open([URL(filePath: row.path, directoryHint: .isDirectory)], in: window)
             controller?.window?.makeKeyAndOrderFront(nil)
         }

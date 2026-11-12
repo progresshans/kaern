@@ -121,7 +121,10 @@ final class DebugDriver {
                 app.close([tab.id], in: window)
             }
         case "open":
-            if let path = args.first, let window { app.open([URL(filePath: path, directoryHint: .isDirectory)], in: window) }
+            // Into the start window while it's open: the repository then opens a main window.
+            if let path = args.first, let target = app.welcome?.model ?? window {
+                app.open([URL(filePath: path, directoryHint: .isDirectory)], in: target)
+            }
         case "select":
             // select <commit index> | select wip
             if let tab = window?.activeTab {
@@ -171,7 +174,7 @@ final class DebugDriver {
         case "reopenClosedTab":
             if let window { app.reopenClosedTab(in: window) }
         case "reopenLastSession":
-            if let window { app.reopenLastSession(in: window) }
+            if let target = app.welcome?.model ?? window { app.reopenLastSession(in: target) }
         case "fetch", "push", "stash", "pop", "pull", "switch", "createBranch":
             guard let tab = window?.activeTab else { return }
             let repository = app.repository(for: tab.path)
@@ -948,6 +951,10 @@ final class DebugDriver {
             "gitVersion": app.git?.version ?? "",
             "windows": windows,
             "lastClosedTabs": app.lastClosed?.window.tabs.count ?? 0,
+            // The start window: open, and its sheet (clone, create) if one is up.
+            "welcome": app.welcome.map { ["open": true, "key": $0.window?.isKeyWindow ?? false,
+                                          "sheet": $0.model.sheet.map { "\($0)".components(separatedBy: "(").first ?? "" } ?? ""] as [String: Any] }
+                ?? ["open": false],
             "recent": app.recent.map(\.name),
             "phase5": phase5Dump(window),
             "phase6": phase6Dump(window),

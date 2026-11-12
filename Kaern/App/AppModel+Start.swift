@@ -260,7 +260,7 @@ extension AppModel {
             let alert = NSAlert()
             alert.messageText = failures.count == 1 ? "Couldn't open the folder" : "Couldn't open \(failures.count) folders"
             alert.informativeText = failures.joined(separator: "\n")
-            if let host = windows.first(where: { $0.model === window })?.window {
+            if let host = hostWindow(for: window) {
                 alert.beginSheetModal(for: host) { _ in }
             } else {
                 alert.runModal()

@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// A window with no tabs (first launch, or after the last tab closed). Laid out like the
-/// Welcome board: the app, the last session to reopen, actions, and recent repositories
-/// grouped by the folder group they were last in. Kaern keeps it inside the main window
-/// instead of a separate Welcome window, so the tab row (and +) stay where they are.
-struct EmptyStateView: View {
+/// The start window's content (the Welcome board, WelcomeWindowController): the app, the last
+/// session to reopen, actions, and recent repositories grouped by the folder group they were last
+/// in. What opens here goes into `window`, the model the start window holds until it becomes a
+/// main window.
+struct WelcomeView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
     @State private var filter = ""
@@ -15,21 +15,16 @@ struct EmptyStateView: View {
                 .frame(width: 352)
             recentColumn
         }
-        .frame(width: 900, height: 560)
         .background(K.content)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.12), radius: 24, y: 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(K.win)
     }
 
     // MARK: Left
 
     private var leftColumn: some View {
         VStack(spacing: 0) {
+            // Under the traffic lights, as on the board (their 12 pt row, then 26 pt).
             AppMark()
-                .padding(.top, 42)
+                .padding(.top, 38)
             Text("Kaern")
                 .font(.system(size: 26, weight: .bold))
                 .padding(.top, 16)

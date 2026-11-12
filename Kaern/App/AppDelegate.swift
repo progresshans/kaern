@@ -40,12 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         let app = AppModel.shared
-        // With no window open (On launch › Open nothing), the folders open in a new one.
-        guard let window = app.activeWindow?.model ?? app.windows.last?.model else {
-            app.open(urls, in: app.newWindowModel())
-            return
-        }
-        app.open(urls, in: window)
+        // The front main window or the start window; with no window open, a new main window.
+        app.open(urls, in: app.openingWindow ?? app.pendingWindowModel())
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

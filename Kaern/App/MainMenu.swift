@@ -14,6 +14,11 @@ enum MainMenu {
         return app.repository(for: tab.path)
     }
     private static var isIdle: Bool { repository?.isReady == true && repository?.activity == nil }
+    /// The key window when it isn't a main window (the start window, Settings, Repositories…).
+    private static var otherWindowInFront: NSWindow? {
+        guard let key = NSApp.keyWindow, !(key is KaernWindow) else { return nil }
+        return key
+    }
     private static let recentDelegate = RecentMenuDelegate()
 
     static func build(showSettings: @escaping () -> Void) -> NSMenu {
@@ -79,8 +84,9 @@ enum MainMenu {
             }
         })
         menu.addItem(MenuAction.item("New Window", key: "n") { app.newWindow() })
-        menu.addItem(MenuAction.item("Open Repository…", key: "o", enabled: { window != nil }) {
-            if let window { app.showOpenPanel(for: window) }
+        // Open, Create and Clone work in the start window too; with no window open they show it.
+        menu.addItem(MenuAction.item("Open Repository…", key: "o") {
+            app.showOpenPanel(for: app.openingWindow ?? app.showWelcome())
         })
         let recent = NSMenu(title: "Open Recent")
         recent.delegate = recentDelegate
@@ -88,14 +94,20 @@ enum MainMenu {
         recentItem.submenu = recent
         menu.addItem(recentItem)
         menu.addItem(.separator())
-        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command], enabled: { window != nil }) {
-            if let window { app.showCreate(in: window) }
+        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command]) {
+            app.showCreate(in: app.openingWindow ?? app.showWelcome())
         })
-        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command], enabled: { window != nil }) {
-            if let window { app.showClone(in: window) }
+        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command]) {
+            app.showClone(in: app.openingWindow ?? app.showWelcome())
         })
         menu.addItem(.separator())
-        menu.addItem(MenuAction.item("Close Tab", key: "w", enabled: { app.activeWindow != nil }) {
+        menu.addItem(MenuAction.item("Close Tab", key: "w", enabled: { otherWindowInFront != nil || app.activeWindow != nil },
+                                    title: { otherWindowInFront != nil ? "Close" : "Close Tab" }) {
+            // Another window in front: ⌘W closes that window.
+            if let other = otherWindowInFront {
+                other.performClose(nil)
+                return
+            }
             guard let controller = app.activeWindow else { return }
             if let id = controller.model.activeTabID {
                 app.close([id], in: controller.model)
@@ -106,7 +118,11 @@ enum MainMenu {
         menu.addItem(MenuAction.item("Reopen Closed Tab", key: "t", modifiers: [.shift, .command], enabled: { app.canReopenClosedTab }) {
             if let window { app.reopenClosedTab(in: window) }
         })
-        menu.addItem(MenuAction.item("Close Window", key: "w", modifiers: [.shift, .command], enabled: { app.activeWindow != nil }) {
+        menu.addItem(MenuAction.item("Close Window", key: "w", modifiers: [.shift, .command], enabled: { otherWindowInFront != nil || app.activeWindow != nil }) {
+            if let other = otherWindowInFront {
+                other.performClose(nil)
+                return
+            }
             (app.activeWindow?.window as? KaernWindow)?.performCloseWindow()
         })
         menu.addItem(.separator())
@@ -567,10 +583,8 @@ final class RecentMenuDelegate: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let app = AppModel.shared
         for item in app.recent.prefix(15) {
-            menu.addItem(MenuAction.item(item.name, enabled: { app.activeWindow != nil }) {
-                if let window = app.activeWindow?.model {
-                    app.open([URL(filePath: item.path, directoryHint: .isDirectory)], in: window)
-                }
+            menu.addItem(MenuAction.item(item.name) {
+                app.open([URL(filePath: item.path, directoryHint: .isDirectory)], in: app.openingWindow ?? app.pendingWindowModel())
             })
         }
         if !app.recent.isEmpty { menu.addItem(.separator()) }

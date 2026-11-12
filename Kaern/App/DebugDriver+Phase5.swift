@@ -112,7 +112,10 @@ extension DebugDriver {
         default:
             break
         }
-        guard let window else { return }
+        // Clone and Create sheets: in the start window while it's open (it holds their window model).
+        let sheetCommands: Set<String> = ["clone", "cloneField", "cloneSource", "cloneStart", "create", "createField",
+                                          "createStart", "fakeCloneProgress", "fakeHosted", "windowSheetClose"]
+        guard let window = sheetCommands.contains(command) ? (app.welcome?.model ?? self.window) : self.window else { return }
         let rest = args.dropFirst().joined(separator: " ")
         switch command {
         case "relocate":
