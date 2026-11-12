@@ -1,6 +1,8 @@
-# Kaern's releases. Pushing a version tag (v1.0.1) builds the app on a GitHub Mac, signs it with the Developer ID,
-# notarizes it, publishes the DMG and the ZIP as a GitHub release, then commits the appcast that offers it as an update
-# (docs/appcast.xml, served by GitHub Pages) to main.
+# Kaern's releases. Pushing a version tag builds the app on a GitHub Mac, signs it with the Developer ID, notarizes it,
+# publishes the DMG and the ZIP as a GitHub release, then adds it to the appcast that offers updates (appcast.xml on the
+# gh-pages branch, which GitHub Pages serves):
+# - v1.1.0 makes a release, offered to every copy;
+# - v1.1.0-beta.2 makes a beta: a GitHub pre-release, offered only to copies with Get beta versions on.
 #
 # The same build, signed ad hoc and with no secrets, runs on each push to main (ci.yml).
 #
@@ -11,6 +13,7 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
 
 permissions:
   contents: read
@@ -26,10 +29,12 @@ jobs:
     # GitHub releases a macos-27 label; then change runs-on in both.
     runs-on: xcode-27
     timeout-minutes: 90
-    # The secrets are this environment's: limit it to v* tags (and add yourself as a reviewer) in the settings.
+    # The secrets are this environment's: limit it to v* tags in the settings.
     environment: release
     outputs:
       version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      appcast_base: ${{ steps.tag.outputs.appcast_base }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,11 +50,14 @@ jobs:
             echo "::error::$GITHUB_REF_NAME isn't on main: only commits on main are released"
             exit 1
           fi
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          # The appcast as published (main's): the build number must be higher, and the release is added to it.
-          published="$RUNNER_TEMP/published-appcast.xml"
-          git show origin/main:docs/appcast.xml > "$published" 2>/dev/null || rm -f "$published"
-          echo "KAERN_PUBLISHED_APPCAST=$published" >> "$GITHUB_ENV"
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-beta.* ]]; then prerelease=true; else prerelease=false; fi
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          # script/release.sh builds this version (and its build number) instead of the project's.
+          echo "KAERN_VERSION=$version" >> "$GITHUB_ENV"
+          # The appcast as published, which the release is added to. Publishing checks that it hasn't changed since.
+          echo "appcast_base=$(git rev-parse -q --verify origin/gh-pages:appcast.xml || echo none)" >> "$GITHUB_OUTPUT"
           xcodebuild -version
 
       - name: Put the Developer ID certificate in a keychain of this run
@@ -86,7 +94,6 @@ jobs:
 
       - name: Build, sign, notarize and package
         env:
-          KAERN_RELEASE_TAG: ${{ github.ref_name }}
           KAERN_NOTARY_PROFILE: progresshans-notary
         run: ./script/release.sh
 
@@ -128,13 +135,14 @@ jobs:
       pages: write
     env:
       VERSION: ${{ needs.build.outputs.version }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
+      APPCAST_BASE: ${{ needs.build.outputs.appcast_base }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Check out main
+      # Its credentials stay, to push gh-pages.
+      - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
 
       - name: Get the release files
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -150,29 +158,44 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${files[@]}" --verify-tag --title "Kaern $VERSION" \
-              --notes-file "$RUNNER_TEMP/release/notes.md"
+            options=(--verify-tag --title "Kaern $VERSION" --notes-file "$RUNNER_TEMP/release/notes.md")
+            if [[ "$PRERELEASE" == true ]]; then options+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" "${options[@]}"
           fi
 
-      - name: Publish the appcast
+      - name: Publish the appcast on gh-pages
         run: |
           set -euo pipefail
-          cp "$RUNNER_TEMP/release/appcast.xml" docs/appcast.xml
-          if git diff --quiet -- docs/appcast.xml; then
-            echo "The appcast on main already offers $VERSION."
-            exit 0
-          fi
+          appcast="$RUNNER_TEMP/release/appcast.xml"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Offer $VERSION as an update" -- docs/appcast.xml
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
-            git pull --rebase origin main
-          done
-          echo "::error::Couldn't push the appcast to main"
-          exit 1
+          if git fetch -q origin gh-pages; then
+            current="$(git rev-parse -q --verify FETCH_HEAD:appcast.xml || echo none)"
+            if [[ "$current" == "$(git hash-object "$appcast")" ]]; then
+              echo "The appcast already offers $VERSION."
+              exit 0
+            fi
+            if [[ "$current" != "$APPCAST_BASE" ]]; then
+              echo "::error::The appcast on gh-pages changed while $VERSION was being built: run the whole workflow again"
+              exit 1
+            fi
+            git switch -q --detach FETCH_HEAD
+          else
+            if [[ "$APPCAST_BASE" != none ]]; then
+              echo "::error::Couldn't fetch gh-pages, which had the appcast when $VERSION was built"
+              exit 1
+            fi
+            # The first release: the branch starts with the appcast alone.
+            git switch -q --orphan gh-pages
+          fi
+          cp "$appcast" appcast.xml
+          touch .nojekyll
+          git add appcast.xml .nojekyll
+          git commit -q -m "Offer $VERSION as an update"
+          git push -q origin HEAD:refs/heads/gh-pages
+          echo "The appcast offers $VERSION."
 
       - name: Ask GitHub Pages to serve it
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null \
-            || echo "::warning::GitHub Pages took no build request: check Settings › Pages (Deploy from a branch, main, /docs)"
+            || echo "::warning::GitHub Pages took no build request: check Settings › Pages (Deploy from a branch, gh-pages, / (root))"

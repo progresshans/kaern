@@ -35,6 +35,9 @@ nonisolated enum SettingsKey {
     static let ignoreSuggestionsDismissed = "KaernIgnoreSuggestionsDismissed"
     /// Where Clone and Create New Repository put new folders (the last one used).
     static let projectsFolder = "KaernProjectsFolder"
+    /// Settings › General › Updates › Get beta versions: Sparkle also offers the appcast's beta channel. A beta
+    /// starts with it on (UpdateController).
+    static let betaUpdates = "KaernBetaUpdates"
     // Accounts
     static let accounts = "KaernAccounts"
     // Diff

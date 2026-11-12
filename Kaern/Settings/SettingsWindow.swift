@@ -187,6 +187,7 @@ private struct GeneralPane: View {
     @AppStorage("KaernPullStrategy", store: .kaern) private var pull = PullChoice.fastForwardIfPossible
     @AppStorage(SettingsKey.theme, store: .kaern) private var theme = AppTheme.system
     @State private var checksForUpdates = UpdateController.shared.automaticallyChecksForUpdates
+    @State private var getsBetaVersions = UpdateController.shared.getsBetaVersions
 
     var body: some View {
         SettingsGrid {
@@ -265,13 +266,15 @@ private struct GeneralPane: View {
             if UpdateController.isAvailable {
                 SettingsRow(label: "Updates:") {
                     Checkbox("Check for updates automatically", isOn: $checksForUpdates)
+                    Checkbox("Get beta versions", isOn: $getsBetaVersions)
                     Button("Check Now") { UpdateController.shared.checkForUpdates() }
                         .disabled(!UpdateController.shared.canCheckForUpdates)
-                    Hint("Kaern looks for a new version once a day and asks before installing it.")
+                    Hint("Kaern looks for a new version once a day and asks before installing it. Betas come before each release and change more often.")
                 }
             }
         }
         .onChange(of: checksForUpdates) { UpdateController.shared.automaticallyChecksForUpdates = checksForUpdates }
+        .onChange(of: getsBetaVersions) { UpdateController.shared.getsBetaVersions = getsBetaVersions }
         .onChange(of: theme) { AppSettings.applyTheme() }
         .onChange(of: switching) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.repositorySwitching) }
         .onChange(of: autoFetch) { NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.autoFetch) }

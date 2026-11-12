@@ -5,15 +5,16 @@ import Sparkle
 /// Kaern's updates (Sparkle). A release build reads the appcast in `SUFeedURL` once a day and asks
 /// before installing what it finds; Kaern › Check for Updates… and Settings › General › Updates
 /// check at once. Updates are signed with the EdDSA key whose public half is `SUPublicEDKey`
-/// (Packaging/Info.plist, Packaging/README.md).
+/// (Packaging/Info.plist, Packaging/README.md). Releases are offered to every copy, betas only with
+/// Settings › General › Updates › Get beta versions.
 ///
 /// Debug builds (`./script/build_and_run.sh`, the flow checks) never start it: they are built from
 /// the source, and a test instance mustn't reach the network or show an update window.
-final class UpdateController: NSObject {
+final class UpdateController: NSObject, SPUUpdaterDelegate {
     static let shared = UpdateController()
     private static let log = Logger(subsystem: "com.progresshans.kaern", category: "updates")
 
-    private lazy var controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+    private lazy var controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
     private(set) var isRunning = false
 
     /// The feed and the public key are both in Info.plist.
@@ -37,6 +38,8 @@ final class UpdateController: NSObject {
     /// At launch: starts the updater (its first scheduled check comes later, never during launch).
     func start() {
         guard Self.isAvailable, !isRunning else { return }
+        // A beta keeps getting betas until they're turned off.
+        UserDefaults.kaern.register(defaults: [SettingsKey.betaUpdates: Self.isBeta])
         do {
             try controller.updater.start()
             isRunning = true
@@ -57,6 +60,29 @@ final class UpdateController: NSObject {
     var automaticallyChecksForUpdates: Bool {
         get { isRunning && controller.updater.automaticallyChecksForUpdates }
         set { if isRunning { controller.updater.automaticallyChecksForUpdates = newValue } }
+    }
+
+    /// This copy is a beta: its version is like 1.1.0-beta.2 (script/release.sh).
+    static var isBeta: Bool {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)?.contains("-beta.") == true
+    }
+
+    /// Settings › General › Updates › Get beta versions: the appcast's beta channel too. Turned on, it
+    /// looks for one at once. Turned off, a beta stays until a newer release comes: Sparkle never
+    /// installs an older version.
+    var getsBetaVersions: Bool {
+        get { UserDefaults.kaern.bool(forKey: SettingsKey.betaUpdates) }
+        set {
+            UserDefaults.kaern.set(newValue, forKey: SettingsKey.betaUpdates)
+            if newValue, canCheckForUpdates { controller.updater.checkForUpdatesInBackground() }
+        }
+    }
+
+    // MARK: SPUUpdaterDelegate
+
+    /// Releases have no channel, so every copy sees them; betas are in "beta".
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        getsBetaVersions ? ["beta"] : []
     }
 
     /// Where the source is, for the About panel (Packaging/Info.plist's `KaernSourceURL`).
