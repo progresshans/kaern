@@ -424,7 +424,7 @@ private struct WorktreeSidebarRow: View {
                 Icon(Icons.check, size: 13).foregroundStyle(K.accent)
             }
         }
-        .padding(.leading, 10)
+        .padding(.leading, SidebarMetric.flatLeading)
         .padding(.trailing, 8)
         .frame(height: 42)
         .background(
@@ -483,7 +483,7 @@ private struct SubmoduleSidebarRow: View {
             }
             dot
         }
-        .padding(.leading, 10)
+        .padding(.leading, SidebarMetric.flatLeading)
         .padding(.trailing, 8)
         .frame(height: 42)
         .background(
@@ -516,6 +516,23 @@ private struct SubmoduleSidebarRow: View {
     }
 }
 
+/// Where sidebar rows put their icon and title. Every title sits `gap` after its icon, and each level in (a branch in a
+/// folder, a remote's folders and branches, a branch in a remote's folder) moves its icon `step` right of its parent's.
+private enum SidebarMetric {
+    /// Left of a section's tile (21 pt).
+    static let tileLeading: CGFloat = 4
+    /// From a tile or an icon to its title.
+    static let gap: CGFloat = 3
+    /// Left of a top-level row's 13 pt icon or chevron: centered under the section's tile.
+    static let iconLeading: CGFloat = tileLeading + (21 - 13) / 2
+    /// Where a top-level row's title starts.
+    static let rowTitleX: CGFloat = iconLeading + 13 + gap
+    /// Rows without an icon (Tags, Stashes, Worktrees) start where the icons do.
+    static let flatLeading: CGFloat = iconLeading
+    /// One level in.
+    static let step: CGFloat = 10
+}
+
 /// A section (`.ssec`): hairline on top (not the first), header button, rows when open.
 private struct SidebarSectionView<Rows: View>: View {
     let title: String
@@ -533,7 +550,7 @@ private struct SidebarSectionView<Rows: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
-                HStack(spacing: 9) {
+                HStack(spacing: SidebarMetric.gap) {
                     Icon(tile, size: tileSize)
                         .foregroundStyle(.white)
                         .frame(width: 21, height: 21)
@@ -553,7 +570,7 @@ private struct SidebarSectionView<Rows: View>: View {
                         .foregroundStyle(K.label2)
                         .rotationEffect(.degrees(isOpen ? 0 : -90))
                 }
-                .padding(.leading, 6)
+                .padding(.leading, SidebarMetric.tileLeading)
                 .padding(.trailing, 8)
                 .frame(height: 32)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
@@ -610,15 +627,15 @@ private struct SidebarRow: View {
                     .foregroundStyle(K.label2)
                     .rotationEffect(.degrees(chevron ? 0 : -90))
                     .frame(width: 13)
-                    .padding(.leading, 10 + indent)
-                    .padding(.trailing, 13)
+                    .padding(.leading, SidebarMetric.iconLeading + indent)
+                    .padding(.trailing, SidebarMetric.gap)
             } else if let icon {
                 Icon(icon, size: 13)
                     .foregroundStyle(iconColor)
-                    .padding(.leading, 10 + indent)
-                    .padding(.trailing, 13)
+                    .padding(.leading, SidebarMetric.iconLeading + indent)
+                    .padding(.trailing, SidebarMetric.gap)
             } else {
-                Color.clear.frame(width: flat ? 10 : 36 + indent, height: 1)
+                Color.clear.frame(width: flat ? SidebarMetric.flatLeading : SidebarMetric.rowTitleX + indent, height: 1)
             }
             HStack(spacing: 7) {
                 if let subtitle {
@@ -667,7 +684,7 @@ private struct SidebarRow: View {
     private var indent: CGFloat {
         switch max(depth, nested ? 1 : 0) {
         case 0: 0
-        case 1: 20
+        case 1: SidebarMetric.step
         default: RemoteFolderRow.childIndent
         }
     }
@@ -702,8 +719,10 @@ private struct RemoteFolderRow: View {
     let count: String
     @State private var hovering = false
 
-    /// Where the rows inside start their icon (under this row's folder icon).
-    static let childIndent: CGFloat = 37
+    /// The chevron, one level in from the remote's.
+    static let chevronLeading = SidebarMetric.iconLeading + SidebarMetric.step
+    /// Where the rows inside start their icon: one level in from this row's folder icon, as in a local folder.
+    static let childIndent = chevronLeading + 13 + 4 + SidebarMetric.step - SidebarMetric.iconLeading
 
     var body: some View {
         HStack(spacing: 0) {
@@ -711,11 +730,11 @@ private struct RemoteFolderRow: View {
                 .foregroundStyle(K.label2)
                 .rotationEffect(.degrees(open ? 0 : -90))
                 .frame(width: 13)
-                .padding(.leading, 30)
+                .padding(.leading, Self.chevronLeading)
                 .padding(.trailing, 4)
             Icon(Icons.folder, size: 13)
                 .foregroundStyle(K.label2)
-                .padding(.trailing, 13)
+                .padding(.trailing, SidebarMetric.gap)
             Text(title)
                 .font(.system(size: 13))
                 .foregroundStyle(K.label)
