@@ -196,7 +196,9 @@ keys() {
   "$tool" --account "$KEY_ACCOUNT"
   public="$("$tool" --account "$KEY_ACCOUNT" -p)"
   [[ -n "$public" ]] || fail "generate_keys printed no public key"
-  /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $public" "$INFO_PLIST"
+  # Only the value changes, so the file keeps its comments and order (PlistBuddy would write it all anew).
+  perl -0pi -e "s{(<key>SUPublicEDKey</key>\s*<string>)[^<]*(</string>)}{\${1}$public\${2}}" "$INFO_PLIST"
+  [[ "$(plist_value SUPublicEDKey "$INFO_PLIST")" == "$public" ]] || fail "couldn't write SUPublicEDKey into $INFO_PLIST"
   cat <<DONE
 
 Packaging/Info.plist: SUPublicEDKey = $public
