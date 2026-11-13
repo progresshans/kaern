@@ -209,7 +209,7 @@ extension DebugDriver {
             guard case .clone(let model) = window.sheet else { return }
             let now = Date.now
             model.hosted = [
-                HostedRepository(id: 1, fullName: "progresshans/kaern", name: "kaern", isPrivate: true, summary: "A Git client for the Mac",
+                HostedRepository(id: 1, fullName: "progresshans/kaern", name: "kaern", isPrivate: false, summary: "A Git client for the Mac",
                                  httpsURL: "https://github.com/progresshans/kaern.git", sshURL: "git@github.com:progresshans/kaern.git",
                                  updated: now.addingTimeInterval(-3600)),
                 HostedRepository(id: 2, fullName: "progresshans/powerlens", name: "powerlens", isPrivate: false, summary: "Battery and charging insight",
@@ -218,6 +218,9 @@ extension DebugDriver {
                 HostedRepository(id: 3, fullName: "progresshans/godj", name: "godj", isPrivate: false,
                                  summary: nil, httpsURL: "https://github.com/progresshans/godj.git",
                                  sshURL: "git@github.com:progresshans/godj.git", updated: now.addingTimeInterval(-86_400 * 9)),
+                HostedRepository(id: 4, fullName: "acme/recipe-box", name: "recipe-box", isPrivate: true, summary: "What we cook at home",
+                                 httpsURL: "https://github.com/acme/recipe-box.git", sshURL: "git@github.com:acme/recipe-box.git",
+                                 updated: now.addingTimeInterval(-86_400 * 12)),
             ]
             model.listState = .loaded
         case "fakeCloneProgress":
