@@ -4,6 +4,8 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-13
+
 The first release of Kaern, a native Git client for macOS. Free and open source.
 
 - **Every repository in reach.** Repositories open in tabs, in a list beside the history, or behind one toolbar button,
