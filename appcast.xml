@@ -1,0 +1,32 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Kaern</title>
+        <item>
+            <title>1.0.0</title>
+            <pubDate>Fri, 13 Nov 2026 07:21:56 +0000</pubDate>
+            <sparkle:version>1000099</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[The first release of Kaern, a native Git client for macOS. Free and open source.
+
+- **Every repository in reach.** Repositories open in tabs, in a list beside the history, or behind one toolbar button,
+  and related ones can share a group. The windows and tabs you had open come back the next time.
+- **A history you can read.** Branches keep their colors, runs of bot updates fold into one row, signed commits show
+  who signed them, and search and Quick Open find any commit, branch or file.
+- **See exactly what changed.** Split or unified diffs down to the word, images compared side by side, with a swipe or
+  as an onion skin, and the history and blame of every line.
+- **Commit exactly what you mean.** Stage single lines, and take back almost anything with ⌘Z: discarded changes are
+  kept in Stashes.
+- **Branch, merge and rewrite with confidence.** Compare branches, rebase interactively, resolve merge conflicts side
+  by side, and work in several worktrees.
+- **Nothing hidden.** Kaern runs the git you already have, with your config, your hooks and your SSH keys, and its
+  Command Log shows every command it ran. It needs no account.
+
+Kaern needs macOS 26 or later on a Mac with Apple silicon, and keeps itself up to date.
+]]></description>
+            <enclosure url="https://github.com/progresshans/kaern/releases/download/v1.0.0/Kaern-1.0.0.zip" length="4575328" type="application/octet-stream" sparkle:edSignature="2FeYP9J6eLjktVs0X5VqnPb45HKronw8KTNVMQ0xFOZaJncLWoZkjVBavXdPuoh9w1xkl8OhrBxHPv2/KEHDAg=="/>
+        </item>
+    </channel>
+</rss>
