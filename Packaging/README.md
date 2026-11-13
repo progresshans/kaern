@@ -18,13 +18,14 @@ There are two kinds of versions:
 | Where | What |
 |---|---|
 | `.github/workflows/release.yml` | On a version tag: build, sign and notarize → GitHub release → appcast on `gh-pages`. |
-| `.github/workflows/ci.yml` | On each pull request and each push to `main`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
+| `.github/workflows/ci.yml` | On each pull request and each push to `main` (unless only `site/` changed): the KaernKit tests, a Debug build, and the release build signed ad hoc. |
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, the notes, and tries on your Mac. |
 | `CHANGELOG.md` | Each version's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
 | `Packaging/DMG/` | The background of the DMG's window, at 1x and 2x (`script/make_dmg_background.swift` draws it). |
 | `gh-pages` branch | The appcast, served by GitHub Pages at `https://progresshans.github.io/kaern/appcast.xml`. Only the release workflow commits to it. |
 | `.env` (from `.env.example`) | Your settings for tries on your Mac. |
+| `site/` | The website, kaern.progresshans.com, deployed by Cloudflare on its own ([site/README.md](../site/README.md)). Releases don't change it. |
 
 Updates only run in Release builds. Debug builds (`./script/build_and_run.sh`, the flow checks) never start the
 updater, and they show no Check for Updates… item.
