@@ -155,6 +155,13 @@ jobs:
         run: |
           set -euo pipefail
           files=("$RUNNER_TEMP/release/Kaern-$VERSION.dmg" "$RUNNER_TEMP/release/Kaern-$VERSION.zip" "$RUNNER_TEMP/release/SHA256SUMS")
+          # A release (not a beta) also carries the DMG as Kaern.dmg, which the website's download buttons ask for
+          # (releases/latest/download/Kaern.dmg). SHA256SUMS lists it too.
+          if [[ "$PRERELEASE" != true ]]; then
+            cp "$RUNNER_TEMP/release/Kaern-$VERSION.dmg" "$RUNNER_TEMP/release/Kaern.dmg"
+            (cd "$RUNNER_TEMP/release" && { grep -q ' Kaern\.dmg$' SHA256SUMS || sha256sum Kaern.dmg >>SHA256SUMS; })
+            files+=("$RUNNER_TEMP/release/Kaern.dmg")
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
           else

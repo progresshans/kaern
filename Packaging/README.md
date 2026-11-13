@@ -1,7 +1,7 @@
 # Releasing Kaern
 
 Kaern is distributed outside the Mac App Store. Each release has two files:
-- a DMG to download;
+- a DMG to download (also as `Kaern.dmg` on a release, for the website's download buttons);
 - a ZIP that Sparkle installs as an update.
 
 Releases run on Apple silicon Macs (arm64 only) with macOS 26 or later.
@@ -118,7 +118,8 @@ The project's own `MARKETING_VERSION` is only what Debug builds and tries on you
 4. Actions › Release takes about 10 to 20 minutes, most of it waiting for Apple:
    - **Build, sign and notarize** (on a GitHub Mac, with the release environment's secrets): the script's checks, the
      DMG and the ZIP, and the appcast entry.
-   - **Publish:** the GitHub release (a pre-release for a beta) with the DMG, the ZIP and `SHA256SUMS`, then the
+   - **Publish:** the GitHub release (a pre-release for a beta) with the DMG, the ZIP and `SHA256SUMS` (a release also
+     with `Kaern.dmg`, the same DMG under the name the website links to), then the
      appcast, committed to `gh-pages` as "Offer <version> as an update". Pages serves it a minute or two later, and
      installed copies see the update at their next daily check. `main` doesn't change.
 
