@@ -10,7 +10,7 @@
 	<string>https://progresshans.github.io/kaern/appcast.xml</string>
 	<!-- The public half of the EdDSA key that signs updates: script/release.sh keys writes it here. Without it the updater doesn't start. -->
 	<key>SUPublicEDKey</key>
-	<string></string>
+	<string>RgGyA3j9H5L+e0CGhi1ypO3i7rMncpuZdGbVg5RtJQA=</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>
