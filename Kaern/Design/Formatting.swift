@@ -96,8 +96,8 @@ enum Formatters {
         return String(localized: "on \(monthDayYear.string(from: date))")
     }
 
-    /// "~/Developer/powerlens"
-    static func abbreviatedPath(_ path: String) -> String {
+    /// "~/Developer/powerlens". Only strings and the home folder: safe from any thread (undo steps run off the main actor).
+    nonisolated static func abbreviatedPath(_ path: String) -> String {
         var path = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
         // Canonical paths resolve /tmp and /var through /private; show them the way people type them.
         for prefix in ["/private/tmp/", "/private/var/"] where path.hasPrefix(prefix) {

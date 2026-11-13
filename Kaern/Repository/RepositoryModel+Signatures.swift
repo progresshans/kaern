@@ -93,7 +93,7 @@ extension RepositoryModel {
             let file = signature?.format == "SSH" ? await repository.allowedSignersFile() : nil
             guard !Task.isCancelled, selection == .commit(id) else { return }
             selectedSignature = SelectedSignature(id: id, signature: signature,
-                                                  allowedSigners: file.map { ($0.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath })
+                                                  allowedSigners: file.map { Formatters.abbreviatedPath($0.path(percentEncoded: false)) })
             // The row's shield agrees with the card.
             if let signature { signatureCodes[id] = signature.code } else { signatureCodes[id] = "N" }
         }
@@ -153,7 +153,7 @@ extension RepositoryModel {
             let configured = await repository.allowedSignersFile()
             let file = configured ?? Self.defaultAllowedSignersFile
             let principal = committer?.email ?? who
-            let place = (file.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+            let place = Formatters.abbreviatedPath(file.path(percentEncoded: false))
             confirmation = Confirmation(
                 title: "Trust \(who)’s SSH key?",
                 message: "Compare this fingerprint with the one \(who) gave you:\n\(signature.key)\n\nKaern adds the key for \(principal) to \(place), and git shows the commits it signed as verified.",

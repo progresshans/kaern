@@ -133,7 +133,7 @@ extension RepositoryModel {
             if ignored.count > 3 { names += " and \(ignored.count - 3) more" }
             confirmation = Confirmation(
                 title: "Remove the worktree \(worktree.name)?",
-                message: "Kaern deletes the folder \((worktree.path as NSString).abbreviatingWithTildeInPath)"
+                message: "Kaern deletes the folder \(Formatters.abbreviatedPath(worktree.path))"
                     + (worktree.branch.map { ". \($0) stays a branch here, and can be checked out again" } ?? "")
                     + (changes > 0 ? ". Its \(Formatters.count(changes, "uncommitted change", "uncommitted changes")) go to Stashes first" : "")
                     + (ignored.isEmpty ? "" : ". Files git ignores there (\(names)) go to the Trash")
@@ -192,7 +192,7 @@ nonisolated extension ReversibleStep {
         ReversibleStep(label: label) { repository in
             let folder = URL(filePath: path, directoryHint: .isDirectory)
             guard !FileManager.default.fileExists(atPath: path) else {
-                throw UndoRefusal(message: "Something is at \((path as NSString).abbreviatingWithTildeInPath) again, so Kaern can’t put the worktree back.")
+                throw UndoRefusal(message: "Something is at \(Formatters.abbreviatedPath(path)) again, so Kaern can’t put the worktree back.")
             }
             if let branch = removed.branch {
                 try await repository.addWorktree(at: folder, branch: branch, newBranchFrom: nil)
