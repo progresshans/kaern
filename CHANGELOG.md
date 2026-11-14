@@ -11,6 +11,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   drawer. Held down, they keep going, in the history too, and back from Review the history takes them without a click.
 - The branch you're on stays in its place in the sidebar, inside its folder, instead of moving to the top. A folded
   folder that holds it shows a check.
+- When several branches or tags point at one commit, the history shows one label and "+2". Rest the pointer on it
+  and every label unfolds in a list, with its whole name and its right-click menu.
 - In a narrow panel, a file whose folder doesn't fit shows just its name, without a sliver of the folder.
 
 ## [1.0.0] - 2026-11-13

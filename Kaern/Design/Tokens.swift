@@ -12,6 +12,7 @@ nonisolated enum K {
     static let sidebar = dynamic(0xefeff1, 0x29292b)
     static let inspector = dynamic(0xf7f7f8, 0x252527)     // right panel
     static let pop = dynamic(rgba(250, 250, 252, 0.98), rgba(44, 44, 48, 0.98))  // menus · tooltips
+    static let popSolid = dynamic(0xfafafc, 0x2c2c30)     // pop-ups over content, nothing through (the history's labels)
     static let field = dynamic(0xffffff, 0x1c1c1e)
     static let control = dynamic(0xffffff, 0x4a4a4d)       // button · capsule fill
 

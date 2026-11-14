@@ -60,8 +60,9 @@ extension DebugDriver {
             DebugDriver.chosenWindow = args.first.flatMap(Int.init)
             return
         case "targetFrame":
-            // targetFrame file <path> | commitFile <path> | commit <index> — writes where its row is
-            // (window points) into the dump's `targetFrame`.
+            // targetFrame file <path> | commitFile <path> | commit <index> | branch <name> | tag <name> —
+            // writes where its row (the smallest view showing it) is, in window points, into the dump's
+            // `targetFrame`.
             guard let controller, args.count >= 2, let tab = controller.model.activeTab else { return }
             let repository = app.repository(for: tab.path)
             let rest = args.dropFirst().joined(separator: " ")
@@ -70,6 +71,8 @@ extension DebugDriver {
             case "fileStaged": .file(path: rest, staged: true)
             case "commitFile": repository.selectedCommitID.map { .commitFile(path: rest, commit: $0) }
             case "commit": Int(rest).flatMap { repository.commits.indices.contains($0) ? .commit(repository.commits[$0].id) : nil }
+            case "branch": .branch(rest)
+            case "tag": .tag(rest)
             default: nil
             }
             lastTargetFrame = target.flatMap { controller.contextTracker.frame(of: $0) }

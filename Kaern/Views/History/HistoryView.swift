@@ -657,6 +657,12 @@ private struct CommitRow: View {
     }
 
     @State private var hovering = false
+    /// Several refs here and the pointer on their label: every label shows, in a list that unfolds
+    /// from it (`RefLabelList`).
+    @State private var showsAllLabels = false
+    @State private var pointerOnLabels = false
+    @State private var pointerOnList = false
+    @State private var labelsTimer: Task<Void, Never>?
 
     private var lane: Int { graph?.lane ?? 0 }
     private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
@@ -738,33 +744,139 @@ private struct CommitRow: View {
                 (tint == .ours ? K.accent : K.lane2).frame(width: 3)
             }
         }
+        .overlay(alignment: .topLeading) {
+            // Over the whole row: its node and lanes too. The first label sits where the column has it.
+            if listShown {
+                RefLabelList(labels: labels, lane: lane, origin: CGPoint(x: 10, y: (KMetric.graphRow - RefLabelList.labelHeight) / 2)) {
+                    pointer(onList: $0)
+                }
+                .transition(.opacity)
+            }
+        }
         .onHover { hovering = $0 }
         .contextTarget(.commit(commit.id))
         .opacity(isDimmed ? 0.3 : 1)
         .help("\(commit.subject)\n\(commit.author.name) · \(commit.shortID)")
+        // The list of labels lies over the rows below.
+        .zIndex(listShown ? 1 : 0)
     }
 
     @ViewBuilder
     private var refColumn: some View {
         if let first = labels.first {
             HStack(spacing: 0) {
-                RefLabel(label: first, lane: lane, selected: isSelected)
-                    .contextTarget(first.contextTarget, ring: ContextRing(radius: 6, inset: -2))
-                    .layoutPriority(1)
-                if labels.count > 1 {
-                    Text("+\(labels.count - 1)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                        .padding(.horizontal, 4)
-                        .fixedSize()
-                        .help(labels.dropFirst().flatMap(\.names).joined(separator: "\n"))
+                HStack(spacing: 0) {
+                    RefLabel(label: first, lane: lane, selected: isSelected)
+                        .contextTarget(first.contextTarget, ring: ContextRing(radius: 6, inset: -2))
+                        .layoutPriority(1)
+                    if labels.count > 1 {
+                        Text("+\(labels.count - 1)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+                            .padding(.horizontal, 4)
+                            .fixedSize()
+                            .opacity(listShown ? 0 : 1)
+                            .accessibilityLabel("\(labels.count - 1) more: " + labels.dropFirst().map(\.title).joined(separator: ", "))
+                    }
                 }
+                .layoutPriority(1)
+                .onHover { inside in if labels.count > 1 { pointer(onLabels: inside) } }
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
                     .frame(minWidth: 8, maxWidth: .infinity)
                     .frame(height: GraphMetrics.labelLineWidth)
             }
             .padding(.leading, 10)
+        }
+    }
+
+    /// The list of every label is open (debug builds: or the driver opened it, `labels <index or hash>`).
+    private var listShown: Bool {
+        #if DEBUG
+        if labels.count > 1, DebugRefLabels.shared.open == commit.id { return true }
+        #endif
+        return showsAllLabels
+    }
+
+    /// The list opens after a moment on the label and closes a moment after the pointer has left
+    /// both the label and the list: passing over a row doesn't flash it, and the pointer can move
+    /// from the label into the list (which then lies over the label).
+    private func pointer(onLabels: Bool? = nil, onList: Bool? = nil) {
+        #if DEBUG
+        // A test instance's window lies wherever the real pointer happens to be: there only the driver
+        // opens a list (`labels`).
+        if TestSession.stem != nil { return }
+        #endif
+        if let onLabels { pointerOnLabels = onLabels }
+        if let onList { pointerOnList = onList }
+        let wanted = pointerOnLabels || pointerOnList
+        labelsTimer?.cancel()
+        guard wanted != showsAllLabels else { return }
+        labelsTimer = Task {
+            try? await Task.sleep(for: .milliseconds(wanted ? 150 : 120))
+            guard !Task.isCancelled else { return }
+            // A list that goes away doesn't always say the pointer left it.
+            if !wanted { pointerOnList = false }
+            withAnimation(.easeOut(duration: 0.12)) { showsAllLabels = wanted }
+        }
+    }
+}
+
+#if DEBUG
+/// Debug builds: the commit whose list of labels the driver opened (`labels <index or hash>|off`);
+/// a test window in the background gets no hover.
+@Observable
+final class DebugRefLabels {
+    static let shared = DebugRefLabels()
+    var open: String?
+}
+#endif
+
+/// Every label of a commit with several refs, unfolding from its first one (which it covers): down
+/// over the rows below, or up, the other way round, when the history shows more room above. It lies
+/// over the row's own node and lanes too. The labels are whole, and each keeps its right-click menu.
+private struct RefLabelList: View {
+    let labels: [RefLabelItem]
+    let lane: Int
+    /// Where the row shows its first label (the row's coordinates).
+    let origin: CGPoint
+    let hover: (Bool) -> Void
+
+    static let labelHeight: CGFloat = 20
+    private static let gap: CGFloat = 4
+    private static let pad: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { proxy in
+            // The row's coordinates; `visible` is what the history shows of them.
+            let visible = proxy.bounds(of: .scrollView) ?? .infinite
+            let height = CGFloat(labels.count) * Self.labelHeight + CGFloat(labels.count - 1) * Self.gap + Self.pad * 2
+            let top = origin.y - Self.pad, bottom = origin.y + Self.labelHeight + Self.pad
+            let roomBelow = visible.maxY - top
+            let roomAbove = bottom - visible.minY
+            let up = height > roomBelow && roomAbove > roomBelow
+            VStack(alignment: .leading, spacing: Self.gap) {
+                ForEach(up ? labels.reversed() : labels) { label in
+                    RefLabel(label: label, lane: lane, selected: false)
+                        .fixedSize()
+                        .contextTarget(label.contextTarget, ring: ContextRing(radius: 6, inset: -2))
+                }
+            }
+            .padding(Self.pad)
+            // Solid: the rows under it don't show through.
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(K.popSolid)
+                    .shadow(color: K.shadowPop, radius: 8, y: 6)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(K.popRing, lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .onHover(perform: hover)
+            .offset(x: origin.x - Self.pad, y: up ? bottom - height : top)
         }
     }
 }

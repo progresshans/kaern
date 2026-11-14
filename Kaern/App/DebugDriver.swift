@@ -138,7 +138,7 @@ final class DebugDriver {
             }
         case "review", "focus", "drawer", "drawerFile", "search", "searchScope", "searchStep", "diff", "whitespace", "tree",
              "stage", "unstage", "stageAll", "unstageAll", "stageHunk", "unstageHunk", "summary", "body", "amend", "commit",
-             "column", "scroll":
+             "column", "scroll", "labels":
             phase2(command, args)
         case "menu", "menuClose", "menuHover", "rightClick", "pick", "clearPicks", "branchCompare", "swap", "undo", "redo", "checkout", "checkoutCommit",
              "cherryPick", "revert", "reset", "merge", "rebase", "deleteBranch", "discard", "ignore", "apply", "popStash", "drop",
@@ -306,6 +306,12 @@ final class DebugDriver {
             // column ref|graph|date|sha <width>
             let keys = ["ref": "KaernColumnRef", "graph": "KaernColumnGraph", "date": "KaernColumnDate", "sha": "KaernColumnSHA"]
             if args.count == 2, let key = keys[args[0]], let value = Double(args[1]) { UserDefaults.kaern.set(value, forKey: key) }
+        case "labels":
+            // labels <commit index or hash> | labels off — opens that commit's list of labels, as the
+            // pointer would.
+            let spec = args.first ?? "off"
+            DebugRefLabels.shared.open = Int(spec).flatMap { repository.commits.indices.contains($0) ? repository.commits[$0].id : nil }
+                ?? (spec == "off" ? nil : repository.commits.first { $0.id.hasPrefix(spec) }?.id)
         case "scroll":
             // scroll <commit index>
             if let index = args.first.flatMap(Int.init), repository.commits.indices.contains(index) {
