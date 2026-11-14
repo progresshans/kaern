@@ -674,7 +674,8 @@ struct FilePathText: View {
     var body: some View {
         let directory = (path as NSString).deletingLastPathComponent
         let name = (path as NSString).lastPathComponent
-        HStack(spacing: 0) {
+        // About the width of a letter and "…".
+        FolderThenName(leastFolder: size * 1.7) {
             if showsDirectory, !directory.isEmpty {
                 Text(directory + "/")
                     .foregroundStyle(selected ? .white.opacity(0.85) : K.label2)
@@ -683,10 +684,44 @@ struct FilePathText: View {
             Text(name)
                 .fontWeight(nameWeight)
                 .foregroundStyle(selected ? .white : K.label)
-                .layoutPriority(1)
         }
         .font(.system(size: size))
         .lineLimit(1)
+    }
+}
+
+/// The name as wide as it needs (cut short only when even it doesn't fit), the folder in what's
+/// left before it. Less room than `leastFolder`, and the folder doesn't show: a narrow panel would
+/// show a sliver of its first letter.
+private struct FolderThenName: Layout {
+    let leastFolder: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let widths = widths(in: proposal.width, subviews)
+        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+        return CGSize(width: widths.reduce(0, +), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        for (subview, width) in zip(subviews, widths(in: bounds.width, subviews)) {
+            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: width, height: bounds.height))
+            x += width
+        }
+    }
+
+    /// Each part's width: the folder (when there is one), then the name.
+    private func widths(in available: CGFloat?, _ subviews: Subviews) -> [CGFloat] {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        guard let available, let nameIdeal = ideal.last else { return ideal }
+        let name = min(nameIdeal, available)
+        guard ideal.count > 1 else { return [name] }
+        let room = available - name
+        guard room >= leastFolder else { return [0, name] }
+        // Cut short, the folder ("scri…") is narrower than the room: the name follows right after it.
+        let folder = ideal[0] <= room ? ideal[0] : subviews[0].sizeThatFits(ProposedViewSize(width: room, height: nil)).width
+        return [min(folder, room), name]
     }
 }
 
