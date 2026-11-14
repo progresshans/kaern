@@ -67,6 +67,10 @@ private struct FSMonitorCard: View {
 private struct WorkingCopyPanel: View {
     @Bindable var repository: RepositoryModel
     @AppStorage(DiffPreferences.treeKey, store: .kaern) private var tree = false
+    /// The file lists have keyboard focus: ↑ ↓ open the file above or below.
+    @FocusState private var filesFocused: Bool
+    /// The list the reviewed file was opened from: a partly staged file is in both.
+    @State private var openedStaged = false
 
     var body: some View {
         let entries = repository.status.entries
@@ -90,23 +94,59 @@ private struct WorkingCopyPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(20)
             } else {
-                let unstaged = entries.filter(\.hasUnstagedChanges)
-                let staged = entries.filter(\.hasStagedChanges)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
-                            .disabled(unstaged.isEmpty || !repository.canChangeIndex)
-                        FileList(repository: repository, entries: unstaged, staged: false, tree: tree)
-                        PanelSectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
-                            .disabled(staged.isEmpty || !repository.canChangeIndex)
-                        FileList(repository: repository, entries: staged, staged: true, tree: tree)
+                // In the order they show (a tree sorts them by folder).
+                let unstaged = FileList.files(entries.filter(\.hasUnstagedChanges), tree: tree)
+                let staged = FileList.files(entries.filter(\.hasStagedChanges), tree: tree)
+                let current = current(unstaged: unstaged, staged: staged)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
+                                .disabled(unstaged.isEmpty || !repository.canChangeIndex)
+                            FileList(repository: repository, entries: unstaged, staged: false, tree: tree,
+                                     current: current?.staged == false ? current?.path : nil) { open($0, staged: false) }
+                            PanelSectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
+                                .disabled(staged.isEmpty || !repository.canChangeIndex)
+                            FileList(repository: repository, entries: staged, staged: true, tree: tree,
+                                     current: current?.staged == true ? current?.path : nil) { open($0, staged: true) }
+                        }
+                        .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
                     }
-                    .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+                    .contextClip()
+                    .arrowKeySteps($filesFocused) { step($0, unstaged: unstaged, staged: staged, proxy: proxy) }
                 }
-                .contextClip()
             }
             Composer(repository: repository)
         }
+    }
+
+    /// The row of the file Review shows: in the list it was opened from, else the one it's in.
+    private func current(unstaged: [StatusEntry], staged: [StatusEntry]) -> (path: String, staged: Bool)? {
+        guard let review = repository.review, !review.showsAllFiles, let path = review.path else { return nil }
+        func has(_ list: [StatusEntry]) -> Bool { list.contains { $0.path == path } }
+        if has(openedStaged ? staged : unstaged) { return (path, openedStaged) }
+        if has(openedStaged ? unstaged : staged) { return (path, !openedStaged) }
+        return nil
+    }
+
+    /// A click on a file, or ↑ ↓ onto it: Review shows it, and the lists take the arrow keys.
+    private func open(_ path: String, staged: Bool) {
+        openedStaged = staged
+        filesFocused = true
+        repository.review = ReviewState(showsAllFiles: false, path: path)
+    }
+
+    /// ↑ / ↓: opens the file above or below, from the end of Unstaged on into Staged.
+    private func step(_ offset: Int, unstaged: [StatusEntry], staged: [StatusEntry], proxy: ScrollViewProxy) -> KeyPress.Result {
+        let rows = unstaged.map { (path: $0.path, staged: false) } + staged.map { (path: $0.path, staged: true) }
+        guard !rows.isEmpty else { return .ignored }
+        let current = current(unstaged: unstaged, staged: staged)
+        let index = current.flatMap { current in rows.firstIndex { $0.path == current.path && $0.staged == current.staged } }
+        let next = ArrowKeyStep.target(from: index, by: offset, count: rows.count)
+        guard next != index else { return .handled }
+        open(rows[next].path, staged: rows[next].staged)
+        proxy.scrollTo(FileList.rowID(rows[next].path, staged: rows[next].staged))
+        return .handled
     }
 
     /// "git status 2.8 s · 12,408 files" (ScreenBigRepo).
@@ -198,9 +238,12 @@ private struct FileList: View {
     let entries: [StatusEntry]
     let staged: Bool
     let tree: Bool
+    /// The file Review shows, when its row is in this list.
+    let current: String?
+    let open: (String) -> Void
 
     var body: some View {
-        ForEach(rows) { row in
+        ForEach(Self.rows(entries, tree: tree, root: repository.name)) { row in
             switch row.kind {
             case .folder(let label):
                 HStack(spacing: 6) {
@@ -212,19 +255,34 @@ private struct FileList: View {
                 .padding(.horizontal, 6)
                 .frame(height: 24)
             case .file(let entry):
-                PanelFileRow(repository: repository, entry: entry, staged: staged, showsDirectory: !tree)
+                PanelFileRow(repository: repository, entry: entry, staged: staged, showsDirectory: !tree,
+                             isReviewed: entry.path == current) { open(entry.path) }
                     .padding(.leading, tree ? 14 : 0)
+                    .id(Self.rowID(entry.path, staged: staged))
             }
         }
     }
 
-    private struct Row: Identifiable {
+    struct Row: Identifiable {
         enum Kind { case folder(String), file(StatusEntry) }
         let id: String
         let kind: Kind
     }
 
-    private var rows: [Row] {
+    /// A file's row, for scrolling to it (a partly staged file has one in each list).
+    static func rowID(_ path: String, staged: Bool) -> String {
+        (staged ? "staged:" : "unstaged:") + path
+    }
+
+    /// The files in the order the list shows them.
+    static func files(_ entries: [StatusEntry], tree: Bool) -> [StatusEntry] {
+        rows(entries, tree: tree, root: "").compactMap { row in
+            if case .file(let entry) = row.kind { entry } else { nil }
+        }
+    }
+
+    /// `root`: the label of the folder row for the files at the top level.
+    static func rows(_ entries: [StatusEntry], tree: Bool, root: String) -> [Row] {
         guard tree else { return entries.map { Row(id: $0.path, kind: .file($0)) } }
         // Folders first (by path), then the files at the top level, like the board.
         func folder(_ path: String) -> String {
@@ -243,7 +301,7 @@ private struct FileList: View {
             let directory = folder(entry.path)
             if directory != last {
                 last = directory
-                result.append(Row(id: "dir:" + directory, kind: .folder(directory.isEmpty ? "\(repository.name) (root)" : directory)))
+                result.append(Row(id: "dir:" + directory, kind: .folder(directory.isEmpty ? "\(root) (root)" : directory)))
             }
             result.append(Row(id: entry.path, kind: .file(entry)))
         }
@@ -258,19 +316,19 @@ private struct PanelFileRow: View {
     let entry: StatusEntry
     let staged: Bool
     let showsDirectory: Bool
+    /// Review shows this row's file (only one of a partly staged file's two rows).
+    let isReviewed: Bool
+    let open: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        let isReviewed = repository.review.map { !$0.showsAllFiles && $0.path == entry.path } ?? false
         let stat = staged ? repository.lineStats.staged[entry.path] : repository.lineStats.unstaged[entry.path]
         HStack(spacing: 2) {
             StageCheckbox(isOn: staged, label: (staged ? "Unstage " : "Stage ") + entry.path) {
                 if staged { repository.unstage([entry.path]) } else { repository.stage([entry.path]) }
             }
             .disabled(!repository.canChangeIndex)
-            Button {
-                repository.review = ReviewState(showsAllFiles: false, path: entry.path)
-            } label: {
+            Button(action: open) {
                 HStack(spacing: 7) {
                     StatusTile(letter: letter, selected: isReviewed)
                     FilePathText(path: entry.path, showsDirectory: showsDirectory, selected: isReviewed)
@@ -433,8 +491,19 @@ struct CommitInfoView: View {
     var highlightedPath: String?
     let openFile: (FileChange) -> Void
     var reviewAll: (() -> Void)?
+    /// The file rows have keyboard focus: ↑ ↓ open the file above or below.
+    @FocusState private var filesFocused: Bool
 
     var body: some View {
+        ScrollViewReader { proxy in
+            content
+                .arrowKeySteps($filesFocused) { step($0, proxy) }
+        }
+        CommitActions(repository: repository, commit: details.commit)
+    }
+
+    /// Hash and parents, author, message, files.
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
@@ -511,15 +580,29 @@ struct CommitInfoView: View {
                 .padding(.bottom, 4)
                 ForEach(files) { file in
                     CommitFileRow(file: file, isHighlighted: file.path == highlightedPath,
-                                  marks: repository.commitMarks?.id == details.commit.id ? repository.commitMarks : nil) { openFile(file) }
-                        .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: 6, inset: 0))
+                                  marks: repository.commitMarks?.id == details.commit.id ? repository.commitMarks : nil) {
+                        filesFocused = true
+                        openFile(file)
+                    }
+                    .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: 6, inset: 0))
+                    .id("file:" + file.path)
                 }
             }
             .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contextClip()
-        CommitActions(repository: repository, commit: details.commit)
+    }
+
+    /// ↑ / ↓: opens the file above or below the highlighted one, scrolled into view.
+    private func step(_ offset: Int, _ proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !files.isEmpty else { return .ignored }
+        let index = files.firstIndex { $0.path == highlightedPath }
+        let next = ArrowKeyStep.target(from: index, by: offset, count: files.count)
+        guard next != index else { return .handled }
+        openFile(files[next])
+        proxy.scrollTo("file:" + files[next].path)
+        return .handled
     }
 }
 

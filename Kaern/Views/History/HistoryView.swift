@@ -77,16 +77,19 @@ struct HistoryView: View {
                 repository.showToast(ids.count == 1 ? "Copied \(repository.short(ids[0]))" : "Copied \(ids.count) commit hashes")
                 return [NSItemProvider(object: ids.joined(separator: " ") as NSString)]
             }
-            // ↑ ↓ move the selection; ⇧↑ ⇧↓ pick a range, as ⇧-click does.
-            .onKeyPress(.upArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(-1) : move(-1) }
-            .onKeyPress(.downArrow, phases: .down) { press in press.modifiers.contains(.shift) ? extend(1) : move(1) }
+            // ↑ ↓ move the selection; ⇧↑ ⇧↓ pick a range, as ⇧-click does. Held down, they keep going.
+            .onKeyPress(.upArrow, phases: [.down, .repeat]) { press in press.modifiers.contains(.shift) ? extend(-1) : move(-1) }
+            .onKeyPress(.downArrow, phases: [.down, .repeat]) { press in press.modifiers.contains(.shift) ? extend(1) : move(1) }
             .onKeyPress(.return) {
                 // Return opens the selection in Review (Keyboard Shortcuts › In the Graph).
                 guard repository.canReview else { return .ignored }
                 repository.review = ReviewState(showsAllFiles: true)
                 return .handled
             }
-            .onAppear(perform: restoreAnchor)
+            .onAppear {
+                restoreAnchor()
+                focusUnlessTyping()
+            }
             .onChange(of: repository.historyFocusRequest) { listFocused = true }
             .onChange(of: repository.displayCommits.count) { updateWindow() }
             .onChange(of: repository.scrollRequest) { _, request in
@@ -222,6 +225,15 @@ struct HistoryView: View {
             position.scrollTo(y: y)
         } else if y + height > visible.maxY {
             position.scrollTo(y: y + height - visible.height)
+        }
+    }
+
+    /// Shown again (back from Review, a stash or Explore, another tab): ↑ ↓ work without a click
+    /// first, unless something is being typed in. Next turn: the list can't take focus yet.
+    private func focusUnlessTyping() {
+        DispatchQueue.main.async {
+            guard !(NSApp.keyWindow?.firstResponder is NSTextView) else { return }
+            listFocused = true
         }
     }
 

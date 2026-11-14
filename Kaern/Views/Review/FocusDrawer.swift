@@ -11,6 +11,8 @@ struct FocusDrawer: View {
     let close: () -> Void
     @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
     @State private var expanded: Set<String> = []
+    /// The file list has keyboard focus: ↑ ↓ show the file above or below.
+    @FocusState private var filesFocused: Bool
 
     var body: some View {
         let files = repository.reviewFiles
@@ -18,16 +20,21 @@ struct FocusDrawer: View {
         VStack(spacing: 0) {
             header
             HStack(spacing: 0) {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(files ?? []) { file in
-                            DrawerFileRow(repository: repository, file: file, isCurrent: file.path == current?.path) {
-                                repository.drawerPath = file.path
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(files ?? []) { file in
+                                DrawerFileRow(repository: repository, file: file, isCurrent: file.path == current?.path) {
+                                    filesFocused = true
+                                    repository.drawerPath = file.path
+                                }
+                                .id(file.path)
                             }
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .arrowKeySteps($filesFocused) { step($0, files: files ?? [], current: current, proxy: proxy) }
                 }
                 .frame(width: 310)
                 .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
@@ -62,6 +69,17 @@ struct FocusDrawer: View {
         .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
+    }
+
+    /// ↑ / ↓: shows the file above or below, scrolled into view.
+    private func step(_ offset: Int, files: [ReviewFile], current: ReviewFile?, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !files.isEmpty else { return .ignored }
+        let index = current.flatMap { current in files.firstIndex { $0.path == current.path } }
+        let next = ArrowKeyStep.target(from: index, by: offset, count: files.count)
+        guard next != index else { return .handled }
+        repository.drawerPath = files[next].path
+        proxy.scrollTo(files[next].path)
+        return .handled
     }
 
     /// `.dhead`: title, facts, Split / Unified, Review All, ×.
