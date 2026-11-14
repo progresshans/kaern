@@ -80,20 +80,20 @@ struct SidebarView: View {
 
     // MARK: Local
 
+    /// The branches by name, loose ones first, then a folder per prefix. The checked-out branch stays
+    /// where it sorts (a check and a tint), so checking out another one doesn't move the rows.
     private var localSection: some View {
-        let locals = repository.refs.localBranches
+        let locals = repository.refs.localBranches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let current = repository.currentBranch
-        let others = locals.filter { $0.name != current }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        let loose = others.filter { !$0.name.contains("/") }
-        let folders = Dictionary(grouping: others.filter { $0.name.contains("/") }) { String($0.name.split(separator: "/", maxSplits: 1)[0]) }
+        let loose = locals.filter { !$0.name.contains("/") }
+        let folders = Dictionary(grouping: locals.filter { $0.name.contains("/") }) { String($0.name.split(separator: "/", maxSplits: 1)[0]) }
         return SidebarSectionView(
             title: "Local", tile: Icons.tileLocal, tileSize: 12, color: Color(nsColor: K.hex(0x2f74e8)),
             count: locals.count, isOpen: isOpen(.local), isFirst: true, toggle: { toggle(.local) }
         ) {
-            if let current, matches(current) {
-                SidebarRow(icon: Icons.check, iconColor: K.accent, title: current, isCurrent: true,
-                           ahead: repository.status.ahead, behind: repository.status.behind)
-                    .contextTarget(.branch(current), ring: ContextRing(radius: 6, inset: 0))
+            if let current, !locals.contains(where: { $0.name == current }), matches(current) {
+                // A branch with no commits yet has no ref to sort with: it goes first.
+                currentRow(current, title: current, nested: false)
             }
             ForEach(loose.filter { matches($0.name) }) { ref in
                 branchRow(ref, title: ref.name, nested: false)
@@ -102,7 +102,9 @@ struct SidebarView: View {
                 let members = (folders[folder] ?? []).filter { matches($0.name) }
                 if !members.isEmpty {
                     let folded = filter.isEmpty && repository.sidebar.foldedFolders.contains(folder)
-                    SidebarRow(icon: Icons.folder, title: folder, meta: "\(members.count)")
+                    // Folded over the checked-out branch: a check says it's in there.
+                    SidebarRow(icon: Icons.folder, title: folder, meta: "\(members.count)",
+                               trailingCheck: folded && members.contains { $0.name == current })
                         .onTapGesture { toggleFolder(folder) }
                     if !folded {
                         ForEach(members) { ref in
@@ -117,9 +119,19 @@ struct SidebarView: View {
         }
     }
 
+    /// The checked-out branch: ahead and behind come from git status, the freshest count.
+    private func currentRow(_ name: String, title: String, nested: Bool) -> some View {
+        SidebarRow(icon: Icons.check, iconColor: K.accent, title: title, nested: nested, isCurrent: true,
+                   ahead: repository.status.ahead, behind: repository.status.behind)
+            .help("\(name) — checked out")
+            .contextTarget(.branch(name), ring: ContextRing(radius: 6, inset: 0))
+    }
+
     @ViewBuilder
     private func branchRow(_ ref: Ref, title: String, nested: Bool) -> some View {
-        if let tree = repository.otherWorktree(checkingOut: ref.name) {
+        if ref.name == repository.currentBranch {
+            currentRow(ref.name, title: title, nested: nested)
+        } else if let tree = repository.otherWorktree(checkingOut: ref.name) {
             // ScreenMarks › 워크트리: checked out in another worktree; a click shows that worktree.
             SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind,
                        trailingIcon: Icons.worktreeMark, isOn: repository.selectedWorktree == tree.path)

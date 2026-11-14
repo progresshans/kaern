@@ -9,6 +9,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   the edge to put it back. Kaern keeps the sizes for next time.
 - ↑ and ↓ move through the files of a commit or of your changes once you click one, in the panel and in Focus's
   drawer. Held down, they keep going, in the history too, and back from Review the history takes them without a click.
+- The branch you're on stays in its place in the sidebar, inside its folder, instead of moving to the top. A folded
+  folder that holds it shows a check.
 - In a narrow panel, a file whose folder doesn't fit shows just its name, without a sliver of the folder.
 
 ## [1.0.0] - 2026-11-13
