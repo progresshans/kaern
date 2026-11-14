@@ -13,6 +13,7 @@ struct WindowRootView: View {
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
     @AppStorage(SettingsKey.repositorySwitching, store: .kaern) private var switching = RepositorySwitching.tabs
     @AppStorage(SettingsKey.listFoldsNarrow, store: .kaern) private var listFoldsNarrow = true
+    @AppStorage(PaneSizes.listKey, store: .kaern) private var storedList: Double = 0
 
     var body: some View {
         Group {
@@ -73,6 +74,9 @@ struct WindowRootView: View {
     private var titleBarLayout: some View {
         let repository = window.activeTab.map { app.repository(for: $0.path) }
         let railByWidth = listFoldsNarrow && width > 0 && width < 1100
+        // The repository beside the list keeps room for its sidebar, panel and middle at their least.
+        let listRange = PaneSizes.range(PaneSizes.listMin, width > 0 ? width - PaneSizes.screenLeast : .infinity)
+        let listWidth = PaneSizes.size(storedList, board: RepositoryListView.width, in: listRange)
         return VStack(spacing: 0) {
             Group {
                 if let repository {
@@ -91,6 +95,14 @@ struct WindowRootView: View {
                                 .transition(.move(edge: .leading))
                         } else {
                             RepositoryListView(window: window)
+                                .frame(width: listWidth)
+                                .overlay(alignment: .trailing) {
+                                    PaneResizeHandle(side: .trailing, size: listWidth, range: listRange, label: "Repository list width") {
+                                        storedList = Double($0)
+                                    } reset: { storedList = 0 }
+                                }
+                                .debugPaneFrame("list", window: window.id)
+                                .zIndex(1)
                                 .transition(.move(edge: .leading))
                         }
                     }
@@ -182,6 +194,12 @@ struct RepositoryScreen: View {
     /// Sidebar and Toolbar switching put the status bar under the whole window instead.
     var showsStatusBar = true
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
+    @AppStorage(PaneSizes.sidebarKey, store: .kaern) private var storedSidebar: Double = 0
+    @AppStorage(PaneSizes.panelKey, store: .kaern) private var storedPanel: Double = 0
+    @AppStorage(PaneSizes.drawerKey, store: .kaern) private var storedDrawer: Double = 0
+    /// The row of sidebar, middle and panel, and the middle's height: what the panes may take.
+    @State private var rowWidth: CGFloat = 0
+    @State private var middleHeight: CGFloat = 0
     @Environment(\.windowWidth) private var windowWidth
     @Environment(\.repositorySwitching) private var switching
 
@@ -195,6 +213,18 @@ struct RepositoryScreen: View {
         let sidebarRail = showsSidebar && tier >= .sidebarRail
         let panelOverlay = tier >= .panelOverlay
         let showsDetails = (panelOverlay ? window.overlayPanelOpen : window.showsDetails) && !window.isFocused && repository.isReady
+        // The sizes they were dragged to, fitted to the window.
+        let sidebarSize = PaneSizes.size(storedSidebar, board: KMetric.sidebarWidth, in: PaneSizes.range(PaneSizes.sidebarMin, .infinity))
+        let panelSize = PaneSizes.size(storedPanel, board: repository.screen == .conflicts ? ResolveConflictsPanel.width : KMetric.panelWidth,
+                                       in: PaneSizes.range(PaneSizes.panelMin, .infinity))
+        let columns = SideColumns(width: rowWidth, sidebar: showsSidebar && !sidebarRail ? sidebarSize : nil,
+                                  panel: showsDetails && !panelOverlay ? panelSize : nil, fixed: sidebarRail ? SidebarRail.width : 0)
+        // Over the graph (a narrow window), the sidebar from its rail or the panel leaves some of it.
+        let overlayRoom = rowWidth > 0 ? rowWidth - (sidebarRail ? SidebarRail.width : 0) - PaneSizes.overlayGap : .infinity
+        let flyoutRange = PaneSizes.range(PaneSizes.sidebarMin, overlayRoom)
+        let overlayPanelRange = PaneSizes.range(PaneSizes.panelMin, overlayRoom)
+        let drawerRange = PaneSizes.range(PaneSizes.drawerMin, middleHeight > 0 ? middleHeight - PaneSizes.graphMin : .infinity)
+        let drawerHeight = PaneSizes.size(storedDrawer, board: FocusDrawer.height, in: drawerRange)
         VStack(spacing: 0) {
             if showsToolbar {
                 MainToolbar(window: window, repository: repository)
@@ -214,6 +244,15 @@ struct RepositoryScreen: View {
                         .transition(.move(edge: .leading))
                 } else if showsSidebar {
                     SidebarView(repository: repository, showsHeader: switching != .tabs)
+                        .frame(width: columns.sidebar)
+                        .overlay(alignment: .trailing) {
+                            PaneResizeHandle(side: .trailing, size: columns.sidebar, range: columns.sidebarRange, label: "Sidebar width") {
+                                keepShownWidths(columns, sidebar: sidebarSize, panel: panelSize)
+                                storedSidebar = Double($0)
+                            } reset: { storedSidebar = 0 }
+                        }
+                        .debugPaneFrame("sidebar", window: window.id)
+                        .zIndex(1)
                         .transition(.move(edge: .leading))
                 }
                 VStack(spacing: 0) {
@@ -221,28 +260,53 @@ struct RepositoryScreen: View {
                         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
                     if window.isFocused, window.showsDrawer, repository.isReady, repository.review == nil {
-                        FocusDrawer(repository: repository) { window.showsDrawer = false }
+                        FocusDrawer(repository: repository, height: drawerHeight) { window.showsDrawer = false }
+                            .overlay(alignment: .top) {
+                                PaneResizeHandle(side: .top, size: drawerHeight, range: drawerRange, label: "Drawer height") {
+                                    storedDrawer = Double($0)
+                                } reset: { storedDrawer = 0 }
+                            }
+                            .debugPaneFrame("drawer", window: window.id)
                             .transition(.move(edge: .bottom))
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { middleHeight = $0 }
                 .layoutPriority(-1)
                 if showsDetails, !panelOverlay {
                     detailsPanel
+                        .frame(width: columns.panel)
+                        .overlay(alignment: .leading) {
+                            PaneResizeHandle(side: .leading, size: columns.panel, range: columns.panelRange, label: "Panel width") {
+                                keepShownWidths(columns, sidebar: sidebarSize, panel: panelSize)
+                                storedPanel = Double($0)
+                            } reset: { storedPanel = 0 }
+                        }
+                        .debugPaneFrame("panel", window: window.id)
+                        .zIndex(1)
                         .transition(.move(edge: .trailing))
                 }
             }
             .frame(maxHeight: .infinity)
             .background(K.content)
             .clipped()
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
             .overlay(alignment: .leading) {
                 // < 1,100 pt: a section picked in the rail opens the whole sidebar over the graph.
                 if sidebarRail, let section = window.sidebarFlyout {
+                    let width = min(sidebarSize, flyoutRange.upperBound)
                     ZStack(alignment: .leading) {
                         Color.black.opacity(0.001)
                             .contentShape(Rectangle())
                             .onTapGesture { window.sidebarFlyout = nil }
                         SidebarView(repository: repository, showsHeader: switching != .tabs, focus: section)
+                            .frame(width: width)
                             .shadow(color: .black.opacity(0.18), radius: 17, x: 14)
+                            .overlay(alignment: .trailing) {
+                                PaneResizeHandle(side: .trailing, size: width, range: flyoutRange, label: "Sidebar width") {
+                                    storedSidebar = Double($0)
+                                } reset: { storedSidebar = 0 }
+                            }
+                            .debugPaneFrame("sidebar", window: window.id)
                             .padding(.leading, SidebarRail.width)
                     }
                     .transition(.opacity)
@@ -251,8 +315,16 @@ struct RepositoryScreen: View {
             .overlay(alignment: .trailing) {
                 // < 960 pt: the panel opens over the graph, with × to put it away.
                 if panelOverlay, showsDetails {
+                    let width = min(panelSize, overlayPanelRange.upperBound)
                     detailsPanel
+                        .frame(width: width)
                         .shadow(color: .black.opacity(0.16), radius: 17, x: -14)
+                        .overlay(alignment: .leading) {
+                            PaneResizeHandle(side: .leading, size: width, range: overlayPanelRange, label: "Panel width") {
+                                storedPanel = Double($0)
+                            } reset: { storedPanel = 0 }
+                        }
+                        .debugPaneFrame("panel", window: window.id)
                         .overlay(alignment: .topLeading) {
                             Button { window.overlayPanelOpen = false } label: {
                                 Icon(Icons.closeLarge, size: 10)
@@ -336,6 +408,13 @@ struct RepositoryScreen: View {
                 Alert(title: Text(alert.title), message: Text(alert.message))
             }
         }
+    }
+
+    /// A drag keeps what the columns show: one the window has narrowed stays that wide instead of
+    /// growing back under the pointer while the other one moves.
+    private func keepShownWidths(_ columns: SideColumns, sidebar: CGFloat, panel: CGFloat) {
+        if columns.sidebar > 0, columns.sidebar < sidebar { storedSidebar = Double(columns.sidebar) }
+        if columns.panel > 0, columns.panel < panel { storedPanel = Double(columns.panel) }
     }
 
     @ViewBuilder

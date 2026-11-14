@@ -5,7 +5,7 @@ import KaernKit
 ///
 /// Older keys live next to the code that uses them: `KaernGitPath` (`GitLocator.userPathKey`),
 /// `KaernDiffLayout` / `KaernIgnoreWhitespace` / `KaernFileTree` (`DiffPreferences`),
-/// `KaernPullStrategy`, `KaernColumn…`.
+/// `KaernPullStrategy`, `KaernColumn…`, and the panes' sizes (`PaneSizes`).
 nonisolated enum SettingsKey {
     // General
     static let onLaunch = "KaernOnLaunch"

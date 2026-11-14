@@ -4,6 +4,10 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ## [Unreleased]
 
+- Drag the edge of the sidebar, the panel on the right or Focus's drawer to resize it, and the list of repositories
+  when they're in one. They grow as far as the window allows, leaving the middle at least 400 points. Double-click
+  the edge to put it back. Kaern keeps the sizes for next time.
+
 ## [1.0.0] - 2026-11-13
 
 The first release of Kaern, a native Git client for macOS. Free and open source.

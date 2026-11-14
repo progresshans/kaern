@@ -1,10 +1,13 @@
 import KaernKit
 import SwiftUI
 
-/// Focus mode's bottom drawer (`.drawer`, 330 pt): the selection's title and facts, its files on
-/// the left (working-copy files with a checkbox to stage them) and the picked file's diff.
+/// Focus mode's bottom drawer (`.drawer`, 330 pt unless dragged): the selection's title and facts,
+/// its files on the left (working-copy files with a checkbox to stage them) and the picked file's diff.
 struct FocusDrawer: View {
+    static let height: CGFloat = 330
+
     @Bindable var repository: RepositoryModel
+    let height: CGFloat
     let close: () -> Void
     @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
     @State private var expanded: Set<String> = []
@@ -52,7 +55,7 @@ struct FocusDrawer: View {
                 .background(K.content)
             }
         }
-        .frame(height: 330)
+        .frame(height: height)
         .background(K.inspector)
         .overlay(alignment: .top) { K.sepStrong.frame(height: 1) }
         .shadow(color: .black.opacity(0.06), radius: 9, y: -6)

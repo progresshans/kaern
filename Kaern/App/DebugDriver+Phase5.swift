@@ -373,6 +373,14 @@ extension DebugDriver {
             "overlayPanel": window?.overlayPanelOpen ?? false,
             "width": controller?.window?.frame.width ?? 0,
             "chromeHeight": (controller?.window as? KaernWindow)?.chromeHeight ?? 0,
+            // The sizes kept for the panes (0: the boards'), and where each pane is now (window points).
+            "panes": [
+                "sidebar": UserDefaults.kaern.double(forKey: PaneSizes.sidebarKey),
+                "panel": UserDefaults.kaern.double(forKey: PaneSizes.panelKey),
+                "drawer": UserDefaults.kaern.double(forKey: PaneSizes.drawerKey),
+                "list": UserDefaults.kaern.double(forKey: PaneSizes.listKey),
+                "frames": (window.flatMap { PaneFrames.frames[$0.id] } ?? [:]).mapValues { [$0.minX, $0.minY, $0.width, $0.height] },
+            ] as [String: Any],
         ] as [String: Any]
         result["activity"] = ActivityCenter.shared.running.map { "\($0.title) \($0.detail ?? "") \($0.fraction.map { String(format: "%.2f", $0) } ?? "-")" }
         result["recentActivity"] = ActivityCenter.shared.recent.prefix(4).map { "\($0.title): \($0.result ?? "")" }

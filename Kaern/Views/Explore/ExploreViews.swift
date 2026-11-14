@@ -434,8 +434,7 @@ struct ExplorePanel: View {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: KMetric.panelWidth)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.inspector)
         .overlay(alignment: .leading) { K.sep.frame(width: 1) }
     }

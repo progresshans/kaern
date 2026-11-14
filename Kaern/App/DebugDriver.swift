@@ -158,6 +158,10 @@ final class DebugDriver {
             window?.showsSidebar = args.first != "off"
         case "details":
             window?.showsDetails = args.first != "off"
+        case "pane":
+            // pane sidebar|panel|drawer|list <size> — keeps that size, as a drag does (0: the board's).
+            let keys = ["sidebar": PaneSizes.sidebarKey, "panel": PaneSizes.panelKey, "drawer": PaneSizes.drawerKey, "list": PaneSizes.listKey]
+            if args.count == 2, let key = keys[args[0]], let size = Double(args[1]) { UserDefaults.kaern.set(size, forKey: key) }
         case "resize":
             if args.count == 2, let width = Double(args[0]), let height = Double(args[1]), let nsWindow = controller?.window {
                 var frame = nsWindow.frame
@@ -784,11 +788,19 @@ final class DebugDriver {
             windowNumber: nsWindow.windowNumber, context: nil, eventNumber: 0, clickCount: count,
             pressure: type == .leftMouseUp ? 0 : 1
         ) else { return }
+        // A test instance's window stays in the background: its views take this press as it comes
+        // (`takesDriverClicksInBackground`), and Kaern doesn't come forward.
         nsWindow.sendEvent(event)
     }
 
+    /// Clicks and drags still being sent (each takes a moment): a script waits for none
+    /// (`driver.pointerBusy`) before the next one, or a press could land inside another's drag.
+    private var pointerTasks = 0
+
     private func click(at point: CGPoint, count: Int) {
+        pointerTasks += 1
         Task {
+            defer { pointerTasks -= 1 }
             for index in 1...max(1, count) {
                 mouse(.leftMouseDown, at: point, count: index)
                 try? await Task.sleep(for: .milliseconds(40))
@@ -799,7 +811,9 @@ final class DebugDriver {
     }
 
     private func drag(from start: CGPoint, to end: CGPoint) {
+        pointerTasks += 1
         Task {
+            defer { pointerTasks -= 1 }
             mouse(.leftMouseDown, at: start)
             try? await Task.sleep(for: .milliseconds(60))
             let steps = 16
@@ -1003,6 +1017,7 @@ final class DebugDriver {
             "fieldText": editor?.string ?? "",
             "fieldPlaceholder": field?.placeholderString ?? field?.placeholderAttributedString?.string ?? "",
             "appearance": NSApp.effectiveAppearance.isDark ? "dark" : "light",
+            "pointerBusy": pointerTasks > 0,
         ]
     }
 }

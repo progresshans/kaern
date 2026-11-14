@@ -37,6 +37,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let root = WindowRootView(window: model)
             .environment(app)
             .environment(tracker)
+            .takesDriverClicksInBackground()
         let hosting = KaernHostingView(rootView: root)
         hosting.sizingOptions = []
         window.contentView = hosting
@@ -259,6 +260,19 @@ final class KaernHostingView<Content: View>: NSHostingView<Content> {
     }
 
     override var mouseDownCanMoveWindow: Bool { false }
+}
+
+extension View {
+    /// A test instance stays in the background, where a window's views ignore the press that would
+    /// bring it forward: there they take the debug driver's clicks and drags as they come
+    /// (`DebugDriver.mouse`). Anywhere else, nothing changes.
+    func takesDriverClicksInBackground() -> some View {
+        #if DEBUG
+        allowsWindowActivationEvents(TestSession.stem != nil ? true : nil)
+        #else
+        self
+        #endif
+    }
 }
 
 /// Keeps the traffic lights vertically centered in Kaern's 36 pt tab row. macOS centers them in

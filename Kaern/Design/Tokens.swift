@@ -171,6 +171,7 @@ nonisolated enum KMetric {
     static let wipRow: CGFloat = 34
     static let sidebarRow: CGFloat = 28
     static let fileRow: CGFloat = 26
+    /// The sidebar's and the right panel's widths until they're dragged (`PaneSizes`).
     static let sidebarWidth: CGFloat = 230
     static let panelWidth: CGFloat = 316
 }

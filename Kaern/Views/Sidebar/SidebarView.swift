@@ -53,7 +53,7 @@ struct SidebarView: View {
             filterField
                 .padding(8)
         }
-        .frame(width: KMetric.sidebarWidth)
+        .frame(maxWidth: .infinity)
         .background(K.sidebar)
         .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
     }

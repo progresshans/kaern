@@ -531,9 +531,11 @@ private struct BlockButton: View {
 
 // MARK: - Resolve Conflicts panel
 
-/// The right panel while resolving (`.rcpanel`, 330 pt): the conflicted files (✓ when resolved),
-/// FileMerge, what merged on its own, and the message for the commit that comes next.
+/// The right panel while resolving (`.rcpanel`, 330 pt unless dragged): the conflicted files (✓ when
+/// resolved), FileMerge, what merged on its own, and the message for the commit that comes next.
 struct ResolveConflictsPanel: View {
+    static let width: CGFloat = 330
+
     @Bindable var repository: RepositoryModel
 
     var body: some View {
@@ -585,8 +587,7 @@ struct ResolveConflictsPanel: View {
             }
             messageBox
         }
-        .frame(width: 330)
-        .frame(maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.inspector)
         .overlay(alignment: .leading) { K.sep.frame(width: 1) }
     }

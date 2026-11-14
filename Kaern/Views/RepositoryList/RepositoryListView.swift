@@ -205,9 +205,11 @@ private struct TreeLines: View {
 
 // MARK: - Sidebar mode: the list
 
-/// WindowRepoSidebar's named list (228 pt): Repositories ‹, a filter, the repositories in strip
-/// order with folder groups as a compact tree, and Add Repository….
+/// WindowRepoSidebar's named list (228 pt unless dragged): Repositories ‹, a filter, the repositories
+/// in strip order with folder groups as a compact tree, and Add Repository….
 struct RepositoryListView: View {
+    static let width: CGFloat = 228
+
     let window: WindowModel
     @Environment(AppModel.self) private var app
     @AppStorage(SettingsKey.listShowsBranch, store: .kaern) private var showsBranch = true
@@ -270,7 +272,7 @@ struct RepositoryListView: View {
                 .padding(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
                 .overlay(alignment: .top) { K.sep.frame(height: 1) }
         }
-        .frame(width: 228)
+        .frame(maxWidth: .infinity)
         .background(K.band)
         .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
         .onReceive(NotificationCenter.default.publisher(for: .kaernFocusRepositoryFilter)) { note in
