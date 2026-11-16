@@ -154,6 +154,8 @@ final class DebugDriver {
             phase6(command, args)
         case _ where DebugDriver.holdCommands.contains(command):
             holds(command, args)
+        case _ where DebugDriver.frameCommands.contains(command):
+            frames(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":

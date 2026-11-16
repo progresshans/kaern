@@ -18,6 +18,24 @@ extension DebugDriver {
         "useWindow", "focusGraph", "targetFrame", "initSubmodule", "deepen", "updateRecorded", "relocate",
     ]
 
+    /// A trackpad scroll by (dx, dy) points at the window point (x, y) (top-left origin), through the
+    /// event queue like a real one (event monitors see it).
+    func postScroll(x: Double, y: Double, dx: Double, dy: Double) {
+        guard let nsWindow = controller?.window, let screen = nsWindow.screen ?? NSScreen.main else { return }
+        // Quartz event locations are global, top-left of the main display.
+        let flipped = NSPoint(x: nsWindow.frame.minX + x, y: nsWindow.frame.maxY - y)
+        let mainHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                               wheel1: Int32(dy), wheel2: Int32(dx), wheel3: 0) else { return }
+        cg.location = CGPoint(x: flipped.x, y: mainHeight - flipped.y)
+        cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        // The driver's own: it passes when the real pointer is kept out (-KaernDebugIgnorePointer).
+        cg.setIntegerValueField(.eventSourceUserData, value: DebugDriver.ownEventMark)
+        cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(nsWindow.windowNumber))
+        cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(nsWindow.windowNumber))
+        if let event = NSEvent(cgEvent: cg) { NSApp.postEvent(event, atStart: false) }
+    }
+
     func phase5(_ command: String, _ args: [String]) {
         let state = RepositoriesWindowController.shared.state
         switch command {
@@ -97,21 +115,9 @@ extension DebugDriver {
         case "scrollWheel":
             // scrollWheel x y dx dy — a trackpad scroll by (dx, dy) points at window points (top-left
             // origin), through the event queue like a real one (event monitors see it).
-            guard args.count == 4, let nsWindow = controller?.window, let screen = nsWindow.screen ?? NSScreen.main else { return }
             let values = args.compactMap(Double.init)
-            guard values.count == 4 else { return }
-            // Quartz event locations are global, top-left of the main display.
-            let flipped = NSPoint(x: nsWindow.frame.minX + values[0], y: nsWindow.frame.maxY - values[1])
-            let mainHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
-                                   wheel1: Int32(values[3]), wheel2: Int32(values[2]), wheel3: 0) else { return }
-            cg.location = CGPoint(x: flipped.x, y: mainHeight - flipped.y)
-            cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-            // The driver's own: it passes when the real pointer is kept out (-KaernDebugIgnorePointer).
-            cg.setIntegerValueField(.eventSourceUserData, value: DebugDriver.ownEventMark)
-            cg.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(nsWindow.windowNumber))
-            cg.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(nsWindow.windowNumber))
-            if let event = NSEvent(cgEvent: cg) { NSApp.postEvent(event, atStart: false) }
+            guard args.count == 4, values.count == 4 else { return }
+            postScroll(x: values[0], y: values[1], dx: values[2], dy: values[3])
             return
         case "fakeFetchProblem":
             // fakeFetchProblem <tab name> signIn|network <host> — as if its last fetch failed that way.
