@@ -145,7 +145,6 @@ struct HistoryView: View {
                         tint: CommitRow.Tint(comparison: comparison, id: commit.id),
                         columns: columns
                     )
-                    .contentShape(Rectangle())
                     .onTapGesture { click(commit.id) }
                 }
             }
@@ -663,6 +662,9 @@ private struct CommitRow: View {
     @State private var pointerOnLabels = false
     @State private var pointerOnList = false
     @State private var labelsTimer: Task<Void, Never>?
+    /// How wide the row shows its first label and "+N": the list is at least as wide, so it covers
+    /// them and the pointer that opened it is on it.
+    @State private var shownLabelsWidth: CGFloat = 0
 
     private var lane: Int { graph?.lane ?? 0 }
     private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
@@ -744,10 +746,14 @@ private struct CommitRow: View {
                 (tint == .ours ? K.accent : K.lane2).frame(width: 3)
             }
         }
+        // The whole row takes the pointer, its empty parts too. Only the row: the list of labels lies
+        // outside it, over other rows, and takes the pointer there (it is this row's, above the others).
+        .contentShape(Rectangle())
         .overlay(alignment: .topLeading) {
             // Over the whole row: its node and lanes too. The first label sits where the column has it.
             if listShown {
-                RefLabelList(labels: labels, lane: lane, origin: CGPoint(x: 10, y: (KMetric.graphRow - RefLabelList.labelHeight) / 2)) {
+                RefLabelList(labels: labels, lane: lane, origin: CGPoint(x: 10, y: (KMetric.graphRow - RefLabelList.labelHeight) / 2),
+                             minWidth: shownLabelsWidth) {
                     pointer(onList: $0)
                 }
                 .transition(.opacity)
@@ -781,6 +787,10 @@ private struct CommitRow: View {
                 }
                 .layoutPriority(1)
                 .onHover { inside in if labels.count > 1 { pointer(onLabels: inside) } }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                    if labels.count > 1 { shownLabelsWidth = width }
+                }
+                .debugLabelsFrame("row \(commit.id)")
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
                     .frame(minWidth: 8, maxWidth: .infinity)
@@ -800,7 +810,7 @@ private struct CommitRow: View {
 
     /// The list opens after a moment on the label and closes a moment after the pointer has left
     /// both the label and the list: passing over a row doesn't flash it, and the pointer can move
-    /// from the label into the list (which then lies over the label).
+    /// from the label into the list (which then lies over the label and "+N").
     private func pointer(onLabels: Bool? = nil, onList: Bool? = nil) {
         #if DEBUG
         // A test instance's window lies wherever the real pointer happens to be: there only the driver
@@ -824,22 +834,40 @@ private struct CommitRow: View {
 
 #if DEBUG
 /// Debug builds: the commit whose list of labels the driver opened (`labels <index or hash>|off`);
-/// a test window in the background gets no hover.
+/// a test window in the background gets no hover. `frames`: where the open list is ("list") and
+/// where each row shows its first label and "+N" ("row <commit>"), in window points (top-left
+/// origin), for the driver's `targetFrame labels list|row`.
 @Observable
 final class DebugRefLabels {
     static let shared = DebugRefLabels()
     var open: String?
+    @ObservationIgnored var frames: [String: CGRect] = [:]
+}
+
+extension View {
+    /// Debug builds: tells the driver where this part of a commit's labels is (`DebugRefLabels.frames`).
+    func debugLabelsFrame(_ key: String) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { DebugRefLabels.shared.frames[key] = $0 }
+            .onDisappear { DebugRefLabels.shared.frames[key] = nil }
+    }
+}
+#else
+extension View {
+    func debugLabelsFrame(_ key: String) -> some View { self }
 }
 #endif
 
-/// Every label of a commit with several refs, unfolding from its first one (which it covers): down
-/// over the rows below, or up, the other way round, when the history shows more room above. It lies
-/// over the row's own node and lanes too. The labels are whole, and each keeps its right-click menu.
+/// Every label of a commit with several refs, unfolding from its first one and "+N" (which it
+/// covers): down over the rows below, or up, the other way round, when the history shows more room
+/// above. It lies over the row's own node and lanes too. The labels are whole, and each keeps its
+/// right-click menu.
 private struct RefLabelList: View {
     let labels: [RefLabelItem]
     let lane: Int
     /// Where the row shows its first label (the row's coordinates).
     let origin: CGPoint
+    /// How wide the row shows its first label and "+N", from `origin`.
+    let minWidth: CGFloat
     let hover: (Bool) -> Void
 
     static let labelHeight: CGFloat = 20
@@ -862,6 +890,7 @@ private struct RefLabelList: View {
                         .contextTarget(label.contextTarget, ring: ContextRing(radius: 6, inset: -2))
                 }
             }
+            .frame(minWidth: minWidth, alignment: .leading)
             .padding(Self.pad)
             // Solid: the rows under it don't show through.
             .background {
@@ -876,6 +905,7 @@ private struct RefLabelList: View {
             }
             .contentShape(Rectangle())
             .onHover(perform: hover)
+            .debugLabelsFrame("list")
             .offset(x: origin.x - Self.pad, y: up ? bottom - height : top)
         }
     }
