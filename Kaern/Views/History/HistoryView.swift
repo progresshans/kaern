@@ -143,9 +143,12 @@ struct HistoryView: View {
                             : picked.contains(commit.id),
                         isDimmed: repository.search.isDimmed(commit.id),
                         tint: CommitRow.Tint(comparison: comparison, id: commit.id),
-                        columns: columns
+                        columns: columns,
+                        switchTo: switchTo
                     )
-                    .onTapGesture { click(commit.id) }
+                    // Beside a label's double-click (which switches), not after it: the click picks the
+                    // commit at once instead of waiting to see whether a second one follows.
+                    .simultaneousGesture(TapGesture().onEnded { click(commit.id) })
                 }
             }
             Color.clear.frame(height: CGFloat(shown.count - range.upperBound) * KMetric.graphRow)
@@ -243,6 +246,27 @@ struct HistoryView: View {
         repository.selection = selection
         listFocused = true
         onPick()
+    }
+
+    /// A double-click on a label does what one in the sidebar does: a branch's switches to it, a
+    /// remote branch's checks out a local branch that tracks it, and a branch checked out in another
+    /// worktree shows that worktree. The branch you're on and tags do nothing.
+    private func switchTo(_ label: RefLabelItem) {
+        switch label.kind {
+        case .branch where label.isHead:
+            break
+        case .branch:
+            if let tree = repository.otherWorktree(checkingOut: label.title) {
+                repository.showWorktree(tree)
+            } else {
+                repository.from("History › double-click branch") { repository.switchBranch(label.title) }
+            }
+        case .remote:
+            guard let ref = repository.refs.remoteBranches.first(where: { $0.name == label.title }) else { return }
+            repository.from("History › double-click remote branch") { repository.checkoutRemoteBranch(ref) }
+        case .tag:
+            break
+        }
     }
 
     /// A click on a commit: ⌘ adds it to the picked commits, ⇧ picks a range.
@@ -640,6 +664,8 @@ private struct CommitRow: View {
     let isDimmed: Bool
     var tint: Tint = .none
     let columns: HistoryColumns
+    /// A double-click on one of its labels, here or in its list (`HistoryView.switchTo`).
+    let switchTo: (RefLabelItem) -> Void
 
     /// Compare marks: between two picked commits (`.inr`), only on the current branch (`.ahd`)
     /// or only on the other one (`.bhd`).
@@ -753,7 +779,7 @@ private struct CommitRow: View {
             // Over the whole row: its node and lanes too. The first label sits where the column has it.
             if listShown {
                 RefLabelList(labels: labels, lane: lane, origin: CGPoint(x: 10, y: (KMetric.graphRow - RefLabelList.labelHeight) / 2),
-                             minWidth: shownLabelsWidth) {
+                             minWidth: shownLabelsWidth, switchTo: switchTo) {
                     pointer(onList: $0)
                 }
                 .transition(.opacity)
@@ -773,6 +799,7 @@ private struct CommitRow: View {
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     RefLabel(label: first, lane: lane, selected: isSelected)
+                        .onTapGesture(count: 2) { switchTo(first) }
                         .contextTarget(first.contextTarget, ring: ContextRing(radius: 6, inset: -2))
                         .layoutPriority(1)
                     if labels.count > 1 {
@@ -868,6 +895,8 @@ private struct RefLabelList: View {
     let origin: CGPoint
     /// How wide the row shows its first label and "+N", from `origin`.
     let minWidth: CGFloat
+    /// A double-click on a label (`HistoryView.switchTo`).
+    let switchTo: (RefLabelItem) -> Void
     let hover: (Bool) -> Void
 
     static let labelHeight: CGFloat = 20
@@ -887,6 +916,7 @@ private struct RefLabelList: View {
                 ForEach(up ? labels.reversed() : labels) { label in
                     RefLabel(label: label, lane: lane, selected: false)
                         .fixedSize()
+                        .onTapGesture(count: 2) { switchTo(label) }
                         .contextTarget(label.contextTarget, ring: ContextRing(radius: 6, inset: -2))
                 }
             }

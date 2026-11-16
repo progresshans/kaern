@@ -237,8 +237,19 @@ struct RefLabel: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(K.worktreeRing, lineWidth: 1)
             }
         }
-        .help(label.names.joined(separator: "\n") + (label.worktree.map { "\nChecked out in the worktree \($0)" } ?? ""))
+        .help((label.names + [label.worktree.map { "Checked out in the worktree \($0)" }, doubleClick].compactMap { $0 })
+            .joined(separator: "\n"))
     }
 
     private var iconColor: Color { label.isHead || selected ? .white : K.label2 }
+
+    /// What a double-click on the label does (HistoryView's `switchTo`), as the sidebar says it.
+    private var doubleClick: String? {
+        switch label.kind {
+        case .branch where label.isHead: nil
+        case .branch: label.worktree == nil ? "Double-click to switch." : "Double-click to see it."
+        case .remote: "Double-click to check out a local branch that tracks it."
+        case .tag: nil
+        }
+    }
 }

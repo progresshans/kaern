@@ -13,6 +13,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   folder that holds it shows a check.
 - When several branches or tags point at one commit, the history shows one label and "+2". Rest the pointer on it
   and every label unfolds in a list, with its whole name and its right-click menu.
+- Double-click a branch's label in the history, or in its "+2" list, to switch to it, as in the sidebar. A remote
+  branch's label checks out a local branch that tracks it.
 - In a narrow panel, a file whose folder doesn't fit shows just its name, without a sliver of the folder.
 
 ## [1.0.0] - 2026-11-13
