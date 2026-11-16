@@ -3,6 +3,33 @@
     <channel>
         <title>Kaern</title>
         <item>
+            <title>1.0.1-beta.1</title>
+            <pubDate>Mon, 16 Nov 2026 14:28:34 +0000</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>1000101</sparkle:version>
+            <sparkle:shortVersionString>1.0.1-beta.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[- Drag the edge of the sidebar, the panel on the right or Focus's drawer to resize it, and the list of repositories
+  when they're in one. They grow as far as the window allows, leaving the middle at least 400 points. Double-click
+  the edge to put it back. Kaern keeps the sizes for next time.
+- ↑ and ↓ move through the files of a commit or of your changes once you click one, in the panel and in Focus's
+  drawer. Held down, they keep going, in the history too, and back from Review the history takes them without a click.
+- The branch you're on stays in its place in the sidebar, inside its folder, instead of moving to the top. A folded
+  folder that holds it shows a check.
+- When several branches or tags point at one commit, the history shows one label and "+2". Rest the pointer on it
+  and every label unfolds in a list, with its whole name and its right-click menu.
+- Double-click a branch's label in the history, or in its "+2" list, to switch to it, as in the sidebar. A remote
+  branch's label checks out a local branch that tracks it.
+- Double-click a worktree in the sidebar, or a branch checked out in one, to open that worktree in a tab of its
+  own. Right-click a worktree to open it, show or copy its folder, lock it, or remove it with or without its
+  branch. A branch checked out in another worktree offers Open Worktree instead of Checkout, and no Delete while
+  that worktree is there.
+- In a narrow panel, a file whose folder doesn't fit shows just its name, without a sliver of the folder.
+]]></description>
+            <enclosure url="https://github.com/progresshans/kaern/releases/download/v1.0.1-beta.1/Kaern-1.0.1-beta.1.zip" length="4625733" type="application/octet-stream" sparkle:edSignature="92KloDn1jKvD8vLWss/nkzk8TOo7tF2tWGIQ2SIIaFXRh9GafxGDMpkh8vts8hm2mn8ObFb5BMDxMwpEO8YeCA=="/>
+        </item>
+        <item>
             <title>1.0.0</title>
             <pubDate>Fri, 13 Nov 2026 07:21:56 +0000</pubDate>
             <sparkle:version>1000099</sparkle:version>
