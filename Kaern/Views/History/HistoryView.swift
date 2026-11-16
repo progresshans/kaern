@@ -250,14 +250,14 @@ struct HistoryView: View {
 
     /// A double-click on a label does what one in the sidebar does: a branch's switches to it, a
     /// remote branch's checks out a local branch that tracks it, and a branch checked out in another
-    /// worktree shows that worktree. The branch you're on and tags do nothing.
+    /// worktree opens that worktree in a tab of its own. The branch you're on and tags do nothing.
     private func switchTo(_ label: RefLabelItem) {
         switch label.kind {
         case .branch where label.isHead:
             break
         case .branch:
             if let tree = repository.otherWorktree(checkingOut: label.title) {
-                repository.showWorktree(tree)
+                repository.openWorktree(tree.path)
             } else {
                 repository.from("History › double-click branch") { repository.switchBranch(label.title) }
             }

@@ -247,7 +247,7 @@ struct RefLabel: View {
     private var doubleClick: String? {
         switch label.kind {
         case .branch where label.isHead: nil
-        case .branch: label.worktree == nil ? "Double-click to switch." : "Double-click to see it."
+        case .branch: label.worktree == nil ? "Double-click to switch." : "Double-click to open the worktree."
         case .remote: "Double-click to check out a local branch that tracks it."
         case .tag: nil
         }

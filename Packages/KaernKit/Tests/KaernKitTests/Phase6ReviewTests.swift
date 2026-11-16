@@ -73,6 +73,24 @@ struct Phase6ReviewTests {
         #expect(await repository.worktrees().dropFirst().allSatisfy { !$0.isMain })
     }
 
+    @Test func aLockedWorktreeStaysUntilItIsUnlocked() async throws {
+        let (repository, folder) = try await Self.repositoryWithWorktree()
+        defer { TestRepositories.remove(repository); try? FileManager.default.removeItem(at: folder) }
+        let path = folder.path(percentEncoded: false)
+        try await repository.lockWorktree(path)
+        #expect(await repository.worktrees().last?.isLocked == true)
+        // git leaves it alone, and Remove… loses nothing on the way.
+        await #expect(throws: (any Error).self) { _ = try await repository.removeWorktree(path, keepingChangesAs: "x") }
+        #expect(FileManager.default.fileExists(atPath: path))
+        #expect(try await repository.stashes().isEmpty)
+        // The main working tree can't be locked.
+        await #expect(throws: (any Error).self) { try await repository.lockWorktree(repository.root.path(percentEncoded: false)) }
+        try await repository.unlockWorktree(path)
+        #expect(await repository.worktrees().last?.isLocked == false)
+        _ = try await repository.removeWorktree(path, keepingChangesAs: "x")
+        #expect(!FileManager.default.fileExists(atPath: path))
+    }
+
     @Test func aStopPutsTheChangesBackOrKeepsThemForTheOperation() async throws {
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }

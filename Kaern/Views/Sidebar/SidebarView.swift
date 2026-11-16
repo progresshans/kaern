@@ -132,11 +132,13 @@ struct SidebarView: View {
         if ref.name == repository.currentBranch {
             currentRow(ref.name, title: title, nested: nested)
         } else if let tree = repository.otherWorktree(checkingOut: ref.name) {
-            // ScreenMarks › 워크트리: checked out in another worktree; a click shows that worktree.
+            // ScreenMarks › 워크트리: checked out in another worktree; a click shows that worktree, a
+            // double-click opens it in a tab of its own (the click beside it still shows the page at once).
             SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind,
                        trailingIcon: Icons.worktreeMark, isOn: repository.selectedWorktree == tree.path)
-                .help("\(ref.name) — checked out in the worktree \(tree.name). Click to see it.")
+                .help("\(ref.name) — checked out in the worktree \(tree.name). Click to see it, double-click to open it in its own tab.")
                 .onTapGesture { repository.showWorktree(tree) }
+                .simultaneousGesture(TapGesture(count: 2).onEnded { repository.openWorktree(tree.path) })
                 .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
         } else {
             SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind)
@@ -446,9 +448,12 @@ private struct WorktreeSidebarRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { repository.showWorktree(isCurrent ? nil : tree) }
+        // Beside the click: its page shows at once, and a second click opens it in its own tab.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { if !isCurrent { repository.openWorktree(tree.path) } })
+        .contextTarget(.worktree(tree.path), ring: ContextRing(radius: 6, inset: 0))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .help(tree.path)
+        .help(isCurrent ? tree.path : "\(tree.path) — double-click to open it in its own tab")
     }
 
     /// Another worktree's page is open: this tab's row isn't highlighted (the board's 워크트리 state).

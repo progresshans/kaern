@@ -268,6 +268,17 @@ extension GitRepository {
         try await git(["worktree", "remove", path])
     }
 
+    /// `git worktree lock`: git won't remove or prune a locked working tree (its folder may be on a
+    /// drive that isn't always there). The main working tree can't be locked.
+    public func lockWorktree(_ path: String) async throws {
+        try await git(["worktree", "lock", path])
+    }
+
+    /// `git worktree unlock`.
+    public func unlockWorktree(_ path: String) async throws {
+        try await git(["worktree", "unlock", path])
+    }
+
     /// The linked working tree at `path` as a repository of its own. Refuses this repository's
     /// main working tree, and a folder that isn't a working tree's own top folder (it would open
     /// the repository around it).

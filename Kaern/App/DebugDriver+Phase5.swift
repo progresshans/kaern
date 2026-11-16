@@ -60,7 +60,8 @@ extension DebugDriver {
             DebugDriver.chosenWindow = args.first.flatMap(Int.init)
             return
         case "targetFrame":
-            // targetFrame file <path> | commitFile <path> | commit <index> | branch <name> | remote <name> | tag <name> —
+            // targetFrame file <path> | commitFile <path> | commit <index> | branch <name> | remote <name> | tag <name> |
+            // worktree <folder name> —
             // writes where its row (the smallest view showing it) is, in window points, into the dump's
             // `targetFrame`. targetFrame labels list|row: the list of labels the driver opened (`labels`),
             // and where its row shows the first label and "+N".
@@ -80,6 +81,7 @@ extension DebugDriver {
             case "branch": .branch(rest)
             case "remote": .remoteBranch(rest)
             case "tag": .tag(rest)
+            case "worktree": repository.worktrees.first { $0.name == rest }.map { .worktree($0.path) }
             default: nil
             }
             lastTargetFrame = target.flatMap { controller.contextTracker.frame(of: $0) }

@@ -15,6 +15,10 @@ What changed in each version of Kaern. A version's section is what its update wi
   and every label unfolds in a list, with its whole name and its right-click menu.
 - Double-click a branch's label in the history, or in its "+2" list, to switch to it, as in the sidebar. A remote
   branch's label checks out a local branch that tracks it.
+- Double-click a worktree in the sidebar, or a branch checked out in one, to open that worktree in a tab of its
+  own. Right-click a worktree to open it, show or copy its folder, lock it, or remove it with or without its
+  branch. A branch checked out in another worktree offers Open Worktree instead of Checkout, and no Delete while
+  that worktree is there.
 - In a narrow panel, a file whose folder doesn't fit shows just its name, without a sliver of the folder.
 
 ## [1.0.0] - 2026-11-13

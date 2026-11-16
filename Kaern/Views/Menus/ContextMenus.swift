@@ -16,6 +16,8 @@ enum ContextTarget: Hashable {
     case commitFile(path: String, commit: String)
     /// A block of lines in Blame (its commit).
     case blame(String)
+    /// A working tree in the sidebar's Worktrees (its folder).
+    case worktree(String)
 }
 
 /// Where the rows that have context menus are, in one window. Rows report their frames with
@@ -161,6 +163,7 @@ enum ContextMenus {
         case .stash(let id): menu = stashMenu(id, repository)
         case .commitFile(let path, let commit): menu = commitFileMenu(path, commit: commit, repository)
         case .blame(let id): menu = blameMenu(id, repository)
+        case .worktree(let path): menu = worktreeMenu(path, repository)
         }
         return menu.map(fitHeader)
     }
@@ -248,9 +251,16 @@ enum ContextMenus {
             sub = merged ? "Already part of \(cur)" : "Not merged into \(cur)"
         }
         menu.addItem(header(name, sub))
-        menu.addItem(item("Checkout", hint: isCurrent ? "Current branch" : nil, enabled: idle && !isCurrent) {
-            r.from(source) { r.checkout(branch: name) }
-        })
+        // Checked out in another worktree: git won't check it out here, pull into it or delete it.
+        let tree = isCurrent ? nil : r.otherWorktree(checkingOut: name)
+        let elsewhere = tree.map { "Checked out in \($0.name)" }
+        if let tree {
+            menu.addItem(item("Open Worktree “\(tree.name)”") { r.openWorktree(tree.path) })
+        } else {
+            menu.addItem(item("Checkout", hint: isCurrent ? "Current branch" : nil, enabled: idle && !isCurrent) {
+                r.from(source) { r.checkout(branch: name) }
+            })
+        }
         menu.addItem(.separator())
         let noBranch = current == nil
         menu.addItem(item("Merge into “\(cur)”", hint: merged ? "Already merged" : noBranch ? "Not on a branch" : nil,
@@ -262,7 +272,7 @@ enum ContextMenus {
             r.from(source) { r.rebase(onto: name) }
         })
         let canSync = isCurrent ? r.status.upstream != nil : tracked != nil
-        menu.addItem(item("Pull", hint: canSync ? nil : "No upstream", enabled: idle && canSync) {
+        menu.addItem(item("Pull", hint: elsewhere ?? (canSync ? nil : "No upstream"), enabled: idle && canSync && tree == nil) {
             r.from(source) { r.pull(branch: name) }
         })
         menu.addItem(item("Push", hint: canSync || isCurrent ? nil : "No upstream", enabled: idle && (canSync || isCurrent) && !r.remotes.isEmpty) {
@@ -270,14 +280,19 @@ enum ContextMenus {
         })
         menu.addItem(.separator())
         menu.addItem(item("Rename…", enabled: idle) { r.from(source) { r.askRename(branch: name) } })
-        menu.addItem(item("Delete", hint: isCurrent ? "Switch to another branch first" : nil, key: "\u{8}", enabled: idle && !isCurrent) {
+        menu.addItem(item("Delete", hint: isCurrent ? "Switch to another branch first" : elsewhere, key: "\u{8}",
+                          enabled: idle && !isCurrent && tree == nil) {
             r.from(source) { r.deleteBranch(name) }
         })
         menu.addItem(item("Delete Here and on \(tracked?.remoteName ?? "origin")…",
-                          hint: isCurrent ? nil : tracked == nil ? "Not on a remote" : nil,
-                          enabled: idle && !isCurrent && tracked != nil) {
+                          hint: isCurrent ? nil : elsewhere ?? (tracked == nil ? "Not on a remote" : nil),
+                          enabled: idle && !isCurrent && tree == nil && tracked != nil) {
             if let tracked { r.from(source) { r.deleteOnRemote(branch: name, remoteBranch: tracked, alsoLocal: true) } }
         })
+        if let tree {
+            // GitKraken's way to delete it: the worktree goes first.
+            for item in removeWorktreeItems(tree, r, source: source) { menu.addItem(item) }
+        }
         menu.addItem(.separator())
         menu.addItem(item("Compare with “\(cur)”", enabled: !isCurrent) { r.compare(branch: name) })
         let page = tracked.flatMap { tracked in r.remoteURL?.pullRequestPage(branch: tracked.branchName) }
@@ -287,6 +302,46 @@ enum ContextMenus {
         })
         menu.addItem(item("Copy Branch Name") { r.copy(name, toast: "Copied \(name)") })
         return menu
+    }
+
+    // MARK: Worktree
+
+    /// A working tree in the sidebar (GitKraken's worktree menu): open it in a tab of its own, show
+    /// or copy its folder, lock or unlock it, and remove it, or it and its branch.
+    static func worktreeMenu(_ path: String, _ r: RepositoryModel) -> NSMenu? {
+        guard let tree = r.worktrees.first(where: { $0.path == path }) else { return nil }
+        let menu = NSMenu(title: tree.name)
+        menu.autoenablesItems = false
+        let source = "Worktree menu"
+        let here = r.isCurrent(tree)
+        let place = tree.branch ?? tree.head.map { "Detached at \($0.prefix(7))" } ?? "No commit yet"
+        menu.addItem(header(tree.name, (here ? "This tab · " : "") + place + (tree.isLocked ? " · locked" : "")))
+        menu.addItem(item("Open in New Tab", hint: here ? "This tab" : nil, enabled: !here) { r.openWorktree(tree.path) })
+        menu.addItem(item("Show in Finder") { r.revealWorktree(tree.path) })
+        menu.addItem(item("Copy Path") { r.copy(tree.path, toast: "Copied \(Formatters.abbreviatedPath(tree.path))") })
+        menu.addItem(.separator())
+        menu.addItem(item(tree.isLocked ? "Unlock" : "Lock", hint: tree.isMain ? "Main worktree" : nil,
+                          enabled: r.activity == nil && !tree.isMain) {
+            r.from(source) { r.setWorktreeLocked(tree, !tree.isLocked) }
+        })
+        menu.addItem(.separator())
+        for item in removeWorktreeItems(tree, r, source: source) { menu.addItem(item) }
+        return menu
+    }
+
+    /// Remove… and Remove and Delete Branch… for a worktree (its menu, and its branch's).
+    static func removeWorktreeItems(_ tree: Worktree, _ r: RepositoryModel, source: String) -> [NSMenuItem] {
+        let refusal = tree.isMain ? "Main worktree" : r.isCurrent(tree) ? "This tab" : tree.isLocked ? "Locked" : nil
+        let enabled = r.activity == nil && refusal == nil
+        return [
+            item("Remove Worktree…", hint: refusal, enabled: enabled) {
+                r.from(source) { r.askRemoveWorktree(tree) }
+            },
+            item("Remove Worktree and Delete Branch…", hint: refusal ?? (tree.branch == nil ? "No branch" : nil),
+                 enabled: enabled && tree.branch != nil) {
+                r.from(source) { r.askRemoveWorktree(tree, deletingBranch: true) }
+            },
+        ]
     }
 
     static func remoteMenu(_ name: String, _ r: RepositoryModel) -> NSMenu? {

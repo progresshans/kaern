@@ -140,7 +140,7 @@ final class DebugDriver {
              "stage", "unstage", "stageAll", "unstageAll", "stageHunk", "unstageHunk", "summary", "body", "amend", "commit",
              "column", "scroll", "labels":
             phase2(command, args)
-        case "menu", "menuClose", "menuHover", "rightClick", "pick", "clearPicks", "branchCompare", "swap", "undo", "redo", "checkout", "checkoutCommit",
+        case "menu", "menuItems", "menuRun", "menuClose", "menuHover", "rightClick", "pick", "clearPicks", "branchCompare", "swap", "undo", "redo", "checkout", "checkoutCommit",
              "cherryPick", "revert", "reset", "merge", "rebase", "deleteBranch", "discard", "ignore", "apply", "popStash", "drop",
              "pickLines", "stageLines", "discardLines", "clearLines", "publish", "publishDraft", "confirm", "dismiss", "commitHooks",
              "commandLog", "commandLogFilter", "commandLogSelect", "snapshotAll", "snapshotWindow", "compareWorking", "toast", "rename",
@@ -374,7 +374,48 @@ final class DebugDriver {
             if let index = Int(text), repository.commits.indices.contains(index) { return repository.commits[index].id }
             return repository.commits.first { $0.id.hasPrefix(text) }?.id
         }
+        /// What a right-click menu is for: commit <index or hash> | branch <name> | remote <name> |
+        /// tag <name> | file <path> [staged] | stash <index> | worktree <folder name>.
+        func menuTarget(_ spec: [String]) -> ContextTarget? {
+            guard let kind = spec.first else { return nil }
+            let name = spec.dropFirst().joined(separator: " ")
+            switch kind {
+            case "commit": return commitID(spec.dropFirst().first).map { .commit($0) }
+            case "branch": return .branch(name)
+            case "remote": return .remoteBranch(name)
+            case "tag": return .tag(name)
+            case "file":
+                let staged = spec.last == "staged"
+                return .file(path: spec.dropFirst().dropLast(staged ? 1 : 0).joined(separator: " "), staged: staged)
+            case "stash": return Int(name).flatMap { repository.stashes.indices.contains($0) ? .stash(repository.stashes[$0].id) : nil }
+            case "worktree": return repository.worktrees.first { $0.name == name }.map { .worktree($0.path) }
+            default: return nil
+            }
+        }
         switch command {
+        case "menuItems":
+            // menuItems <file> <kind> <name…> — that target's right-click menu (see `menuTarget`) as JSON in
+            // <file>: the header's title, then each item's title, the reason it doesn't apply and whether it's on.
+            guard args.count >= 3, let target = menuTarget(Array(args.dropFirst())),
+                  let menu = ContextMenus.menu(for: target, repository: repository, window: window) else { return }
+            let items = menu.items.map { item -> [String: Any] in
+                if item.isSeparatorItem { return ["separator": true] }
+                if item.view != nil { return ["header": item.title] }
+                // An item with a reason has it in its title after a tab (`ContextMenus.titled`).
+                let parts = item.title.components(separatedBy: "\t")
+                return ["title": parts[0], "hint": parts.dropFirst().first ?? "", "enabled": item.isEnabled]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: items, options: [.prettyPrinted]) {
+                try? data.write(to: URL(filePath: args[0]))
+            }
+        case "menuRun":
+            // menuRun <kind> <name…> | <item title> — chooses that item of the target's right-click menu.
+            let halves = rest.components(separatedBy: " | ")
+            guard halves.count == 2, let target = menuTarget(halves[0].split(separator: " ").map(String.init)),
+                  let menu = ContextMenus.menu(for: target, repository: repository, window: window),
+                  let index = menu.items.firstIndex(where: { $0.title.components(separatedBy: "\t").first == halves[1] }),
+                  menu.items[index].isEnabled else { return }
+            menu.performActionForItem(at: index)
         case "menu":
             // menu commit <index> | branch <name> | remote <name> | tag <name> | file <path> [staged] | stash <index>,
             // then <x> <y> (window points, top-left): where the menu's top-left goes, or with `sub <item title…>`
@@ -396,18 +437,7 @@ final class DebugDriver {
             }
             guard parts.count >= 4, let x = Double(parts[parts.count - 2]), let y = Double(parts[parts.count - 1]) else { return }
             let spec = Array(parts.dropLast(2))
-            let target: ContextTarget?
-            switch spec[0] {
-            case "commit": target = commitID(spec[1]).map { .commit($0) }
-            case "branch": target = .branch(spec.dropFirst().joined(separator: " "))
-            case "remote": target = .remoteBranch(spec.dropFirst().joined(separator: " "))
-            case "tag": target = .tag(spec.dropFirst().joined(separator: " "))
-            case "file":
-                let staged = spec.last == "staged"
-                target = .file(path: spec.dropFirst().dropLast(staged ? 1 : 0).joined(separator: " "), staged: staged)
-            case "stash": target = Int(spec[1]).flatMap { repository.stashes.indices.contains($0) ? .stash(repository.stashes[$0].id) : nil }
-            default: target = nil
-            }
+            let target = menuTarget(spec)
             // `toolbarBranch`: the toolbar branch button's menu (phase 4); `graphScope`: the bar's Graph: menu (phase 6).
             let built = spec[0] == "toolbarBranch"
                 ? ContextMenus.toolbarBranchMenu(repository, onNewBranch: {})
