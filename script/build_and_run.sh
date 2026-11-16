@@ -30,8 +30,13 @@ if [[ "$MODE" == "--test" || "$MODE" == "test" ]]; then
   exec swift test
 fi
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+if pkill -x "$APP_NAME" >/dev/null 2>&1; then
+  echo "Quit the running $APP_NAME."
+fi
 
+# -quiet keeps xcodebuild silent until it's done, so say what's going on.
+echo "Building $APP_NAME (Debug)… This can take a minute or two, and only warnings and errors print until it's done."
+SECONDS=0
 xcodebuild \
   -project "$ROOT_DIR/Kaern.xcodeproj" \
   -scheme "$APP_NAME" \
@@ -40,8 +45,10 @@ xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -quiet \
   build
+echo "Built in ${SECONDS}s."
 
 open_app() {
+  echo "Opening $APP_NAME."
   if [[ $# -gt 0 ]]; then
     /usr/bin/open -n "$APP_BUNDLE" --args "$@"
   else
