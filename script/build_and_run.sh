@@ -8,6 +8,11 @@
 #   ./script/build_and_run.sh --debug              run under lldb
 #   ./script/build_and_run.sh --test               run the KaernKit tests (swift test)
 #
+# The app is signed with the Developer ID Application certificate in your keychain when there is one, as
+# script/release.sh does, or with KAERN_SIGN_IDENTITY ("-" signs to run locally). macOS knows an app by its
+# signature: signed to run locally, each build is a new app to it, so it asks again for Documents and other
+# protected folders; signed with the certificate, every build is the same app as the Kaern you installed.
+#
 # Debug builds also accept -KaernSessionFile <path> (use a test session instead of
 # ~/Library/Application Support/Kaern/Session.json) and -KaernAppearance dark|light, e.g.
 # `run -KaernSessionFile /tmp/test-session.json -KaernAppearance dark`. Launched with a test
@@ -34,6 +39,23 @@ if pkill -x "$APP_NAME" >/dev/null 2>&1; then
   echo "Quit the running $APP_NAME."
 fi
 
+SIGN_IDENTITY="${KAERN_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ { print $2; exit }')" || true
+fi
+SIGNING=()
+if [[ -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != "-" ]]; then
+  TEAM="$(sed -nE 's/.*\(([A-Z0-9]{10})\)$/\1/p' <<<"$SIGN_IDENTITY")"
+  if [[ -z "$TEAM" ]]; then
+    echo "Couldn't read the team ID from \"$SIGN_IDENTITY\"" >&2
+    exit 1
+  fi
+  SIGNING=(CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$SIGN_IDENTITY" DEVELOPMENT_TEAM="$TEAM")
+  echo "Signing with your ${SIGN_IDENTITY%%:*} certificate (team $TEAM), so macOS remembers the folders you let $APP_NAME open."
+else
+  echo "Signing to run locally, so macOS asks again for Documents and other protected folders after each build."
+fi
+
 # -quiet keeps xcodebuild silent until it's done, so say what's going on.
 echo "Building $APP_NAME (Debug)… This can take a minute or two, and only warnings and errors print until it's done."
 SECONDS=0
@@ -44,6 +66,7 @@ xcodebuild \
   -destination "platform=macOS,arch=arm64" \
   -derivedDataPath "$DERIVED_DATA" \
   -quiet \
+  ${SIGNING[@]+"${SIGNING[@]}"} \
   build
 echo "Built in ${SECONDS}s."
 

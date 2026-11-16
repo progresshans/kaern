@@ -111,6 +111,11 @@ With Xcode 26 or later on an Apple silicon Mac:
 ./script/build_and_run.sh --test   # run the KaernKit tests
 ```
 
+macOS knows an app by its signature. With a Developer ID Application certificate in your keychain, the script signs
+the Debug app with it, as `script/release.sh` does, so every build keeps the folder access you gave Kaern. Without
+one, the app is signed to run locally, and macOS asks again for Documents and other protected folders after each
+build. `KAERN_SIGN_IDENTITY` picks another certificate, and `-` signs to run locally.
+
 The app is `Kaern/` (SwiftUI on AppKit); the git engine and its tests are the `Packages/KaernKit` Swift package.
 [Packaging/README.md](Packaging/README.md) describes releases, and [site/README.md](site/README.md) the website.
 
