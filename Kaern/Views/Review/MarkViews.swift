@@ -142,6 +142,8 @@ struct ImageDiffView: View {
             async let old = repository.fileContents(file.sides.oldPath ?? file.path, at: file.sides.old)
             async let new = repository.fileContents(file.path, at: file.sides.new)
             let (before, after) = await (old, new)
+            // Another file by now: its own read may have ended first, and this one would undo it.
+            guard !Task.isCancelled else { return }
             loaded = Loaded(key: key, old: before, new: after,
                             oldImage: before?.data.flatMap(NSImage.init(data:)), newImage: after?.data.flatMap(NSImage.init(data:)))
         }
@@ -388,6 +390,7 @@ struct LFSFileView: View {
             let deleted = file.sides.new == nil
             let contents = await repository.fileContents(deleted ? (file.sides.oldPath ?? file.path) : file.path,
                                                          at: deleted ? file.sides.old : file.sides.new, limit: 1 << 20)
+            guard !Task.isCancelled else { return }
             loaded = (key, contents)
         }
     }
@@ -554,6 +557,7 @@ struct SubmoduleChangeView: View {
             var new = sides.new
             if new == nil { new = await repository.submoduleHead(file.path) }
             let change = await repository.submoduleChange(file.path, from: sides.old, to: new)
+            guard !Task.isCancelled else { return }
             loaded = (sides, change)
         }
     }

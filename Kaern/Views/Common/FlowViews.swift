@@ -451,7 +451,10 @@ struct PublishPopover: View {
         .task(id: draft.name) {
             let name = trimmedName
             guard !name.isEmpty else { nameIsValid = false; return }
-            nameIsValid = await repository.isValidBranchName(name)
+            let valid = await repository.isValidBranchName(name)
+            // The name was typed on meanwhile: that name's own check answers.
+            guard !Task.isCancelled else { return }
+            nameIsValid = valid
         }
         .onAppear { nameFocused = true }
     }

@@ -10,6 +10,7 @@ struct FocusDrawer: View {
     let height: CGFloat
     let close: () -> Void
     @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
+    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     @State private var expanded: Set<String> = []
     /// The file list has keyboard focus: ↑ ↓ show the file above or below.
     @FocusState private var filesFocused: Bool
@@ -45,7 +46,7 @@ struct FocusDrawer: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 let limit = expanded.contains(current.path) ? Int.max : 2_000
-                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit, words: AppSettings.diffWords)) { item in
+                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit, words: words)) { item in
                                     DiffRowView(item: item, repository: repository) { expanded.insert(current.path) }
                                 }
                             }

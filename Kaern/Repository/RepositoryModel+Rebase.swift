@@ -38,7 +38,13 @@ struct RebaseDraft: Equatable {
         return pushedSteps.count != pushedInOrder.count || pushedSteps.contains { $0.action != .pick }
     }
 
-    var canStart: Bool { !isLoading && !steps.isEmpty && !firstJoinsNothing && resultCount > 0 }
+    /// A reworded commit whose new subject is empty: git stops the rebase at it ("Aborting commit
+    /// due to empty commit message").
+    var hasEmptyReword: Bool {
+        steps.contains { $0.action == .reword && $0.message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true }
+    }
+
+    var canStart: Bool { !isLoading && !steps.isEmpty && !firstJoinsNothing && resultCount > 0 && !hasEmptyReword }
 
     /// What each row says on the right ("on origin", "into c92aa17", "removed").
     func meta(at index: Int) -> String {
