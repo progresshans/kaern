@@ -41,8 +41,10 @@ public enum TagNaming {
             prefix = String(rest.first!)
             rest = rest.dropFirst()
         }
+        // Nothing left after the prefix ("v"), or only a dash ("v-"): not a version.
         let parts = rest.split(separator: "-", maxSplits: 1)
-        let numbers = parts[0].split(separator: ".")
+        guard let core = parts.first else { return nil }
+        let numbers = core.split(separator: ".")
         guard numbers.count == 3, let major = Int(numbers[0]), let minor = Int(numbers[1]), let patch = Int(numbers[2]) else {
             return nil
         }
