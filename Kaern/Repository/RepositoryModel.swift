@@ -581,10 +581,18 @@ final class RepositoryModel: Identifiable {
 
     /// Opens the repository: a light status when in the background, everything when visible.
     func start(runner: GitRunner) {
-        guard phase == .waiting || isFailedOrMissing else { return }
+        // `isOpening`: the phase changes when the task runs, and a second call before that would
+        // open the repository (and watch its folder) twice.
+        guard phase == .waiting || isFailedOrMissing, !isOpening else { return }
         self.runner = runner
-        Task { await open() }
+        isOpening = true
+        Task {
+            await open()
+            isOpening = false
+        }
     }
+
+    @ObservationIgnored private var isOpening = false
 
     private var isFailedOrMissing: Bool {
         if case .failed = phase { return true }
@@ -610,6 +618,9 @@ final class RepositoryModel: Identifiable {
             } else {
                 await lightRefresh()
                 if phase == .opening { phase = .light }
+                // Shown while the light status was read: the switch found a tab that was still
+                // opening and started nothing, so the full load starts here.
+                if isVisible, phase == .light { await loadEverything() }
             }
         } catch is NotARepositoryError {
             phase = .notRepository
@@ -976,7 +987,11 @@ final class RepositoryModel: Identifiable {
         guard !(isVisible && phase == .ready) else { return }
         debugLightRefreshes += 1
         let made = ownChanges
-        show(try? await repository.status(untrackedFiles: .normal), isFull: false, readAt: made)
+        let light = try? await repository.status(untrackedFiles: .normal)
+        // Shown while git read: the tab has the full status by now (its load or refresh read it),
+        // and this one, with untracked folders folded, would take its place.
+        guard !(isVisible && statusIsFull) else { return }
+        show(light, isFull: false, readAt: made)
         operation = repository.operationState()
     }
 
@@ -1310,6 +1325,7 @@ final class RepositoryModel: Identifiable {
     }
 
     @ObservationIgnored private var graphInputs: GraphInputs?
+    @ObservationIgnored private var countRound = 0
 
     /// Builds what the history draws from the loaded commits, the refs, HEAD and the selection. It
     /// runs after every refresh, page and staged file, and most of those read the same things
@@ -1376,10 +1392,15 @@ final class RepositoryModel: Identifiable {
         guard let repository else { return }
         let scope = historyScope
         totalCommitCount = -1   // counting
+        // A count started before this one (the history was read again meanwhile, or the scope
+        // changed) may end after it: only the latest one's number is shown.
+        countRound += 1
+        let round = countRound
         Task {
             let count = try? await GitCommandTrigger.$current.withValue(.background("Counting commits")) {
                 try await repository.commitCount(in: scope)
             }
+            guard round == countRound else { return }
             totalCommitCount = count
         }
     }
