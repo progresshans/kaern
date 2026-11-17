@@ -123,6 +123,13 @@ private struct ContextTargetModifier: ViewModifier {
     let target: ContextTarget
     let ring: ContextRing?
     @State private var id = UUID()
+    /// Where the view is, as last reported. In a box: it changes on every scrolled frame, and
+    /// nothing is drawn from it.
+    @State private var place = Place()
+
+    @MainActor private final class Place {
+        var frame: CGRect?
+    }
     @Environment(ContextMenuTracker.self) private var tracker: ContextMenuTracker?
     @Environment(\.contextClip) private var clip
 
@@ -138,7 +145,13 @@ private struct ContextTargetModifier: ViewModifier {
             }
             // `.global` is the window's content view, which fills the window (top-left origin).
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
                 tracker?.setFrame(frame, for: target, view: id, clip: clip)
+            }
+            // The same view, in the same place, for something else (the next commit's file of the
+            // same name): the menu is for what it shows now.
+            .onChange(of: target) {
+                if let frame = place.frame { tracker?.setFrame(frame, for: target, view: id, clip: clip) }
             }
             .onDisappear { tracker?.setFrame(nil, for: target, view: id, clip: clip) }
     }

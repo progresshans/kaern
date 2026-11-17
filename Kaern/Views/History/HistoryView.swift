@@ -34,22 +34,36 @@ struct HistoryView: View {
         var visible = CGRect.zero
         /// The row at the top the last time the anchor was written.
         var anchorIndex = -1
+        /// Where the pointer is over the scroll view, from its top left (`nil`: not over it).
+        var pointer: CGPoint?
+        /// Where the list was scrolled to at the last update, and the step the window moves in.
+        var top: CGFloat = 0
+        var step = 4
     }
 
     @State private var position = ScrollPosition(y: 0)
     @State private var scrollState = ScrollState()
     /// The commit rows that exist as views: the visible ones and `overscan` on each side.
-    /// Every row has a fixed height, so the rest are space above and below. (A LazyVStack keeps
-    /// every row it ever built: jumping to the oldest of 53,000 commits held ~600 MB.)
-    @State private var window = 0..<48
+    /// Every row has a fixed height, so each is placed by its number and the rest are nothing at
+    /// all. (A LazyVStack keeps every row it ever built: jumping to the oldest of 53,000 commits
+    /// held ~600 MB.) In an object the list reads and this view doesn't: scrolling on by a few rows
+    /// works out the list again, not the header, the bars and everything hung on the scroll view.
+    @State private var window = HistoryWindow()
+    /// What the rows do when clicked (`HistoryRowActions`).
+    @State private var actions = HistoryRowActions()
 
     private static let overscan = 16
-    /// The window moves in steps, so most scrolling doesn't change it.
-    private static let step = 4
 
     var body: some View {
         let columns = columns
-        VStack(spacing: 0) {
+        // As this pass has them (the latest `onPick`).
+        actions.click = click
+        actions.switchTo = switchTo
+        actions.pickWorkingCopy = { pick(.workingCopy) }
+        actions.labelList = { [window] id, onList in
+            if onList { window.labelListOwner = id } else if window.labelListOwner == id { window.labelListOwner = nil }
+        }
+        return VStack(spacing: 0) {
             if !repository.picked.isEmpty {
                 SelectionBar(repository: repository)
             }
@@ -58,12 +72,21 @@ struct HistoryView: View {
             }
             HistoryHeader(columns: columns, width: width, ref: $storedRef, graph: $storedGraph, date: $storedDate, sha: $storedSHA)
             ScrollView {
-                rows(columns: columns)
+                HistoryList(repository: repository, columns: columns, isFocused: isFocused, window: window, actions: actions)
             }
             .scrollPosition($position)
             .onScrollGeometryChange(for: CGRect.self) { $0.visibleRect } action: { _, visible in
                 scrollState.visible = visible
                 updateWindow()
+                updateHover()
+            }
+            // The hover tint and the list of labels that opens under the pointer. One hover, on the
+            // scroll view: the rows have none of their own. SwiftUI finds what the pointer is on again
+            // for each scrolled frame, and with a hover anywhere in what scrolls it went through
+            // every row to do it, which was two fifths of what scrolling cost.
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                if case .active(let location) = phase { scrollState.pointer = location } else { scrollState.pointer = nil }
+                updateHover()
             }
             .background(K.content)
             .contextClip()
@@ -100,62 +123,6 @@ struct HistoryView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
-    /// The working copy, the space above the window, the rows in it, the space below.
-    @ViewBuilder
-    private func rows(columns: HistoryColumns) -> some View {
-        let shown = repository.displayCommits
-        let range = window.clamped(to: 0..<shown.count)
-        let offset = repository.showsWorkingCopy ? 1 : 0
-        let headBranch = repository.currentBranch
-        let picked = Set(repository.picked)
-        let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
-        let worktreeBranches = repository.branchesInOtherWorktrees
-        VStack(spacing: 0) {
-            if repository.showsWorkingCopy, let row = repository.graph.first {
-                WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
-                               isSelected: repository.selection == .workingCopy && repository.picked.isEmpty
-                                   && repository.branchCompare == nil,
-                               isDimmed: repository.search.isFiltering) {
-                    pick(.workingCopy)
-                }
-            }
-            Color.clear.frame(height: CGFloat(range.lowerBound) * KMetric.graphRow)
-            ForEach(range.map { (index: $0, commit: shown[$0]) }, id: \.commit.id) { item in
-                let index = item.index, commit = item.commit
-                let graphIndex = index + offset
-                let row = repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil
-                if let run = repository.botRuns[commit.id] {
-                    // ScreenBigRepo: a run of bot commits as one row; the chevron opens it.
-                    BotRunRow(run: run, graph: row, isAlternate: index % 2 == 1,
-                              isDimmed: repository.search.isFiltering, columns: columns)
-                        .contentShape(Rectangle())
-                        .onTapGesture { repository.expandedRuns.insert(run.id) }
-                } else {
-                    CommitRow(
-                        commit: commit,
-                        graph: row,
-                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch,
-                                                    worktrees: worktreeBranches),
-                        signature: repository.signatureMark(of: commit.id),
-                        isAlternate: index % 2 == 1,
-                        isSelected: picked.isEmpty
-                            ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
-                            : picked.contains(commit.id),
-                        isDimmed: repository.search.isDimmed(commit.id),
-                        tint: CommitRow.Tint(comparison: comparison, id: commit.id),
-                        columns: columns,
-                        switchTo: switchTo
-                    )
-                    // Beside a label's double-click (which switches), not after it: the click picks the
-                    // commit at once instead of waiting to see whether a second one follows.
-                    .simultaneousGesture(TapGesture().onEnded { click(commit.id) })
-                }
-            }
-            Color.clear.frame(height: CGFloat(shown.count - range.upperBound) * KMetric.graphRow)
-            HistoryEnd(repository: repository, columns: columns, hasRows: !shown.isEmpty)
-        }
-    }
-
     // MARK: Scrolling
 
     private var workingCopyHeight: CGFloat { repository.showsWorkingCopy ? KMetric.wipRow : 0 }
@@ -172,10 +139,17 @@ struct HistoryView: View {
         let count = repository.displayCommits.count
         let first = max(0, Int(((visible.minY - workingCopyHeight) / KMetric.graphRow).rounded(.down)))
         let last = max(first, Int(((visible.maxY - workingCopyHeight) / KMetric.graphRow).rounded(.up)))
-        let lower = max(0, (first - Self.overscan) / Self.step * Self.step)
-        let upper = min(count, (last + Self.overscan) / Self.step * Self.step + Self.step)
+        // The window moves in steps. A step costs about the same whatever it brings in, and a row
+        // that comes in costs its own: a row at a time when the list moves slowly (each step fits
+        // in a frame), more at a time when it moves fast (fewer steps, each a little late).
+        let moved = abs(visible.minY - scrollState.top)
+        scrollState.top = visible.minY
+        if moved > 0 { scrollState.step = moved < KMetric.graphRow / 2 ? 1 : moved < KMetric.graphRow * 1.5 ? 2 : 4 }
+        let step = scrollState.step
+        let lower = max(0, (first - Self.overscan) / step * step)
+        let upper = min(count, (last + Self.overscan) / step * step + step)
         let next = lower..<max(lower, upper)
-        if next != window { window = next }
+        if next != window.range { window.range = next }
         // The row more than half in view at the top; nil while the working copy is.
         let anchor = Int(((visible.minY + KMetric.graphRow / 2 - workingCopyHeight) / KMetric.graphRow).rounded(.down))
         if anchor != scrollState.anchorIndex {
@@ -185,16 +159,32 @@ struct HistoryView: View {
         }
         if last >= count - 40 { repository.loadMoreHistory() }
         // ScreenMarks: the shields of the rows in view.
-        if window.lowerBound < count {
-            repository.loadSignatures(for: repository.displayCommits[window.clamped(to: 0..<count)].map(\.id))
+        if window.range.lowerBound < count {
+            repository.loadSignatures(for: repository.displayCommits[window.range.clamped(to: 0..<count)].map(\.id))
         }
+    }
+
+    /// The commit row under the pointer, as the list is scrolled now, and where in the row it is.
+    private func updateHover() {
+        var row: Int?
+        var inRow: CGPoint?
+        if let pointer = scrollState.pointer {
+            let inList = pointer.y + scrollState.visible.minY - workingCopyHeight
+            let index = Int((inList / KMetric.graphRow).rounded(.down))
+            if inList >= 0, index < repository.displayCommits.count {
+                row = index
+                inRow = CGPoint(x: pointer.x, y: inList - CGFloat(index) * KMetric.graphRow)
+            }
+        }
+        if window.hovered != row { window.hovered = row }
+        if window.pointerInRow != inRow { window.pointerInRow = inRow }
     }
 
     /// Back on this tab: the row that was at the top is at the top again.
     private func restoreAnchor() {
         let shown = repository.displayCommits
         guard let anchor = repository.historyScrollAnchor, let index = shown.firstIndex(where: { $0.id == anchor }) else { return }
-        window = max(0, index - Self.overscan)..<min(shown.count, index + 48)
+        window.range = max(0, index - Self.overscan)..<min(shown.count, index + 48)
         position.scrollTo(y: top(ofRow: index))
     }
 
@@ -208,7 +198,7 @@ struct HistoryView: View {
         let contentHeight = top(ofRow: shown.count)
         let y = min(max(0, top(ofRow: index) - (visible.height - KMetric.graphRow) / 2), max(0, contentHeight - visible.height))
         if abs(y - visible.minY) > visible.height * 3 {
-            window = max(0, index - 40)..<min(shown.count, index + 40)
+            window.range = max(0, index - 40)..<min(shown.count, index + 40)
             position.scrollTo(y: y)
         } else {
             withAnimation(.easeOut(duration: 0.2)) { position.scrollTo(y: y) }
@@ -303,6 +293,139 @@ struct HistoryView: View {
         }
         onPick()
         return .handled
+    }
+}
+
+/// The commit rows that exist as views (`HistoryView.window`).
+@MainActor @Observable
+fileprivate final class HistoryWindow {
+    var range = 0..<48
+    /// The commit row the pointer is on (its number), for the hover tint.
+    var hovered: Int?
+    /// Where the pointer is in that row. Only a row with several labels reads it (they open as a
+    /// list under the pointer), so the pointer moving over the others redraws nothing.
+    var pointerInRow: CGPoint?
+    /// The commit whose list of labels the pointer is on: the list lies over the rows below its own,
+    /// and the pointer on it is on its row, not on those.
+    var labelListOwner: String?
+}
+
+/// The working copy and the rows in the window, each where its number puts it (`HistoryRows`).
+/// What the rows show is read here, not in `HistoryView`: a selection, a signature that came in
+/// or the window moving on works out this list, and of its rows only the ones that changed.
+private struct HistoryList: View {
+    let repository: RepositoryModel
+    let columns: HistoryColumns
+    /// Focus mode: the working-copy row becomes an inline commit row.
+    let isFocused: Bool
+    let window: HistoryWindow
+    let actions: HistoryRowActions
+
+    var body: some View {
+        let shown = repository.displayCommits
+        let range = window.range.clamped(to: 0..<shown.count)
+        let offset = repository.showsWorkingCopy ? 1 : 0
+        let headBranch = repository.currentBranch
+        let picked = Set(repository.picked)
+        let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
+        let worktreeBranches = repository.branchesInOtherWorktrees
+        let top = repository.showsWorkingCopy ? KMetric.wipRow : 0
+        let hovered = window.labelListOwner == nil ? window.hovered : nil
+        HistoryRows(count: shown.count, top: top) {
+            if repository.showsWorkingCopy, let row = repository.graph.first {
+                WorkingCopyRow(repository: repository, graph: row, columns: columns, inline: isFocused,
+                               isSelected: repository.selection == .workingCopy && repository.picked.isEmpty
+                                   && repository.branchCompare == nil,
+                               isDimmed: repository.search.isFiltering, actions: actions)
+                    .layoutValue(key: HistorySlot.self, value: .top)
+            }
+            ForEach(range.map { (index: $0, commit: shown[$0]) }, id: \.commit.id) { item in
+                let index = item.index, commit = item.commit
+                let graphIndex = index + offset
+                let row = repository.graph.indices.contains(graphIndex) ? repository.graph[graphIndex] : nil
+                if let run = repository.botRuns[commit.id] {
+                    // ScreenBigRepo: a run of bot commits as one row; the chevron opens it.
+                    BotRunRow(repository: repository, run: run, graph: row, isAlternate: index % 2 == 1,
+                              isHovered: hovered == index, isDimmed: repository.search.isFiltering, columns: columns)
+                        .layoutValue(key: HistorySlot.self, value: .row(index))
+                } else {
+                    CommitRow(
+                        commit: commit,
+                        graph: row,
+                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch,
+                                                    worktrees: worktreeBranches),
+                        signature: repository.signatureMark(of: commit.id),
+                        isAlternate: index % 2 == 1,
+                        isSelected: picked.isEmpty
+                            ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
+                            : picked.contains(commit.id),
+                        isHovered: hovered == index || window.labelListOwner == commit.id,
+                        pointerInRow: window.hovered == index && repository.refs.refs(at: commit.id).count > 1 ? window.pointerInRow : nil,
+                        isDimmed: repository.search.isDimmed(commit.id),
+                        tint: CommitRow.Tint(comparison: comparison, id: commit.id),
+                        columns: columns,
+                        actions: actions
+                    )
+                    .layoutValue(key: HistorySlot.self, value: .row(index))
+                }
+            }
+            HistoryEnd(repository: repository, columns: columns, hasRows: !shown.isEmpty)
+                .layoutValue(key: HistorySlot.self, value: .end)
+        }
+    }
+}
+
+/// Where a view of the history's list goes (`HistoryRows`).
+nonisolated private enum HistoryRowSlot: Equatable {
+    /// The working copy, on top.
+    case top
+    /// A commit row, by its number in the list.
+    case row(Int)
+    /// What follows the last row (`HistoryEnd`).
+    case end
+}
+
+nonisolated private struct HistorySlot: LayoutValueKey {
+    static let defaultValue = HistoryRowSlot.end
+}
+
+/// The history's rows, each placed by its number: every commit row is as tall as the others, so a
+/// row's place doesn't depend on any other view, and the rows that aren't views (the list keeps
+/// only the ones near the visible part) are space the list doesn't have to stand in for.
+///
+/// A stack with a spacer above and below the rows did the same, but asked every row for its size
+/// again each time the spacers changed, which is each time the visible rows moved on.
+private struct HistoryRows: Layout {
+    /// How many commit rows the list has (most of them aren't views).
+    var count: Int
+    /// The working copy row's height, 0 without one.
+    var top: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.replacingUnspecifiedDimensions().width
+        var end: CGFloat = 0
+        for subview in subviews where subview[HistorySlot.self] == .end {
+            end += subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        }
+        return CGSize(width: width, height: top + CGFloat(count) * KMetric.graphRow + end)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var end = bounds.minY + top + CGFloat(count) * KMetric.graphRow
+        for subview in subviews {
+            switch subview[HistorySlot.self] {
+            case .top:
+                subview.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: top))
+            case .row(let index):
+                subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY + top + CGFloat(index) * KMetric.graphRow), anchor: .topLeading,
+                              proposal: ProposedViewSize(width: bounds.width, height: KMetric.graphRow))
+            case .end:
+                // Centered, as the stack had it (the spinner is narrower than the list).
+                let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+                subview.place(at: CGPoint(x: bounds.midX, y: end), anchor: .top, proposal: ProposedViewSize(width: bounds.width, height: nil))
+                end += size.height
+            }
+        }
     }
 }
 
@@ -535,6 +658,35 @@ private struct ColumnResizeHandle: View {
 
 // MARK: - Rows
 
+/// What the history's rows do when clicked: one object, the same for as long as the list lives. A
+/// row handed a closure made new on every pass looks changed to SwiftUI, so selecting one commit or
+/// scrolling on by a row worked all of them out again.
+@MainActor
+fileprivate final class HistoryRowActions {
+    var click: (String) -> Void = { _ in }
+    var switchTo: (RefLabelItem) -> Void = { _ in }
+    var pickWorkingCopy: () -> Void = {}
+    /// The pointer came onto a commit's list of labels, or left it.
+    var labelList: (String, Bool) -> Void = { _, _ in }
+}
+
+/// A row is the same while what it shows is: SwiftUI then leaves it alone.
+extension CommitRow: Equatable {
+    static func == (a: CommitRow, b: CommitRow) -> Bool {
+        a.isSelected == b.isSelected && a.isHovered == b.isHovered && a.pointerInRow == b.pointerInRow && a.isAlternate == b.isAlternate
+            && a.isDimmed == b.isDimmed && a.tint == b.tint && a.signature == b.signature && a.actions === b.actions && a.columns == b.columns && a.commit == b.commit
+            && a.graph == b.graph && a.labels == b.labels
+    }
+}
+
+extension BotRunRow: Equatable {
+    static func == (a: BotRunRow, b: BotRunRow) -> Bool {
+        a.isAlternate == b.isAlternate && a.isHovered == b.isHovered && a.isDimmed == b.isDimmed && a.repository === b.repository
+            && a.columns == b.columns
+            && a.graph == b.graph && a.run == b.run
+    }
+}
+
 /// The working-copy row (34 pt): a dashed node and "Uncommitted changes" with file and staged
 /// counts. In Focus it's an inline commit row: the change count, a summary field and Commit.
 private struct WorkingCopyRow: View {
@@ -544,7 +696,9 @@ private struct WorkingCopyRow: View {
     let inline: Bool
     let isSelected: Bool
     let isDimmed: Bool
-    let pick: () -> Void
+    let actions: HistoryRowActions
+
+    private func pick() { actions.pickWorkingCopy() }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -673,11 +827,17 @@ private struct CommitRow: View {
     var signature: SignatureMark?
     let isAlternate: Bool
     let isSelected: Bool
+    /// The pointer is on the row (the list tells: `HistoryList`).
+    let isHovered: Bool
+    /// Where the pointer is in the row, told while it's on a row with several labels.
+    var pointerInRow: CGPoint?
     let isDimmed: Bool
     var tint: Tint = .none
     let columns: HistoryColumns
-    /// A double-click on one of its labels, here or in its list (`HistoryView.switchTo`).
-    let switchTo: (RefLabelItem) -> Void
+    /// A click on the row, and a double-click on one of its labels, here or in its list.
+    let actions: HistoryRowActions
+
+    private func switchTo(_ label: RefLabelItem) { actions.switchTo(label) }
 
     /// Compare marks: between two picked commits (`.inr`), only on the current branch (`.ahd`)
     /// or only on the other one (`.bhd`).
@@ -693,16 +853,23 @@ private struct CommitRow: View {
         }
     }
 
-    @State private var hovering = false
     /// Several refs here and the pointer on their label: every label shows, in a list that unfolds
     /// from it (`RefLabelList`).
     @State private var showsAllLabels = false
     @State private var pointerOnLabels = false
     @State private var pointerOnList = false
     @State private var labelsTimer: Task<Void, Never>?
-    /// How wide the row shows its first label and "+N": the list is at least as wide, so it covers
+    /// How big the row shows its first label and "+N": the list is at least as wide, so it covers
     /// them and the pointer that opened it is on it.
-    @State private var shownLabelsWidth: CGFloat = 0
+    @State private var shownLabelsSize = CGSize.zero
+    private var shownLabelsWidth: CGFloat { shownLabelsSize.width }
+
+    /// The pointer is on the first label or "+N" (they sit 10 pt in, centered in the row).
+    private var pointerIsOnLabels: Bool {
+        guard labels.count > 1, let pointerInRow else { return false }
+        return CGRect(x: 10, y: (KMetric.graphRow - shownLabelsSize.height) / 2, width: shownLabelsSize.width, height: shownLabelsSize.height)
+            .contains(pointerInRow)
+    }
 
     private var lane: Int { graph?.lane ?? 0 }
     private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
@@ -777,7 +944,7 @@ private struct CommitRow: View {
         .background {
             // `.row:hover`: the hover tint on the list's background.
             if tint == .inRange, !isSelected { ZStack { K.content; K.accentSoft } }
-            else if hovering, !isSelected { ZStack { K.content; K.hover } } else { background }
+            else if isHovered, !isSelected { ZStack { K.content; K.hover } } else { background }
         }
         .overlay(alignment: .leading) {
             if !isSelected, tint == .ours || tint == .theirs {
@@ -797,12 +964,17 @@ private struct CommitRow: View {
                 .transition(.opacity)
             }
         }
-        .onHover { hovering = $0 }
         .contextTarget(.commit(commit.id))
         .opacity(isDimmed ? 0.3 : 1)
         .help("\(commit.subject)\n\(commit.author.name) · \(commit.shortID)")
         // The list of labels lies over the rows below.
         .zIndex(listShown ? 1 : 0)
+        // The pointer on the list is on this row (`HistoryWindow.labelListOwner`).
+        .onChange(of: pointerOnList && listShown) { _, onList in actions.labelList(commit.id, onList) }
+        .onChange(of: pointerIsOnLabels) { _, inside in pointer(onLabels: inside) }
+        // Beside a label's double-click (which switches), not after it: the click picks the
+        // commit at once instead of waiting to see whether a second one follows.
+        .simultaneousGesture(TapGesture().onEnded { actions.click(commit.id) })
     }
 
     @ViewBuilder
@@ -825,9 +997,8 @@ private struct CommitRow: View {
                     }
                 }
                 .layoutPriority(1)
-                .onHover { inside in if labels.count > 1 { pointer(onLabels: inside) } }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
-                    if labels.count > 1 { shownLabelsWidth = width }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if labels.count > 1 { shownLabelsSize = size }
                 }
                 .debugLabelsFrame("row \(commit.id)")
                 Rectangle()
@@ -1122,12 +1293,14 @@ private struct BarChip: View {
 /// A folded run (`.row.grp`): the lane runs through a pill node, › and the title in the message
 /// column, the time it spans, and ×N where the hash goes.
 private struct BotRunRow: View {
+    let repository: RepositoryModel
     let run: BotRun
     let graph: GraphRow?
     let isAlternate: Bool
+    /// The pointer is on the row (the list tells: `HistoryList`).
+    let isHovered: Bool
     let isDimmed: Bool
     let columns: HistoryColumns
-    @State private var hovering = false
 
     var body: some View {
         let lane = graph?.lane ?? 0
@@ -1181,12 +1354,13 @@ private struct BotRunRow: View {
         .foregroundStyle(K.label)
         .lineLimit(1)
         .frame(height: KMetric.graphRow)
-        .background { if hovering { ZStack { K.content; K.hover } } else { isAlternate ? K.alt : K.content } }
-        .onHover { hovering = $0 }
+        .background { if isHovered { ZStack { K.content; K.hover } } else { isAlternate ? K.alt : K.content } }
         .opacity(isDimmed ? 0.3 : 1)
         .help("\(run.title) — click to show each commit")
         .accessibilityElement(children: .combine)
         .accessibilityHint("Shows the \(run.count) commits")
+        .contentShape(Rectangle())
+        .onTapGesture { repository.expandedRuns.insert(run.id) }
     }
 
     /// "9m – 2h" (newest – oldest), one date when they're the same.
