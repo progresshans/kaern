@@ -62,6 +62,10 @@ final class RepositoriesState {
 
     struct RecentFacts: Equatable {
         var missing = false
+        /// The folder is there but isn't a repository (anymore).
+        var notRepository = false
+        /// Why git couldn't open it.
+        var failure: String?
         var branch: String?
         var changes = 0
         var ahead = 0
@@ -71,23 +75,38 @@ final class RepositoriesState {
         var hasRemote = true
     }
 
-    /// Reads the recent repositories that aren't open (`git status`, read-only).
+    @ObservationIgnored private var recentTask: Task<Void, Never>?
+
+    /// Reads the recent repositories that aren't open (`git status`, read-only). A read that's
+    /// still going gives way to the new one.
     func refreshRecent() {
         let app = AppModel.shared
         let open = Set(app.windows.flatMap { $0.model.tabs.map(\.path) })
         let paths = app.recent.map(\.path).filter { !open.contains($0) }
-        Task {
+        recentTask?.cancel()
+        recentTask = Task {
             guard let runner = await app.waitForGit() else { return }
             for path in paths {
+                guard !Task.isCancelled else { return }
                 var facts = RecentFacts()
                 guard FileManager.default.fileExists(atPath: path) else {
                     facts.missing = true
                     recentFacts[path] = facts
                     continue
                 }
-                guard let repository = try? await GitCommandTrigger.$current.withValue(.background("Repositories window"), operation: {
-                    try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
-                }) else { continue }
+                let repository: GitRepository
+                do {
+                    repository = try await GitCommandTrigger.$current.withValue(.background("Repositories window")) {
+                        try await GitRepository.open(URL(filePath: path, directoryHint: .isDirectory), runner: runner)
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // The row says why, instead of staying on "Reading…".
+                    if error is NotARepositoryError { facts.notRepository = true } else { facts.failure = error.localizedDescription }
+                    recentFacts[path] = facts
+                    continue
+                }
                 let status = try? await GitCommandTrigger.$current.withValue(.background("Repositories window")) {
                     try await repository.status(untrackedFiles: .normal)
                 }
@@ -256,6 +275,18 @@ struct RepositoryRow: Identifiable {
             isMissing = true
             tone = .clean
             status = "Folder not found"
+            return
+        }
+        if facts.notRepository {
+            branch = "—"
+            tone = .clean
+            status = "Not a Git repository yet"
+            return
+        }
+        if let failure = facts.failure {
+            branch = "—"
+            tone = .error
+            status = "Couldn’t open — \(failure)"
             return
         }
         branch = facts.branch ?? "—"
@@ -713,7 +744,9 @@ private struct RepositoryRowView: View {
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .gesture(TapGesture(count: 2).onEnded { open() }.exclusively(before: TapGesture().onEnded { state.selection = row.path }))
+        // The first click selects at once (it doesn't wait to see whether a second one follows).
+        .onTapGesture { state.selection = row.path }
+        .simultaneousGesture(TapGesture(count: 2).onEnded { open() })
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
