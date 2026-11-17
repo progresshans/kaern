@@ -100,7 +100,7 @@ private struct WorkingCopyPanel: View {
                 let current = current(unstaged: unstaged, staged: staged)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
                             PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
                                 .disabled(unstaged.isEmpty || !repository.canChangeIndex)
                             FileList(repository: repository, entries: unstaged, staged: false, tree: tree,
@@ -505,7 +505,7 @@ struct CommitInfoView: View {
     /// Hash and parents, author, message, files.
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Text("commit").foregroundStyle(K.label2)
                     Text(details.commit.shortID).font(KFont.hash).foregroundStyle(K.label)

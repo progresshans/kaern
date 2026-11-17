@@ -123,6 +123,7 @@ final class RepositoryModel: Identifiable {
     private(set) var status: WorkingTreeStatus = .empty {
         didSet {
             updateBigChanges()
+            reviewInputs += 1
             // What the history and the sidebar read of the status, kept apart: they redraw when the
             // branch or its distance from the upstream changes, not for every file edited.
             if currentBranch != status.branch { currentBranch = status.branch }
@@ -147,7 +148,10 @@ final class RepositoryModel: Identifiable {
     private(set) var refs: RefSnapshot = .empty
     private(set) var tags: [TagInfo] = []
     private(set) var commits: [Commit] = [] {
-        didSet { historyVersion += 1 }
+        didSet {
+            historyVersion += 1
+            reviewInputs += 1
+        }
     }
     /// Counts changes of `commits` (``rebuildGraph()`` builds nothing while it stands still).
     @ObservationIgnored private var historyVersion = 0
@@ -223,9 +227,13 @@ final class RepositoryModel: Identifiable {
     private(set) var operation: OperationState?
     private(set) var lastFetch: Date?
     /// Line counts of the working copy's changes, staged and unstaged apart.
-    private(set) var lineStats = WorkingLineStats.empty
+    private(set) var lineStats = WorkingLineStats.empty {
+        didSet { reviewInputs += 1 }
+    }
     /// Git LFS sizes and pointers, and how far moved submodules are (ScreenMarks).
-    var workingMarks = WorkingMarks.empty
+    var workingMarks = WorkingMarks.empty {
+        didSet { reviewInputs += 1 }
+    }
     /// The same for the selected commit's files.
     var commitMarks: CommitMarks?
     /// The file Quick Look shows (Space, ⌘Y).
@@ -237,13 +245,16 @@ final class RepositoryModel: Identifiable {
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
-    private(set) var selectedFiles: [FileChange] = []
+    private(set) var selectedFiles: [FileChange] = [] {
+        didSet { reviewInputs += 1 }
+    }
     var alert: RepositoryAlert?
 
     // UI state that survives tab switches.
     var selection: HistorySelection = .workingCopy {
         didSet {
             guard selection != oldValue else { return }
+            reviewInputs += 1
             selectedWorktree = nil
             signatureCardOpen = true
             // A commit inside a folded run of bot commits: the run opens.
@@ -268,6 +279,7 @@ final class RepositoryModel: Identifiable {
     /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
     var review: ReviewState? {
         didSet {
+            reviewInputs += 1
             if review != nil, screen != nil { screen = nil }
             if review?.compare != oldValue?.compare {
                 diffsAreStale = true
@@ -277,7 +289,9 @@ final class RepositoryModel: Identifiable {
         }
     }
     /// Diffs Review shows for a compare (`key`: base, target, white space).
-    var compareDiffs: (key: String, diffs: [FileDiff])?
+    var compareDiffs: (key: String, diffs: [FileDiff])? {
+        didSet { reviewInputs += 1 }
+    }
     /// The Search find bar over the graph.
     var search = HistorySearch()
     /// The commit composer's text and Amend switch (kept per repository).
@@ -380,10 +394,19 @@ final class RepositoryModel: Identifiable {
 
     // Diffs for Review and the Focus drawer, loaded while one of them is on screen.
     /// The working copy's diffs by path, staged and unstaged apart.
-    var workingDiffs: [String: WorkingFileDiff] = [:]
-    var workingDiffsLoaded = false
+    var workingDiffs: [String: WorkingFileDiff] = [:] {
+        didSet { reviewInputs += 1 }
+    }
+    var workingDiffsLoaded = false {
+        didSet { reviewInputs += 1 }
+    }
     /// The selected commit's diffs (`id` is the commit).
-    var commitDiffs: (id: String, diffs: [FileDiff])?
+    var commitDiffs: (id: String, diffs: [FileDiff])? {
+        didSet { reviewInputs += 1 }
+    }
+    /// Counts changes of what ``reviewFiles`` is made from, and the files made from them last.
+    @ObservationIgnored var reviewInputs = 0
+    @ObservationIgnored var reviewFilesCache: (inputs: String, files: [ReviewFile]?)?
     @ObservationIgnored var commitDiffsIgnoreWhitespace = false
     @ObservationIgnored var workingDiffsIgnoreWhitespace = false
     /// Counts views that show diffs, so diffs are only kept current while someone looks.

@@ -74,7 +74,25 @@ extension RepositoryModel {
 
     /// The files Review and the Focus drawer show for the selection, in order. `nil` while the
     /// diffs are loading.
+    ///
+    /// Made once for what they're made from, not at every read: Review reads them on every pass,
+    /// and each time they were new arrays SwiftUI compared file by file, hunk by hunk, with the last
+    /// ones (a working copy of 800 files stopped the window for 1.7 s; one of 12,000 for good).
+    /// Files that come out the same as before are the same arrays as before.
     var reviewFiles: [ReviewFile]? {
+        // Read, so whoever asks hears when one of them changes (each change counts in `reviewInputs`).
+        _ = (status, lineStats, workingMarks, workingDiffs, workingDiffsLoaded, commitDiffs?.id, compareDiffs?.key, selectedFiles,
+             selection, review, commits.count)
+        // The two settings a compare's diffs are loaded with: changed, the diffs on hand aren't the ones to show.
+        let inputs = "\(reviewInputs):\(DiffPreferences.ignoresWhitespace):\(AppSettings.diffContext)"
+        if let cached = reviewFilesCache, cached.inputs == inputs { return cached.files }
+        var files = makeReviewFiles()
+        if let cached = reviewFilesCache, cached.files == files { files = cached.files }
+        reviewFilesCache = (inputs, files)
+        return files
+    }
+
+    private func makeReviewFiles() -> [ReviewFile]? {
         if let compare = review?.compare {
             guard let loaded = compareDiffs, loaded.key == compareKey(compare) else { return nil }
             return loaded.diffs.map { diff in

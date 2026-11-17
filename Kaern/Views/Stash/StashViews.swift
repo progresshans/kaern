@@ -144,7 +144,7 @@ struct StashPanel: View {
         VStack(spacing: 0) {
             if let stash = repository.shownStash {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         Text(RepositoryModel.stashTitle(stash))
                             .font(.system(size: 14, weight: .semibold))
                             .textSelection(.enabled)

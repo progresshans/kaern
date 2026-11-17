@@ -11,7 +11,7 @@ struct ComparePanel: View {
         let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if let comparison {
                         switch comparison.kind {
                         case .commits(let older, let newer):
@@ -140,7 +140,7 @@ struct MultiSelectPanel: View {
         let idle = repository.activity == nil
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     Text("\(commits.count) commits selected")
                         .font(.system(size: 14, weight: .semibold))
                     PanelBody(text: elsewhere == commits.count ? "None of them are on \(branch)."

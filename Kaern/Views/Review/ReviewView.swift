@@ -10,8 +10,15 @@ struct ReviewView: View {
     @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     /// Files whose "Show More Lines" was clicked: how many lines they show.
     @State private var limits: [String: Int] = [:]
+    /// How many files All Files has rows for: the first ones, and more as the list is scrolled to
+    /// their end. A working copy can hold a thousand files, and the rows of each are worked out
+    /// before the first one shows.
+    @State private var fileLimit = ReviewView.firstFiles
+    /// The rows of the files shown, kept from one pass to the next (`DiffRowCache`).
+    @State private var rowCache = DiffRowCache()
 
     private static let lineLimit = 2_000
+    private static let firstFiles = 40
 
     var body: some View {
         let state = repository.review ?? ReviewState()
@@ -45,7 +52,11 @@ struct ReviewView: View {
         .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
-        .onChange(of: repository.selection) { limits = [:] }
+        .onChange(of: repository.selection) {
+            limits = [:]
+            fileLimit = Self.firstFiles
+        }
+        .onChange(of: repository.review?.compare) { fileLimit = Self.firstFiles }
     }
 
     /// The right-click menu a file's chip and header open: the same as its row in the panel
@@ -91,17 +102,23 @@ struct ReviewView: View {
             VStack(spacing: 0) {
                 if state.showsAllFiles {
                     FileIndex(files: files, target: contextTarget) { path in
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("file:" + path, anchor: .top) }
+                        // A file further down than the list has rows for: those first.
+                        if let index = files.firstIndex(where: { $0.path == path }), index >= fileLimit {
+                            fileLimit = index + Self.firstFiles / 2
+                            DispatchQueue.main.async { proxy.scrollTo("file:" + path, anchor: .top) }
+                        } else {
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("file:" + path, anchor: .top) }
+                        }
                     }
                 }
                 ScrollView {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        ForEach(shown) { file in
+                        ForEach(shown.prefix(fileLimit)) { file in
                             Section {
                                 if let special = file.special {
                                     SpecialFileView(file: file, special: special, repository: repository, inList: true)
                                 } else {
-                                    let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
+                                    let rows = rowCache.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
                                     let picking = picking(for: file)
                                     ForEach(rows) { item in
                                         DiffRowView(item: item, repository: repository, picking: picking) {
@@ -118,6 +135,13 @@ struct ReviewView: View {
                                         .id("file:" + file.path)
                                 }
                             }
+                        }
+                        if shown.count > fileLimit {
+                            // Scrolled to the end of the files that have rows: the next ones get theirs.
+                            Color.clear
+                                .frame(height: 1)
+                                .onAppear { fileLimit += Self.firstFiles }
+                                .id(fileLimit)
                         }
                     }
                     .padding(.bottom, 20)
@@ -240,7 +264,7 @@ private struct ReviewHeader: View {
         case .workingCopy:
             return "Uncommitted changes · " + Formatters.count(files.count, "file", "files")
         case .commit(let id):
-            return repository.commits.first { $0.id == id }?.subject ?? String(id.prefix(7))
+            return repository.commit(id)?.subject ?? String(id.prefix(7))
         }
     }
 
@@ -275,10 +299,15 @@ private struct FileIndex: View {
     let files: [ReviewFile]
     let target: (ReviewFile) -> ContextTarget
     let jump: (String) -> Void
+    /// How many files have a chip: a chip for each of a thousand files filled the window (and took
+    /// seconds to make). The rest come a hundred at a time from the last chip.
+    @State private var limit = FileIndex.firstChips
+
+    private static let firstChips = 40
 
     var body: some View {
         FlowLayout(spacing: 6) {
-            ForEach(files) { file in
+            ForEach(files.prefix(limit)) { file in
                 Button { jump(file.path) } label: {
                     HStack(spacing: 6) {
                         StatusTile(letter: file.letter)
@@ -293,6 +322,20 @@ private struct FileIndex: View {
                 .buttonStyle(.plain)
                 .help(file.path)
                 .contextTarget(target(file), ring: ContextRing(radius: 7, inset: 0))
+            }
+            if files.count > limit {
+                Button { limit += 100 } label: {
+                    Text("\((files.count - limit).formatted()) more")
+                        .font(.system(size: 12))
+                        .foregroundStyle(K.label2)
+                        .lineLimit(1)
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.hover))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show chips for the next files")
             }
         }
         .padding(.horizontal, 16)
@@ -407,5 +450,23 @@ struct LinePickBar: View {
         .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 8))
         .popSurface(radius: 12)
         .fixedSize()
+    }
+}
+
+/// The rows of the files Review shows, kept while the file, the layout and the limits stay the same:
+/// the diff of a file is cut into rows (and its edited lines compared word by word) once, not on
+/// every pass of the view.
+@MainActor
+private final class DiffRowCache {
+    private var entries: [String: (file: ReviewFile, layout: DiffLayout, limit: Int, words: Bool, rows: [DiffRowItem])] = [:]
+
+    func rows(for file: ReviewFile, layout: DiffLayout, limit: Int, words: Bool) -> [DiffRowItem] {
+        if let entry = entries[file.path], entry.layout == layout, entry.limit == limit, entry.words == words, entry.file == file {
+            return entry.rows
+        }
+        let rows = DiffRowItem.rows(for: file, layout: layout, limit: limit, words: words)
+        if entries.count >= 400 { entries.removeAll() }
+        entries[file.path] = (file, layout, limit, words, rows)
+        return rows
     }
 }

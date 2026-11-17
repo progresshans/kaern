@@ -133,7 +133,7 @@ struct WorktreePanel: View {
         let details = repository.worktreeDetails?.path == worktree.path ? repository.worktreeDetails : nil
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Worktree")
                         .font(.system(size: 11, weight: .semibold))
                         .textCase(.uppercase)
