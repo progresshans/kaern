@@ -398,7 +398,12 @@ final class AppModel {
             if window.group(group.id) != nil {
                 window.add(tab.id, to: group.id)
             } else {
-                window.newGroup(named: group.name, color: group.color, with: [tab.id])
+                // The group went with its last tab. Its other closed tabs come back into the new
+                // one, not each into a group of its own.
+                let revived = window.group(window.newGroup(named: group.name, color: group.color, with: [tab.id]))
+                closedTabs[window.id] = closedTabs[window.id]?.map { closed in
+                    closed.group?.id == group.id ? ClosedTab(path: closed.path, group: revived) : closed
+                }
             }
         }
         updateVisibility()

@@ -253,13 +253,15 @@ final class WindowModel: Identifiable {
     func close(_ ids: [UUID]) {
         let closing = Set(ids)
         guard !closing.isEmpty else { return }
-        let activeIndex = tabs.firstIndex { $0.id == activeTabID }
+        // The tab that slides into the closed tab's place, like Safari and the board: the next
+        // one that stays, else the last one before it.
+        let next = tabs.firstIndex { $0.id == activeTabID }.flatMap { index in
+            tabs[index...].first { !closing.contains($0.id) } ?? tabs[..<index].last { !closing.contains($0.id) }
+        }
         tabs.removeAll { closing.contains($0.id) }
         dropEmptyGroups()
         if let active = activeTabID, closing.contains(active) {
-            // The tab that slides into the closed tab's place, like Safari and the board.
-            let index = min(activeIndex ?? 0, tabs.count - 1)
-            activeTabID = index >= 0 ? tabs[index].id : nil
+            activeTabID = next?.id
             onActiveTabChange?()
         }
         changed()
@@ -338,11 +340,12 @@ final class WindowModel: Identifiable {
 
     /// Takes a tab out of its group and puts it right after the group.
     func removeFromGroup(_ id: UUID) {
-        guard var tab = tab(id), let groupID = tab.group else { return }
-        tabs.removeAll { $0.id == id }
+        guard var tab = tab(id), let groupID = tab.group, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs.remove(at: index)
         tab.group = nil
+        // The group's only tab stays where it is.
         let lastMember = tabs.lastIndex { $0.group == groupID }
-        tabs.insert(tab, at: lastMember.map { $0 + 1 } ?? tabs.count)
+        tabs.insert(tab, at: lastMember.map { $0 + 1 } ?? index)
         dropEmptyGroups()
         changed()
     }

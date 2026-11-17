@@ -117,8 +117,10 @@ final class DebugDriver {
                 window.removeFromGroup(tab.id)
             }
         case "close":
-            if let name = args.first, let window, let tab = window.tabs.first(where: { $0.name == name }) {
-                app.close([tab.id], in: window)
+            // close <tab name> [<tab name>…] — several close together, as Close Tabs to the Right does.
+            if let window {
+                let ids = args.compactMap { name in window.tabs.first { $0.name == name }?.id }
+                if !ids.isEmpty { app.close(ids, in: window) }
             }
         case "open":
             // Into the start window while it's open: the repository then opens a main window.
