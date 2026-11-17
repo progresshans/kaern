@@ -215,10 +215,14 @@ struct SidebarView: View {
                 let rest = folder.branches.count - limit
                 if rest > 0 {
                     // "35 more — type to filter": a click shows more, then more as the list scrolls to them.
+                    // (Scrolled into view, not `onAppear`: the rows aren't lazy, so that ran whenever
+                    // the sidebar was made again, a tab switch included, and never on scrolling.)
                     SidebarRow(title: rest.formatted() + " more" + (filter.isEmpty ? " — type to filter" : ""),
                                depth: 2, isLink: true)
                         .onTapGesture { showMore(key) }
-                        .onAppear { if repository.sidebar.remoteFolderExtra[key] != nil { showMore(key) } }
+                        .onScrollVisibilityChange(threshold: 0.5) { visible in
+                            if visible, repository.sidebar.remoteFolderExtra[key] != nil { showMore(key) }
+                        }
                         .accessibilityAddTraits(.isButton)
                 }
             }
