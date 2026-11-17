@@ -810,7 +810,10 @@ extension RepositoryModel {
             return
         }
         guard comparison?.key != key else { return }
+        // Being read already: this runs after every refresh, and each one started it over.
+        if loadingComparison == key, compareTask?.isCancelled == false { return }
         compareTask?.cancel()
+        loadingComparison = key
         if let branchCompare {
             let other = branchCompare.other
             compareTask = Task { [weak self] in
@@ -830,7 +833,9 @@ extension RepositoryModel {
                     comparison.files = await files ?? []
                     return comparison
                 }
-                guard !Task.isCancelled, let loaded else { return }
+                guard !Task.isCancelled else { return }
+                self?.loadingComparison = nil
+                guard let loaded else { return }
                 self?.comparison = loaded
             }
         } else if let pair = pickedPair {
@@ -856,7 +861,9 @@ extension RepositoryModel {
                     comparison.rangeIDs = Set(all).subtracting(picked)
                     return comparison
                 }
-                guard !Task.isCancelled, let loaded else { return }
+                guard !Task.isCancelled else { return }
+                self?.loadingComparison = nil
+                guard let loaded else { return }
                 self?.comparison = loaded
             }
         }

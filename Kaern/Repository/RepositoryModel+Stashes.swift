@@ -19,14 +19,21 @@ extension RepositoryModel {
     }
 
     func loadStashDetails(_ id: String) {
+        let stash = stashes.first { $0.id == id }
+        // Already being read (a refresh came in meanwhile): that read goes on.
+        if let stash, stash == loadingStash, stashTask?.isCancelled == false { return }
         stashTask?.cancel()
+        loadingStash = nil
         if stashDetails?.stash.id != id { stashDetails = nil }
-        guard let repository, let stash = stashes.first(where: { $0.id == id }) else { return }
+        guard let repository, let stash else { return }
+        loadingStash = stash
         stashTask = Task {
             let details = try? await GitCommandTrigger.$current.withValue(.background("Stash view")) {
                 try await repository.stashDetails(stash)
             }
-            guard !Task.isCancelled, let details else { return }
+            guard !Task.isCancelled else { return }
+            loadingStash = nil
+            guard let details else { return }
             stashDetails = details
         }
     }

@@ -381,6 +381,10 @@ final class RepositoryModel: Identifiable {
     /// Repository Settings › Pull, when this repository sets its own (pull.rebase / pull.ff).
     var pullOverride: PullChoice?
     @ObservationIgnored var stashTask: Task<Void, Never>?
+    /// What `stashTask` and `compareTask` are reading, so a refresh that comes in meanwhile doesn't
+    /// start the same read over.
+    @ObservationIgnored var loadingStash: Stash?
+    @ObservationIgnored var loadingComparison: String?
     /// Commits reachable from HEAD among the loaded ones ("on this branch"). Observed: Revert in
     /// the commit panel is on or off by it, and it changes after the switch that the panel saw.
     private(set) var headAncestors: Set<String> = []
