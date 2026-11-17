@@ -261,8 +261,10 @@ final class RepositoryModel: Identifiable {
         if !linePicks.isEmpty || linePicks.path != nil { linePicks = LinePicks() }
     }
     var sidebar = SidebarState()
-    /// The first visible history row when the tab was last shown (scroll restore).
-    var historyScrollAnchor: String?
+    /// The first visible history row when the tab was last shown (scroll restore), and its number
+    /// in the list then. Not observed: it changes with every scrolled row, and nothing draws it.
+    @ObservationIgnored var historyScrollAnchor: String?
+    @ObservationIgnored var historyScrollAnchorIndex: Int?
     /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
     var review: ReviewState? {
         didSet {

@@ -16,7 +16,8 @@ struct MainToolbar: View {
     @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
     /// Icon Only or Icon and Text (right-click the toolbar).
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var style = ToolbarStyle.iconOnly
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
+    @Environment(\.toolbarFoldsMake) private var narrowEnoughToFold
     @Environment(\.repositorySwitching) private var switching
 
     /// The traffic lights' room when the toolbar is the title bar (`.titlebar .lights`).
@@ -26,9 +27,8 @@ struct MainToolbar: View {
         let ready = repository.isReady
         // While a merge, rebase or stopped stash waits, Pull, Push, Stash and the like are locked.
         let busy = repository.activity != nil || repository.isMidOperation
-        let tier = NarrowTier(width: windowWidth)
         // ScreenNarrow: with names, New Branch · Stash · Pop go into » under 1,000 pt.
-        let foldsMake = style == .iconAndText && windowWidth > 0 && windowWidth < 1000
+        let foldsMake = style == .iconAndText && narrowEnoughToFold
         // Under 860 pt the groups sit closer (ScreenNarrow's 760 still fits every button).
         HStack(spacing: tier >= .compact ? 2 : 6) {
             if inTitleBar {

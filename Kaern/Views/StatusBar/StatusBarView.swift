@@ -7,7 +7,7 @@ import SwiftUI
 struct StatusBarView: View {
     let repository: RepositoryModel
     @State private var showsActivity = false
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -93,7 +93,7 @@ struct StatusBarView: View {
         }
         let status = repository.status
         // ScreenNarrow < 960 pt: "13 changes · ↑2".
-        if NarrowTier(width: windowWidth) >= .panelOverlay {
+        if tier >= .panelOverlay {
             var short: [String] = [status.isClean ? "No changes" : Formatters.count(status.entries.count, "change", "changes")]
             if status.upstream != nil { short.append("↑\(status.ahead)") }
             if status.behind > 0 { short.append("↓\(status.behind)") }

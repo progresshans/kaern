@@ -11,8 +11,19 @@ struct HistoryView: View {
     /// A row was picked (Focus opens its drawer).
     var onPick: () -> Void = {}
 
+    init(repository: RepositoryModel, isFocused: Bool = false, onPick: @escaping () -> Void = {}) {
+        self.repository = repository
+        self.isFocused = isFocused
+        self.onPick = onPick
+        // A tab that was scrolled comes back where it was (`restoreAnchor`): its first rows are the
+        // ones there, not the top ones, made and then thrown away.
+        if let index = repository.historyScrollAnchorIndex {
+            _window = State(initialValue: HistoryWindow(range: max(0, index - Self.overscan)..<index + 40))
+        }
+    }
+
     @State private var width: CGFloat = 0
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
     @FocusState private var listFocused: Bool
     @AppStorage("KaernColumnRef", store: .kaern) private var storedRef: Double = ColumnWidths.defaultRef
     @AppStorage("KaernColumnGraph", store: .kaern) private var storedGraph: Double = 0
@@ -24,7 +35,7 @@ struct HistoryView: View {
             width: width,
             stored: ColumnWidths(ref: storedRef, graph: storedGraph, date: storedDate, sha: storedSHA),
             automaticGraph: GraphMetrics.automaticWidth(for: repository.graph.prefix(300)),
-            tier: NarrowTier(width: windowWidth)
+            tier: tier
         )
     }
 
@@ -52,7 +63,7 @@ struct HistoryView: View {
     /// What the rows do when clicked (`HistoryRowActions`).
     @State private var actions = HistoryRowActions()
 
-    private static let overscan = 16
+    private static let overscan = 8
 
     var body: some View {
         let columns = columns
@@ -154,8 +165,9 @@ struct HistoryView: View {
         let anchor = Int(((visible.minY + KMetric.graphRow / 2 - workingCopyHeight) / KMetric.graphRow).rounded(.down))
         if anchor != scrollState.anchorIndex {
             scrollState.anchorIndex = anchor
-            repository.historyScrollAnchor = visible.minY + KMetric.graphRow / 2 < workingCopyHeight || anchor >= count
-                ? nil : repository.displayCommits[max(0, anchor)].id
+            let atTop = visible.minY + KMetric.graphRow / 2 < workingCopyHeight || anchor >= count
+            repository.historyScrollAnchor = atTop ? nil : repository.displayCommits[max(0, anchor)].id
+            repository.historyScrollAnchorIndex = atTop ? nil : max(0, anchor)
         }
         if last >= count - 40 { repository.loadMoreHistory() }
         // ScreenMarks: the shields of the rows in view.
@@ -184,7 +196,7 @@ struct HistoryView: View {
     private func restoreAnchor() {
         let shown = repository.displayCommits
         guard let anchor = repository.historyScrollAnchor, let index = shown.firstIndex(where: { $0.id == anchor }) else { return }
-        window.range = max(0, index - Self.overscan)..<min(shown.count, index + 48)
+        window.range = max(0, index - Self.overscan)..<min(shown.count, index + 40)
         position.scrollTo(y: top(ofRow: index))
     }
 
@@ -299,7 +311,12 @@ struct HistoryView: View {
 /// The commit rows that exist as views (`HistoryView.window`).
 @MainActor @Observable
 fileprivate final class HistoryWindow {
-    var range = 0..<48
+    var range: Range<Int>
+
+    init(range: Range<Int> = 0..<40) {
+        self.range = range
+    }
+
     /// The commit row the pointer is on (its number), for the hover tint.
     var hovered: Int?
     /// Where the pointer is in that row. Only a row with several labels reads it (they open as a
@@ -414,13 +431,14 @@ private struct HistoryRows: Layout {
         var end = bounds.minY + top + CGFloat(count) * KMetric.graphRow
         for subview in subviews {
             switch subview[HistorySlot.self] {
+            // Centered, as the stack had them: a row a point wider than a narrow window's list sits
+            // half a point to each side, and the spinner is narrower than the list.
             case .top:
-                subview.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: top))
+                subview.place(at: CGPoint(x: bounds.midX, y: bounds.minY), anchor: .top, proposal: ProposedViewSize(width: bounds.width, height: top))
             case .row(let index):
-                subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY + top + CGFloat(index) * KMetric.graphRow), anchor: .topLeading,
+                subview.place(at: CGPoint(x: bounds.midX, y: bounds.minY + top + CGFloat(index) * KMetric.graphRow), anchor: .top,
                               proposal: ProposedViewSize(width: bounds.width, height: KMetric.graphRow))
             case .end:
-                // Centered, as the stack had it (the spinner is narrower than the list).
                 let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
                 subview.place(at: CGPoint(x: bounds.midX, y: end), anchor: .top, proposal: ProposedViewSize(width: bounds.width, height: nil))
                 end += size.height

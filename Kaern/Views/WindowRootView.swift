@@ -23,7 +23,10 @@ struct WindowRootView: View {
                 titleBarLayout
             }
         }
-        .environment(\.windowWidth, width)
+        // What the screens fold at, not the width itself: a window being resized then redraws
+        // them when it crosses one of those widths, not at every step.
+        .environment(\.windowTier, NarrowTier(width: width))
+        .environment(\.toolbarFoldsMake, width > 0 && width < 1000)
         .environment(\.repositorySwitching, switching)
         .frame(minWidth: 760, minHeight: 520)
         .background(K.win)
@@ -182,7 +185,10 @@ enum NarrowTier: Int, Comparable {
 
 extension EnvironmentValues {
     /// The window's width, for the narrow-window folding.
-    @Entry var windowWidth: CGFloat = 0
+    /// How far the window has folded (`NarrowTier`).
+    @Entry var windowTier = NarrowTier.wide
+    /// Under 1,000 pt: a toolbar with names puts New Branch, Stash and Pop into » (ScreenNarrow).
+    @Entry var toolbarFoldsMake = false
     @Entry var repositorySwitching: RepositorySwitching = .tabs
 }
 
@@ -200,14 +206,13 @@ struct RepositoryScreen: View {
     /// The row of sidebar, middle and panel, and the middle's height: what the panes may take.
     @State private var rowWidth: CGFloat = 0
     @State private var middleHeight: CGFloat = 0
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
     @Environment(\.repositorySwitching) private var switching
 
     /// Where cards and sheets start: under this screen's own toolbar, if it has one.
     private var chromeTop: CGFloat { showsToolbar ? toolbarStyle.height : 0 }
 
     var body: some View {
-        let tier = NarrowTier(width: windowWidth)
         // Focus hides both side panels without changing what Sidebar and Details are set to.
         let showsSidebar = window.showsSidebar && !window.isFocused && repository.hasContent
         let sidebarRail = showsSidebar && tier >= .sidebarRail
@@ -448,7 +453,7 @@ struct RepositoryScreen: View {
                     HistoryView(repository: repository, isFocused: window.isFocused) {
                         if window.isFocused { window.showsDrawer = true }
                         // A narrow window opens the panel over the graph when a row is picked.
-                        if NarrowTier(width: windowWidth) >= .panelOverlay, !window.isFocused { window.overlayPanelOpen = true }
+                        if tier >= .panelOverlay, !window.isFocused { window.overlayPanelOpen = true }
                     }
                 }
             }
