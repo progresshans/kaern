@@ -168,10 +168,12 @@ struct QuickOpenPanel: View {
     let repository: RepositoryModel
     let window: WindowModel
     @State private var query = ""
-    @State private var index = 0
+    @State private var selection = QuickOpenSelection()
     @State private var files: [String] = []
 
     var body: some View {
+        // The search runs when what is searched changes (the text, the files, the repository),
+        // not when the picked row does: that is read by the rows, not here.
         let groups = QuickOpenSource.groups(query, repository: repository, window: window, files: files)
         let flat = groups.flatMap(\.items)
         VStack(spacing: 0) {
@@ -180,11 +182,11 @@ struct QuickOpenPanel: View {
                 QuickOpenField(text: $query, placeholder: "Branches, commits, files, commands",
                                move: { step in
                                    guard !flat.isEmpty else { return }
-                                   index = (index + step + flat.count) % flat.count
+                                   selection.index = (selection.index + step + flat.count) % flat.count
                                },
                                submit: {
-                                   guard flat.indices.contains(index) else { return }
-                                   let item = flat[index]
+                                   guard flat.indices.contains(selection.index) else { return }
+                                   let item = flat[selection.index]
                                    window.showsQuickOpen = false
                                    item.run()
                                },
@@ -212,13 +214,13 @@ struct QuickOpenPanel: View {
                                 .padding(.bottom, 4)
                             ForEach(group.items) { item in
                                 let position = flat.firstIndex { $0.id == item.id } ?? 0
-                                QuickOpenRow(item: item, isOn: position == index)
+                                QuickOpenPickedRow(item: item, position: position, selection: selection)
                                     .id(item.id)
                                     .onTapGesture {
                                         window.showsQuickOpen = false
                                         item.run()
                                     }
-                                    .onHover { if $0 { index = position } }
+                                    .onHover { if $0 { selection.index = position } }
                             }
                         }
                     }
@@ -226,7 +228,7 @@ struct QuickOpenPanel: View {
                     .padding(.bottom, 8)
                 }
                 .frame(maxHeight: 460)
-                .onChange(of: index) { if flat.indices.contains(index) { proxy.scrollTo(flat[index].id) } }
+                .background(QuickOpenScroller(selection: selection, ids: flat.map(\.id), proxy: proxy))
             }
             HStack(spacing: 14) {
                 key("↑ ↓", "Move")
@@ -245,7 +247,7 @@ struct QuickOpenPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 30, y: 18)
-        .onChange(of: query) { index = 0 }
+        .onChange(of: query) { selection.index = 0 }
         .task {
             guard let git = repository.repository else { return }
             files = await GitCommandTrigger.$current.withValue(.background("Quick Open")) { await git.trackedFiles() }
@@ -262,6 +264,38 @@ struct QuickOpenPanel: View {
             Text(text).font(.system(size: 12))
         }
         .foregroundStyle(K.label2)
+    }
+}
+
+/// Which result is picked. Its own object: moving through the results (the arrow keys, the
+/// pointer) redraws the row left and the row reached, and the panel doesn't search again.
+@MainActor @Observable
+private final class QuickOpenSelection {
+    var index = 0
+}
+
+/// A result's row, drawn as picked when it is.
+private struct QuickOpenPickedRow: View {
+    let item: QuickOpenItem
+    let position: Int
+    let selection: QuickOpenSelection
+
+    var body: some View {
+        QuickOpenRow(item: item, isOn: selection.index == position)
+    }
+}
+
+/// Keeps the picked row in view.
+private struct QuickOpenScroller: View {
+    let selection: QuickOpenSelection
+    let ids: [QuickOpenItem.ID]
+    let proxy: ScrollViewProxy
+
+    var body: some View {
+        Color.clear
+            .onChange(of: selection.index) { _, index in
+                if ids.indices.contains(index) { proxy.scrollTo(ids[index]) }
+            }
     }
 }
 
