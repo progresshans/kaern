@@ -223,6 +223,13 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored var watchedWorktreePaths: [String] = []
     /// Counts reads of the other worktrees' changes, so an older one that ends last doesn't land.
     @ObservationIgnored var worktreeChangeReads = 0
+    /// The read that waits for a second of quiet in the other worktrees (``worktreeFilesChanged()``).
+    @ObservationIgnored var worktreeReadTask: Task<Void, Never>?
+    /// The worktrees whose counts were read last, and whether something since may have changed
+    /// them without a file changing in their folders (a commit there moves a ref and empties
+    /// the count): then the next refresh reads them again.
+    @ObservationIgnored var worktreeCountsReadFor: [String]?
+    @ObservationIgnored var worktreeCountsAreStale = true
     private(set) var remotes: [RemoteInfo] = []
     private(set) var operation: OperationState?
     private(set) var lastFetch: Date?
@@ -499,7 +506,7 @@ final class RepositoryModel: Identifiable {
     /// wait for this to clear instead of sleeping).
     var debugIsBusy: Bool {
         activity != nil || phase == .opening || phase == .loading || refreshTask != nil || isReloadingHistory || isLoadingMoreHistory
-            || ignoreChecks > 0
+            || ignoreChecks > 0 || worktreeReadTask != nil
     }
     /// File events being checked against .gitignore before they start a refresh (``filesChanged(_:)``).
     @ObservationIgnored private var ignoreChecks = 0
@@ -647,6 +654,7 @@ final class RepositoryModel: Identifiable {
         // What changed up to here is in what this reads. A file that changes while it reads may
         // not be (git may be past it already): that stays for a refresh after the load.
         pendingScope = []
+        worktreeCountsAreStale = true
         if phase != .ready { phase = .loading }
         // The graph's scope depends on how many remote branches there are, so on the first load
         // the refs come before history.
@@ -769,7 +777,10 @@ final class RepositoryModel: Identifiable {
         // another working tree's folder inside this one changes nothing this tab shows: a build
         // writing thousands of files there starts no refresh.
         let nested = nestedWorktreeRoots()
-        let own = repository.workTreePaths(paths).filter { path in !nested.contains { path.hasPrefix($0) } }
+        let files = repository.workTreePaths(paths)
+        let own = files.filter { path in !nested.contains { path.hasPrefix($0) } }
+        // A file saved in a working tree inside this one: that tree's count in the sidebar.
+        if own.count != files.count { worktreeFilesChanged() }
         guard !own.isEmpty else { return }
         ignoreChecks += 1
         Task { [weak self] in
@@ -811,6 +822,8 @@ final class RepositoryModel: Identifiable {
             return
         }
         if noticeMissingFolder() { return }
+        // The other worktrees weren't watched while this tab was hidden.
+        worktreeCountsAreStale = true
         switch phase {
         case .light:
             Task { await loadEverything() }
@@ -886,6 +899,7 @@ final class RepositoryModel: Identifiable {
     private func refresh(_ scope: ChangeScope) async {
         guard let repository else { return }
         debugRefreshes += 1
+        if scope.contains(.refs) { worktreeCountsAreStale = true }
         let start = ContinuousClock.now
         // File events start refreshes while actions run too: one may end while git reads.
         let made = ownChanges
@@ -1056,7 +1070,13 @@ final class RepositoryModel: Identifiable {
         lineStats = stats
         await refreshWorkingMarks()
         await refreshSubmodules()
-        await refreshWorktreeChanges()
+        // The other worktrees' counts: while their folders are watched they're read when a file
+        // changes there, so not after every change here. Only when the worktrees aren't the ones
+        // read last, or refs moved (a commit made there shows in no file of its folder).
+        let watched = isVisible && AppSettings.watchesFiles
+        if !watched || worktreeCountsAreStale || worktreeCountsReadFor != otherWorktrees.map(\.path) {
+            await refreshWorktreeChanges()
+        }
     }
 
     /// Remotes again (Repository Settings added, edited or removed one).

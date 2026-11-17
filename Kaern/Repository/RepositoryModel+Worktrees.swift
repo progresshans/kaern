@@ -60,6 +60,8 @@ extension RepositoryModel {
         guard let runner = repository?.runner else { return }
         worktreeChangeReads += 1
         let read = worktreeChangeReads
+        worktreeCountsAreStale = false
+        worktreeCountsReadFor = otherWorktrees.map(\.path)
         var counts: [String: Int] = [:]
         for tree in otherWorktrees where FileManager.default.fileExists(atPath: tree.path) {
             guard let other = try? await GitRepository.open(URL(filePath: tree.path, directoryHint: .isDirectory), runner: runner),
@@ -71,6 +73,26 @@ extension RepositoryModel {
         if counts != worktreeChanges { worktreeChanges = counts }
         if let selected = selectedWorktree {
             if otherWorktrees.contains(where: { $0.path == selected }) { await loadWorktreeDetails(selected) } else { selectedWorktree = nil }
+        }
+    }
+
+    /// A file changed in a working tree inside this one (this tab's own watcher sees those, and
+    /// they change nothing of this tab's status): that tree's count is read after a second of
+    /// quiet, as the watcher of the trees outside waits, so a build there doesn't run git status
+    /// over and over.
+    func worktreeFilesChanged() {
+        guard isVisible else {
+            worktreeCountsAreStale = true
+            return
+        }
+        worktreeReadTask?.cancel()
+        worktreeReadTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            await GitCommandTrigger.$current.withValue(.background("File watcher (another worktree)")) {
+                await self.refreshWorktreeChanges()
+            }
+            if !Task.isCancelled { self.worktreeReadTask = nil }
         }
     }
 
