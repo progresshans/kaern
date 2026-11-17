@@ -146,7 +146,6 @@ nonisolated extension NSAppearance {
 nonisolated enum KFont {
     /// 13 regular: rows, menus, fields.
     static let body = Font.system(size: 13)
-    static let bodySemibold = Font.system(size: 13, weight: .semibold)
     /// The board's 650 weight (section titles, count pills, the current branch).
     static let body650 = weighted(13, 0.35)
     static let file = Font.system(size: 12.5)

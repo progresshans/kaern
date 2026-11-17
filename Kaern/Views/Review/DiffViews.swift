@@ -53,10 +53,6 @@ struct ReviewFile: Identifiable, Equatable {
             return hunk.hunk.lines.filter(\.isChange).map { LinePick(stage: hunk.stage, hunk: hunk.hunk.id, line: $0.id) }
         }
     }
-    var directory: String {
-        let directory = (path as NSString).deletingLastPathComponent
-        return directory.isEmpty ? "" : directory + "/"
-    }
     var name: String { (path as NSString).lastPathComponent }
 
     /// "1 of 3 hunks staged" for a partially staged file.
@@ -745,12 +741,12 @@ private struct FolderThenName: Layout {
 
 // MARK: - Diff settings
 
-/// How diffs are drawn (Settings › Diff): font, wrapping, changed-word marks.
+/// How diffs are drawn (Settings › Diff): font and wrapping. (Changed-word marks are part of the
+/// rows a view makes, so each view reads that setting itself.)
 struct DiffStyle {
     var font: Font = .system(size: 12, design: .monospaced)
     var lineSpacing: CGFloat = 4
     var wraps = true
-    var words = true
 }
 
 extension EnvironmentValues {
@@ -760,7 +756,6 @@ extension EnvironmentValues {
 /// Reads the diff settings and hands them to the rows below.
 struct DiffSettingsReader: ViewModifier {
     @AppStorage(SettingsKey.diffWrap, store: .kaern) private var wraps = true
-    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     @AppStorage(SettingsKey.diffFontName, store: .kaern) private var fontName = ""
     @AppStorage(SettingsKey.diffFontSize, store: .kaern) private var fontSize = 12.0
 
@@ -768,7 +763,7 @@ struct DiffSettingsReader: ViewModifier {
         _ = (fontName, fontSize)
         let font = AppSettings.diffFont
         let size = font.pointSize
-        return content.environment(\.diffStyle, DiffStyle(font: Font(font), lineSpacing: max(2, 20 - size * 1.33), wraps: wraps, words: words))
+        return content.environment(\.diffStyle, DiffStyle(font: Font(font), lineSpacing: max(2, 20 - size * 1.33), wraps: wraps))
     }
 }
 

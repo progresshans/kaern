@@ -328,10 +328,4 @@ final class TrafficLights {
             if button.frame.origin.y != y { button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y)) }
         }
     }
-
-    /// Where the tab strip may start: right of the zoom button.
-    static func leadingInset(for window: NSWindow?) -> CGFloat {
-        guard let zoom = window?.standardWindowButton(.zoomButton) else { return 78 }
-        return zoom.convert(zoom.bounds, to: nil).maxX + 9
-    }
 }

@@ -149,7 +149,6 @@ enum AppSettings {
     }
 
     static var diffWords: Bool { store.object(forKey: SettingsKey.diffWords) as? Bool ?? true }
-    static var diffWraps: Bool { store.object(forKey: SettingsKey.diffWrap) as? Bool ?? true }
 
     static var usesSSHAgent: Bool { store.object(forKey: SettingsKey.sshAgent) as? Bool ?? true }
     static var watchesFiles: Bool { store.object(forKey: SettingsKey.watchFiles) as? Bool ?? true }

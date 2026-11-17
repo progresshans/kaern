@@ -210,7 +210,6 @@ extension RepositoryModel {
         guard canChangeIndex, let repository else { return }
         let previous = indexTask
         let trigger = GitCommandTrigger(triggerName(label))
-        pendingIndexChanges += 1
         indexTask = Task {
             await previous?.value
             await GitCommandTrigger.$current.withValue(trigger) {
@@ -229,7 +228,6 @@ extension RepositoryModel {
                 }
             }
             await refreshStatusNow()
-            pendingIndexChanges -= 1
         }
     }
 

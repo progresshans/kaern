@@ -406,12 +406,7 @@ struct RepositoryScreen: View {
         .onChange(of: tier >= .sidebarRail) { _, folded in if !folded { window.sidebarFlyout = nil } }
         .onChange(of: panelOverlay) { _, overlay in if !overlay { window.overlayPanelOpen = false } }
         .alert(item: $repository.alert) { alert in
-            if let title = alert.actionTitle, let action = alert.action {
-                Alert(title: Text(alert.title), message: Text(alert.message),
-                      primaryButton: .default(Text("Resolve Later")), secondaryButton: .destructive(Text(title), action: action))
-            } else {
-                Alert(title: Text(alert.title), message: Text(alert.message))
-            }
+            Alert(title: Text(alert.title), message: Text(alert.message))
         }
     }
 

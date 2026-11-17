@@ -283,22 +283,6 @@ public struct GitRepository: Sendable, Hashable {
         return CommitDistance(ahead: counts[1], behind: counts[0])
     }
 
-    /// Local branches that contain `commit`.
-    public func branchesContaining(_ commit: String) async throws -> [String] {
-        let output = try await git(["branch", "--format=%(refname:short)", "--contains", commit])
-        return output.text.split(separator: "\n").map(String.init)
-    }
-
-    /// An untracked file shown as a new file.
-    public func untrackedDiff(path: String) async throws -> FileDiff? {
-        let output = try await git(["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path], accepted: [0, 1])
-        guard var diff = DiffParser.parse(output.stdout).first else { return nil }
-        diff.path = path
-        diff.oldPath = nil
-        diff.isNewFile = true
-        return diff
-    }
-
     public func stashes() async throws -> [Stash] {
         let output = try await git(["stash", "list", "--format=\(StashParser.format)"])
         return StashParser.parse(output.text)

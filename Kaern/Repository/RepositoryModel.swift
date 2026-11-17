@@ -561,10 +561,6 @@ final class RepositoryModel: Identifiable {
 
     // MARK: Derived state
 
-    /// Staging or unstaging waiting or running (they run one after another).
-    var pendingIndexChanges = 0
-    var isChangingIndex: Bool { pendingIndexChanges > 0 }
-
     var tabMark: TabMark {
         switch phase {
         case .missing: return .missing
@@ -1678,7 +1674,4 @@ struct RepositoryAlert: Identifiable {
     let id = UUID()
     var title: String
     var message: String
-    /// A second button besides OK ("Abort Cherry-pick").
-    var actionTitle: String?
-    var action: (() -> Void)?
 }

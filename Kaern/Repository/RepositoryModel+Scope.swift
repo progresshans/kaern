@@ -68,15 +68,6 @@ extension RepositoryModel {
         return nil
     }
 
-    /// Whether the graph draws `ref`'s history.
-    func draws(_ ref: Ref) -> Bool {
-        switch graphScope {
-        case .all: true
-        case .local: ref.kind == .localBranch || (ref.kind == .remoteBranch && drawnRemoteNames.contains(ref.name))
-        case .current: isOnCurrentBranch(ref.target)
-        }
-    }
-
     /// On the first load: the scope kept for this repository, else Local + main when it has
     /// many remote branches.
     func decideGraphScope() {

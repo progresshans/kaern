@@ -104,7 +104,6 @@ public struct FileDiff: Sendable, Hashable {
 
     public var additions: Int { hunks.reduce(0) { $0 + $1.additions } }
     public var deletions: Int { hunks.reduce(0) { $0 + $1.deletions } }
-    public var lineCount: Int { hunks.reduce(0) { $0 + $1.lines.count } }
 
     /// Whether hunks and lines of this diff can be staged, unstaged or discarded one at a time.
     public var supportsPartialPatches: Bool {

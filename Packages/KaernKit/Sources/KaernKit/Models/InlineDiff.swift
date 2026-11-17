@@ -56,12 +56,8 @@ public enum InlineDiff {
     }
 
     /// The ranges of `old` and `new` that differ, by words (runs of letters, digits and `_`),
-    /// runs of white space and single other characters. `nil` when the lines are equal, share
-    /// less than a third of their text, or are too long to compare quickly.
-    public static func changes(old: String, new: String) -> (old: [Range<Int>], new: [Range<Int>])? {
-        compare(old: old, new: new).map { ($0.old, $0.new) }
-    }
-
+    /// runs of white space and single other characters. `nil` when the lines are equal or are
+    /// too long to compare quickly.
     struct Match {
         var old: [Range<Int>]
         var new: [Range<Int>]

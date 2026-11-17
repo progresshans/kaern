@@ -246,10 +246,6 @@ final class WindowModel: Identifiable {
         activate(order[index].id)
     }
 
-    func close(_ id: UUID) {
-        close([id])
-    }
-
     func close(_ ids: [UUID]) {
         let closing = Set(ids)
         guard !closing.isEmpty else { return }
@@ -265,16 +261,6 @@ final class WindowModel: Identifiable {
             onActiveTabChange?()
         }
         changed()
-    }
-
-    func closeOthers(than id: UUID) {
-        close(tabs.filter { $0.id != id }.map(\.id))
-        activate(id)
-    }
-
-    func closeToTheRight(of id: UUID) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        close(tabs[(index + 1)...].map(\.id))
     }
 
     // MARK: Reordering
@@ -355,10 +341,6 @@ final class WindowModel: Identifiable {
         tabs = tabs.map { RepoTab(id: $0.id, path: $0.path, group: $0.group == groupID ? nil : $0.group) }
         groups.removeAll { $0.id == groupID }
         changed()
-    }
-
-    func closeGroup(_ groupID: UUID) {
-        close(members(of: groupID).map(\.id))
     }
 
     func rename(_ groupID: UUID, to name: String) {
