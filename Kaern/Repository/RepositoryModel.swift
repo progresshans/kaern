@@ -876,8 +876,11 @@ final class RepositoryModel: Identifiable {
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
-            // As much history as was loaded (a refresh shouldn't shrink what you scrolled to).
-            let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
+            // As much history as was loaded (a refresh shouldn't shrink what you scrolled to): up
+            // to 20,000 commits, and past that as far down as the selected commit and the rows on
+            // screen are, so a refresh doesn't take the selection away or move the list.
+            let inUse = [selectedCommitID, historyScrollAnchor].compactMap { $0.flatMap { commitPositions[$0] } }.max() ?? 0
+            let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : max(20_000, inUse + Self.pageSize)))
             readScope = historyScope
             let stream = restartHistoryStream(repository)
             isReloadingHistory = true
