@@ -94,10 +94,12 @@ enum MainMenu {
         recentItem.submenu = recent
         menu.addItem(recentItem)
         menu.addItem(.separator())
-        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command]) {
+        // Off while that window's sheet works (a clone under way): it would take the sheet's place.
+        let sheetIsFree = { app.openingWindow?.sheet?.isBusy != true }
+        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command], enabled: sheetIsFree) {
             app.showCreate(in: app.openingWindow ?? app.showWelcome())
         })
-        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command]) {
+        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command], enabled: sheetIsFree) {
             app.showClone(in: app.openingWindow ?? app.showWelcome())
         })
         menu.addItem(.separator())
