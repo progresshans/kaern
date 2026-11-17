@@ -654,6 +654,8 @@ struct SignInSheet: View {
     @State private var token = ""
     @State private var checking = false
     @State private var failure: String?
+    /// The check with the server; Cancel stops it, so an answer that comes later adds nothing.
+    @State private var check: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -697,8 +699,11 @@ struct SignInSheet: View {
             HStack(spacing: 8) {
                 if checking { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                Button("Cancel") {
+                    check?.cancel()
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
                 Button("Sign In", action: signIn)
                     .keyboardShortcut(.defaultAction)
                     .disabled(checking || token.trimmingCharacters(in: .whitespaces).isEmpty || host.isEmpty)
@@ -742,11 +747,13 @@ struct SignInSheet: View {
         checking = true
         failure = nil
         let isGitLab = server == "gitlab.com"
-        Task {
+        check = Task {
             do {
                 let user = isGitLab
                     ? try await GitLabClient.user(host: host, token: secret)
                     : try await GitHubClient(baseURL: GitHubClient.apiURL(for: host), token: secret).user()
+                // Cancelled while the server answered: no token in the Keychain, no account.
+                try Task.checkCancellation()
                 try await runner.approveCredential(host: host, username: user.login, secret: secret)
                 completion(HostingAccount(kind: isGitLab ? .gitlab : .github, host: host, login: user.login, name: user.name,
                                           userID: user.id, email: user.email))
@@ -756,7 +763,7 @@ struct SignInSheet: View {
                 failure = "\(host) didn’t accept this token. Check that you copied all of it and that it hasn’t expired."
                 checking = false
             } catch {
-                failure = "Couldn’t sign in: \(error.localizedDescription)"
+                if !Task.isCancelled { failure = "Couldn’t sign in: \(error.localizedDescription)" }
                 checking = false
             }
         }
