@@ -286,6 +286,9 @@ final class RepositoryModel: Identifiable {
                 refreshDiffsIfNeeded()
             }
             if review == nil || review?.compare != nil { clearLinePicksIfNeeded() }
+            // One file at a time, and another file now: the picked lines aren't on screen
+            // anymore, and their Stage and Discard would act on a file that isn't shown.
+            if let review, !review.showsAllFiles, let picked = linePicks.path, review.path != picked { clearLinePicksIfNeeded() }
         }
     }
     /// Diffs Review shows for a compare (`key`: base, target, white space).
