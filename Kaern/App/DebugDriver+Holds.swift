@@ -18,7 +18,9 @@ import Foundation
 ///                       (every point when none is named)
 ///     refresh           a full refresh of the shown repository, as when Kaern becomes active
 ///
-/// `hold` is for the shown repository, and a point stays held until it's released. `release`
+/// `hold` is for the shown repository, or with a folder after the point (`hold status <folder>`)
+/// for the repository there, which may be opened afterwards: its first load then waits. A point
+/// stays held until it's released. `release`
 /// is for every repository, so a refresh held in a tab that was switched away from or closed
 /// since doesn't wait for ever. `dump` lists the points where something waits now in the shown
 /// repository as `driver.holding`.
@@ -30,6 +32,10 @@ extension DebugDriver {
         if command == "release" {
             // A name that isn't a point releases nothing (a typo shouldn't let everything go).
             if args.isEmpty || point != nil { DebugHolds.shared.release(point) }
+            return
+        }
+        if command == "hold", args.count > 1, let point {
+            DebugHolds.shared.hold(point, in: args.dropFirst().joined(separator: " "))
             return
         }
         guard let window, let tab = window.activeTab else { return }

@@ -626,6 +626,9 @@ final class RepositoryModel: Identifiable {
         debugFullLoads += 1
         let loadStart = ContinuousClock.now
         let made = ownChanges
+        // What changed up to here is in what this reads. A file that changes while it reads may
+        // not be (git may be past it already): that stays for a refresh after the load.
+        pendingScope = []
         if phase != .ready { phase = .loading }
         // The graph's scope depends on how many remote branches there are, so on the first load
         // the refs come before history.
@@ -675,12 +678,10 @@ final class RepositoryModel: Identifiable {
         selectPendingCommit(readWith: readScope)
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
-        if made == ownChanges {
-            // What changed while this read is in what it read.
-            pendingScope = []
-        } else if isVisible {
-            // Not what Kaern did itself meanwhile (a fetch that ended while this tab loaded): the
-            // refresh that action asked for is still to come.
+        if isVisible, made != ownChanges || !pendingScope.isEmpty {
+            // What Kaern did itself meanwhile (a fetch that ended while this tab loaded) and
+            // files that changed while git read aren't in what was read: the refresh for them
+            // is still to come.
             runPendingRefresh(trigger: "After loading the repository")
         }
         historyReloaded()
