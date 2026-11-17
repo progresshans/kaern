@@ -76,8 +76,12 @@ struct CommandLogView: View {
 
     var body: some View {
         let today = log.entries.filter { Calendar.current.isDateInToday($0.record.started) }
+        // The repository's folder or one inside it: "kaern-site" next to "kaern" isn't.
+        let root = state.repositoryPath.map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
         let scoped = today.filter { entry in
-            !state.onlyRepository || entry.record.directory.hasPrefix(state.repositoryPath ?? "\u{0}")
+            guard state.onlyRepository else { return true }
+            guard let root else { return false }
+            return entry.record.directory == root || entry.record.directory.hasPrefix(root + "/")
         }
         let shown = Array(scoped.filter(matches).reversed())
         let hiddenBackground = state.showsBackground ? 0 : scoped.filter { Self.isQuiet($0) && matchesIgnoringBackground($0) }.count
