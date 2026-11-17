@@ -285,21 +285,27 @@ struct RepositorySettingsSheet: View {
         loaded = true
     }
 
-    @State private var saveTask: Task<Void, Never>?
+    /// A save waiting for the typing to pause, per key: the name's doesn't go when the email
+    /// is typed right after it.
+    @State private var pendingSaves: [String: Task<Void, Never>] = [:]
+    @State private var lastSave: Task<Void, Never>?
 
     private func saveSoon(_ key: String, _ value: String) {
-        saveTask?.cancel()
-        saveTask = Task {
+        pendingSaves[key]?.cancel()
+        pendingSaves[key] = Task {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             save(key, value)
         }
     }
 
+    /// One write after the other: two `git config` at once fight over the config file's lock.
     private func save(_ key: String, _ value: String?) {
         guard let git = repository.repository else { return }
         let trimmed = value?.trimmingCharacters(in: .whitespaces)
-        Task {
+        let previous = lastSave
+        lastSave = Task {
+            await previous?.value
             do {
                 try await git.setLocalConfig(key, trimmed?.isEmpty == true ? nil : trimmed)
                 failure = nil
