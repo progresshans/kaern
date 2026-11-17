@@ -408,14 +408,18 @@ struct HostingAccount: Codable, Hashable, Identifiable {
         return "\(userID)+\(login)@users.noreply.\(host)"
     }
 
+    /// Reading the list observes it, so what's open while you sign in (Create's "Also publish to
+    /// GitHub", Clone's account list) shows the account right away.
     @MainActor static var all: [HostingAccount] {
         get {
+            _ = AccountsChange.shared.count
             guard let data = UserDefaults.kaern.data(forKey: SettingsKey.accounts),
                   let list = try? JSONDecoder().decode([HostingAccount].self, from: data) else { return [] }
             return list
         }
         set {
             UserDefaults.kaern.set(try? JSONEncoder().encode(newValue), forKey: SettingsKey.accounts)
+            AccountsChange.shared.count += 1
             NotificationCenter.default.post(name: .kaernSettingsChanged, object: SettingsKey.accounts)
         }
     }
@@ -424,6 +428,13 @@ struct HostingAccount: Codable, Hashable, Identifiable {
     @MainActor static func account(forHost host: String) -> HostingAccount? {
         all.first { $0.host.caseInsensitiveCompare(host) == .orderedSame }
     }
+}
+
+/// Counts changes to the signed-in accounts (see `HostingAccount.all`).
+@MainActor @Observable
+final class AccountsChange {
+    static let shared = AccountsChange()
+    var count = 0
 }
 
 private struct AccountsPane: View {
