@@ -84,6 +84,9 @@ extension RepositoryModel {
     func createBranch(_ name: String, from stash: Stash) {
         guard let shown = headPosition else { return }
         let label = "Create Branch \(name) from \(stash.reference)"
+        // With changes of its own in the folder, undo can't tell them from the stash's: then it
+        // only goes back and deletes the branch, and the changes stay where they are.
+        let wasClean = status.isClean
         perform(.creatingBranch(name), trigger: label) { [weak self] repository in
             // HEAD as git has it now, not as the status showed it (see `headNow`).
             let now = await Self.headNow(in: repository)
@@ -91,8 +94,10 @@ extension RepositoryModel {
             try await repository.createBranch(name, from: stash)
             guard let self, let tip = await repository.resolve("HEAD") else { return }
             self.screen = nil
-            self.record(.createdBranch(label: label, name: name, at: tip, upstream: nil, previous: previous),
-                        toast: "Created \(name) where \(stash.reference) was made · its changes are applied and the stash is gone")
+            let step: ReversibleStep = wasClean
+                ? .createdBranchFromStash(label: label, name: name, at: tip, previous: previous, stash: stash)
+                : .createdBranch(label: label, name: name, at: tip, upstream: nil, previous: previous)
+            self.record(step, toast: "Created \(name) where \(stash.reference) was made · its changes are applied and the stash is gone")
         }
     }
 
