@@ -188,15 +188,18 @@ extension AppModel {
                 let fileCount = await repository.trackedFiles().count
                 let note = model.firstCommit ? "Created \(name) · 1 commit · \(Formatters.count(fileCount, "file", "files"))" : "Created \(name)"
                 // The repository is there from here on. When only publishing fails it still opens,
-                // and Publish to GitHub comes up with what went wrong: its sheet can try again
-                // (under another name too), where Create would fail at a commit with nothing new.
+                // and Publish to GitHub comes up saying so and asking whether to try again: its
+                // sheet can (under another name too), where Create would fail at a commit with
+                // nothing new.
                 var publishError: Error?
+                var madeOnGitHub: String?
                 if model.publish, let account = model.githubAccount {
                     model.advance(to: "publish")
                     do {
                         try await publish(repository, name: githubName, isPrivate: model.isPrivate, account: account, runner: runner)
                     } catch {
                         publishError = error
+                        madeOnGitHub = await self.madeOnGitHub(repository, name: githubName, account: account)
                     }
                 }
                 if let publishError {
@@ -218,6 +221,8 @@ extension AppModel {
                     let retry = PublishModel(repositoryPath: path, name: name)
                     retry.isPrivate = model.isPrivate
                     retry.error = publishError.localizedDescription
+                    retry.followsCreate = true
+                    retry.madeOnGitHub = madeOnGitHub
                     window.sheet = .publish(retry)
                 }
             } catch {
@@ -231,17 +236,36 @@ extension AppModel {
 
     // MARK: Publish
 
-    /// Makes the GitHub repository, adds it as origin and pushes HEAD with its upstream.
+    /// Makes the GitHub repository, adds it as origin and pushes HEAD with its upstream. A try that
+    /// got as far as origin and failed at the push left only the push to do: asking GitHub for the
+    /// repository again would say its name is taken.
     func publish(_ repository: GitRepository, name: String, isPrivate: Bool, account: HostingAccount, runner: GitRunner) async throws {
-        guard let token = await runner.credential(host: account.host, username: account.login) else {
-            throw HostingError(status: 401, message: "Kaern couldn’t read the token for \(account.login). Sign in again in Settings › Accounts.")
+        if await madeOnGitHub(repository, name: name, account: account) == nil {
+            // Before anything is made on GitHub: `git remote add origin` would fail after it.
+            if let origin = await repository.configuredRemoteURL("origin") {
+                throw HostingError(status: 0, message: "There is already a remote named origin (\(origin)). Remove or rename it in Repository Settings to publish here.")
+            }
+            guard let token = await runner.credential(host: account.host, username: account.login) else {
+                throw HostingError(status: 401, message: "Kaern couldn’t read the token for \(account.login). Sign in again in Settings › Accounts.")
+            }
+            let client = GitHubClient(baseURL: GitHubClient.apiURL(for: account.host), token: token)
+            let created = try await client.createRepository(name: name, isPrivate: isPrivate)
+            try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Publish to GitHub")) {
+                try await repository.addRemote("origin", url: account.clonesWithSSH ? created.sshURL : created.httpsURL)
+            }
         }
-        let client = GitHubClient(baseURL: GitHubClient.apiURL(for: account.host), token: token)
-        let created = try await client.createRepository(name: name, isPrivate: isPrivate)
         try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Publish to GitHub")) {
-            try await repository.addRemote("origin", url: account.clonesWithSSH ? created.sshURL : created.httpsURL)
             try await repository.push(setUpstreamOn: "origin")
         }
+    }
+
+    /// "owner/name" when origin is that repository of the account's already: a Publish made it and
+    /// didn't get through the push.
+    func madeOnGitHub(_ repository: GitRepository, name: String, account: HostingAccount) async -> String? {
+        let fullName = "\(account.login)/\(name)"
+        guard let origin = await repository.configuredRemoteURL("origin"), let url = RemoteURL(origin),
+              url.names(fullName, on: account.host) else { return nil }
+        return fullName
     }
 
     func startPublish(_ model: PublishModel, in window: WindowModel) {
@@ -251,7 +275,7 @@ extension AppModel {
         model.isRunning = true
         model.error = nil
         let name = model.githubName
-        model.progress = "Creating \(name) on GitHub…"
+        model.progress = model.madeOnGitHub.map { "Pushing to \($0)…" } ?? "Creating \(name) on GitHub…"
         Task {
             guard let runner = await waitForGit() else {
                 model.isRunning = false
@@ -267,9 +291,13 @@ extension AppModel {
                 await target.refreshRemotes()
                 target.showToast("Published \(target.name) to github.com/\(account.login)/\(name)")
             } catch {
+                // Made on GitHub with the push left: the sheet says so, and the sidebar shows origin.
+                let made = await madeOnGitHub(git, name: name, account: account)
+                model.madeOnGitHub = made
                 model.isRunning = false
                 model.progress = nil
                 model.error = error.localizedDescription
+                if made != nil { await target.refreshRemotes() }
             }
         }
     }

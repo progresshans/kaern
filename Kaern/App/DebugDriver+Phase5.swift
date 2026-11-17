@@ -10,7 +10,7 @@ import KaernKit
 extension DebugDriver {
     static let phase5Commands: Set<String> = [
         "clone", "cloneField", "cloneSource", "cloneStart", "fakeHosted", "fakeCloneProgress",
-        "create", "createField", "createStart", "publishSheet", "windowSheetClose",
+        "create", "createField", "createStart", "publishSheet", "publishStart", "windowSheetClose",
         "repositories", "reposFilter", "reposAttention", "reposSelect", "reposFix", "reposOpen", "reposClose", "fakeFetchProblem",
         "listFold", "repoPopover", "flyout", "overlayPanel",
         "loadMore", "expandRun", "botMode", "fsmonitorOn", "fsmonitorNotNow",
@@ -268,6 +268,8 @@ extension DebugDriver {
             if case .create(let model) = window.sheet { app.startCreate(model, in: window) }
         case "publishSheet":
             if let tab = window.activeTab { app.showPublish(app.repository(for: tab.path), in: window) }
+        case "publishStart":
+            if case .publish(let model) = window.sheet { app.startPublish(model, in: window) }
         case "windowSheetClose":
             app.closeSheet(in: window)
         default:
@@ -294,7 +296,8 @@ extension DebugDriver {
                 "steps": model.steps.map { "\($0.state) \($0.text)" },
             ] as [String: Any]
         case .publish(let model)?:
-            result["sheet"] = ["kind": "publish", "name": model.name, "error": model.error ?? "", "account": model.account?.id ?? ""]
+            result["sheet"] = ["kind": "publish", "name": model.name, "error": model.error ?? "", "account": model.account?.id ?? "",
+                               "followsCreate": model.followsCreate, "made": model.madeOnGitHub ?? "", "running": model.isRunning] as [String: Any]
         case nil:
             result["sheet"] = NSNull()
         }
