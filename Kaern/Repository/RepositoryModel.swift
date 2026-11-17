@@ -1410,8 +1410,15 @@ final class RepositoryModel: Identifiable {
                 guard let details = try? await repository.commitDetails(id) else { return nil }
                 return (details, (try? await repository.changedFiles(in: details.commit)) ?? [])
             }
-            guard let (details, files) = loaded else { return }
             guard !Task.isCancelled else { return }
+            guard let (details, files) = loaded else {
+                // git couldn't read it. Not the commit selected before, which is what stayed in
+                // the panel (with its Revert and its files): what the history has of this one,
+                // and nothing kept, so selecting it again reads again.
+                selectedDetails = commit(id).map { CommitDetails(commit: $0, committer: $0.author, message: $0.subject) }
+                selectedFiles = []
+                return
+            }
             detailsCache[id] = (details, files)
             if detailsCache.count > 200 { detailsCache.removeAll() }
             selectedDetails = details
