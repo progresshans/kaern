@@ -5,14 +5,18 @@ import QuartzCore
 /// Debug commands that measure how the main thread keeps up with the display while a check
 /// scrolls or changes screens:
 ///
-///     frames ghost on|off    the window in front of every other, almost transparent and letting clicks
-///                            through, and back behind them: a window that's covered doesn't draw, so
-///                            what it would cost to draw can't be measured there
+///     frames ghost on|off    the window in front of every other (floating, on every Space), almost
+///                            transparent and letting clicks through, and back behind them: a window
+///                            that's covered doesn't draw, so what it would cost to draw can't be
+///                            measured there, and a window at the normal level goes under whatever
+///                            is clicked while a check runs
 ///     frames start           begins measuring
-///     frames stop <file>     writes what was measured since, as JSON
+///     frames stop <file>     writes what was measured since, as JSON (with where the last scrollRun
+///                            left its scroll view: `scrollY` of `scrollMax`, 0 of 0 when nothing moved)
 ///     scrollRun <x> <y> <dy> <count> [per second]
 ///                            moves the scroll view at the window point (x, y) by `dy` points `count`
 ///                            times, 120 a second unless said otherwise (negative: down the content).
+///                            Of the scroll views there, the innermost one with more content than fits.
 ///                            It moves the scroll view itself: a posted scroll event doesn't scroll a
 ///                            SwiftUI list in a window that isn't under the pointer
 ///
@@ -25,15 +29,25 @@ import QuartzCore
 extension DebugDriver {
     static let frameCommands: Set<String> = ["frames", "scrollRun"]
 
-    /// The scroll view that shows the window point (x, y) (top-left origin): the innermost one there.
+    /// The scroll view that shows the window point (x, y) (top-left origin): the innermost one there that has
+    /// more content than fits its height (a diff's sideways scroller sits inside the one that scrolls the files),
+    /// else the innermost one.
     private func scrollView(atX x: Double, y: Double) -> NSScrollView? {
         guard let nsWindow = controller?.window, let frameView = nsWindow.contentView?.superview else { return nil }
         let point = NSPoint(x: x, y: nsWindow.frame.height - y)
+        func scrollsDown(_ scrollView: NSScrollView) -> Bool {
+            (scrollView.documentView?.frame.height ?? 0) > scrollView.contentView.bounds.height + 1
+        }
         var view = frameView.hitTest(point)
+        var innermost: NSScrollView?
         while let current = view {
-            if let scrollView = current as? NSScrollView { return scrollView }
+            if let scrollView = current as? NSScrollView {
+                if scrollsDown(scrollView) { return scrollView }
+                innermost = innermost ?? scrollView
+            }
             view = current.superview
         }
+        if let innermost { return innermost }
         // SwiftUI can answer the hit test with a view beside the scroll view: look for the smallest one there.
         var found: NSScrollView?
         func search(_ view: NSView) {
@@ -70,6 +84,7 @@ extension DebugDriver {
                 origin.y = min(max(0, origin.y + (flipped ? -dy : dy)), most)
                 clip.scroll(to: origin)
                 scrollView.reflectScrolledClipView(clip)
+                DebugFrameMeter.shared.scrolledTo = (origin.y, most)
             }
         default:
             break
@@ -167,6 +182,8 @@ final class DebugFrameMeter: NSObject {
         let result: [String: Any] = [
             "seconds": (seconds * 1000).rounded() / 1000,
             "visible": window?.occlusionState.contains(.visible) ?? false,
+            // Where the last `scrollRun` left its scroll view, and how far it can go (-1: none ran).
+            "scrollY": scrolledTo.y, "scrollMax": scrolledTo.most,
             "active": NSApp.isActive,
             "refresh": (1 / interval * 10).rounded() / 10,
             "turns": [
@@ -198,6 +215,10 @@ final class DebugFrameMeter: NSObject {
 
     /// What the window was before `frames ghost on`.
     private var beforeGhost: (alpha: CGFloat, ignoresMouse: Bool)?
+    private var beforeGhostSpaces: NSWindow.CollectionBehavior?
+    private var beforeGhostLevel: NSWindow.Level?
+    /// Where `scrollRun` last put its scroll view (see `stop`).
+    var scrolledTo: (y: Double, most: Double) = (-1, -1)
 
     /// In front of every window, where the window server has it drawn, but nearly invisible and out
     /// of the pointer's way: a test instance mustn't cover what you're working in. Off puts it back
@@ -206,13 +227,23 @@ final class DebugFrameMeter: NSObject {
         guard let window else { return }
         if on, beforeGhost == nil {
             beforeGhost = (window.alphaValue, window.ignoresMouseEvents)
+            beforeGhostSpaces = window.collectionBehavior
             window.alphaValue = 0.01
             window.ignoresMouseEvents = true
+            beforeGhostLevel = window.level
+            // On whichever Space is in front, and above the windows of the app in use: a window on another
+            // Space or under a window clicked meanwhile doesn't draw.
+            window.collectionBehavior.formUnion([.canJoinAllSpaces, .fullScreenAuxiliary])
+            window.level = .floating
             window.orderFrontRegardless()
         } else if !on, let before = beforeGhost {
             window.orderBack(nil)
             window.alphaValue = before.alpha
             window.ignoresMouseEvents = before.ignoresMouse
+            if let spaces = beforeGhostSpaces { window.collectionBehavior = spaces }
+            if let level = beforeGhostLevel { window.level = level }
+            beforeGhostSpaces = nil
+            beforeGhostLevel = nil
             beforeGhost = nil
         }
     }
