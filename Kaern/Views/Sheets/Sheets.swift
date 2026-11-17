@@ -237,7 +237,8 @@ private struct BranchSheet: View {
         }
         .onAppear {
             name = request.name
-            if case .new(let at) = request.kind, let at { from = at }
+            // HEAD's own commit is the "(HEAD)" choice: it isn't listed a second time by its hash.
+            if case .new(let at) = request.kind, let at, at != repository.status.headID { from = at }
             DispatchQueue.main.async { focused = true }
         }
     }
