@@ -81,14 +81,15 @@ extension GitRepository {
         return FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) ? url : nil
     }
 
-    /// The git directory shared by all working trees (a linked worktree's own one points to it).
-    var commonGitDirectory: URL {
+    /// The git directory shared by all working trees (a linked worktree's own one points to it),
+    /// as a canonical path like ``gitDirectory`` (the way the file watcher names what's in it).
+    public var commonGitDirectory: URL {
         let file = gitDirectory.appending(path: "commondir").path(percentEncoded: false)
         guard let data = FileManager.default.contents(atPath: file) else { return gitDirectory }
         let path = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return path.hasPrefix("/")
-            ? URL(filePath: path, directoryHint: .isDirectory)
-            : gitDirectory.appending(path: path, directoryHint: .isDirectory).standardizedFileURL
+        guard !path.isEmpty else { return gitDirectory }
+        let absolute = path.hasPrefix("/") ? path : gitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/" + path
+        return URL(filePath: canonicalPath(absolute), directoryHint: .isDirectory)
     }
 
     static let lfsPointerPrefix = "version https://git-lfs.github.com/spec/"

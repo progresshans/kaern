@@ -199,6 +199,29 @@ struct RepositoryTests {
         #expect(repository.classify([git("index")]) == .index)
         #expect(repository.classify([git("refs/heads/main"), git("objects/ab/cdef")]) == .refs)
         #expect(repository.classify([git("index.lock"), git("logs/HEAD")]) == [])
+        #expect(repository.workTreePaths([work("Sources/App.swift"), git("index"), git("objects/ab/cdef")]) == [work("Sources/App.swift")])
+    }
+
+    /// A linked working tree has its HEAD and index in a git directory of its own and its branches
+    /// in the one it shares: a branch moved there (a commit made in Terminal) is a change of refs,
+    /// and nothing else in the shared directory is this working tree's.
+    @Test func classifiesALinkedWorktreesSharedFiles() async throws {
+        let (repository, folder) = try await Phase6ReviewTests.repositoryWithWorktree()
+        defer {
+            TestRepositories.remove(repository)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let worktree = try await repository.linkedWorktree(at: folder.path(percentEncoded: false))
+        func shared(_ path: String) -> String { repository.gitDirectory.appending(path: path).path(percentEncoded: false) }
+        func own(_ path: String) -> String { worktree.gitDirectory.appending(path: path).path(percentEncoded: false) }
+        let file = worktree.root.appending(path: "a.txt").path(percentEncoded: false)
+        #expect(worktree.classify([shared("refs/heads/hotfix")]) == .refs)
+        #expect(worktree.classify([shared("packed-refs")]) == .refs)
+        #expect(worktree.classify([shared("index"), shared("HEAD"), shared("objects/ab/cdef"), shared("refs/heads/hotfix.lock")]) == [])
+        #expect(worktree.classify([own("index")]) == .index)
+        #expect(worktree.classify([own("HEAD")]) == .refs)
+        #expect(worktree.classify([file]) == .workTree)
+        #expect(worktree.workTreePaths([shared("refs/heads/hotfix"), own("index"), file]) == [file])
     }
 
     @Test func rejectsFoldersThatArentRepositories() async throws {

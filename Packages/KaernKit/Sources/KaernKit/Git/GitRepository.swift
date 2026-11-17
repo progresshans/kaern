@@ -509,29 +509,78 @@ public struct GitRepository: Sendable, Hashable {
     // MARK: - File-system events
 
     /// Sorts changed paths reported by ``FileSystemWatcher`` into what needs refreshing.
+    ///
+    /// A linked working tree keeps its own HEAD and index in its git directory
+    /// (`<main>/.git/worktrees/<name>`), and shares branches, tags and config with the others in
+    /// the common one (`<main>/.git`): a path there counts when it's one of the shared files, and
+    /// never as a file of the working tree.
     public func classify(_ paths: [String]) -> ChangeScope {
-        let gitDir = gitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+        let places = GitPlaces(self)
         var scope: ChangeScope = []
         for path in paths {
-            guard path.hasPrefix(gitDir) || path + "/" == gitDir else {
+            switch places.place(of: path) {
+            case .workTree:
                 scope.insert(.workTree)
-                continue
-            }
-            let relative = String(path.dropFirst(gitDir.count))
-            if relative.hasSuffix(".lock") || relative.hasPrefix("objects") || relative.hasPrefix("logs") {
-                continue
-            }
-            if relative == "index" {
-                scope.insert(.index)
-            } else if relative.hasPrefix("refs") || relative == "HEAD" || relative == "packed-refs"
-                        || relative == "FETCH_HEAD" || relative == "ORIG_HEAD" || relative == "config"
-                        || relative.hasPrefix("MERGE_") || relative.hasPrefix("REBASE_")
-                        || relative.hasPrefix("rebase-") || relative.hasPrefix("CHERRY_PICK")
-                        || relative.hasPrefix("REVERT_") {
-                scope.insert(.refs)
+            case .gitDirectory(let relative):
+                if relative.hasSuffix(".lock") || relative.hasPrefix("objects") || relative.hasPrefix("logs") {
+                    continue
+                }
+                if relative == "index" {
+                    scope.insert(.index)
+                } else if relative.hasPrefix("refs") || relative == "HEAD" || relative == "packed-refs"
+                            || relative == "FETCH_HEAD" || relative == "ORIG_HEAD" || relative == "config"
+                            || relative.hasPrefix("MERGE_") || relative.hasPrefix("REBASE_")
+                            || relative.hasPrefix("rebase-") || relative.hasPrefix("CHERRY_PICK")
+                            || relative.hasPrefix("REVERT_") {
+                    scope.insert(.refs)
+                }
+            case .commonDirectory(let relative):
+                // What every working tree shares. The rest there (the main working tree's index and
+                // HEAD, the other working trees' folders, objects) isn't this working tree's.
+                if !relative.hasSuffix(".lock"), relative.hasPrefix("refs") || relative == "packed-refs" || relative == "config" {
+                    scope.insert(.refs)
+                }
             }
         }
         return scope
+    }
+
+    /// The paths among `paths` that are files of the working tree (not in the git directory, nor
+    /// in the one a linked working tree shares with the others).
+    public func workTreePaths(_ paths: [String]) -> [String] {
+        let places = GitPlaces(self)
+        return paths.filter { if case .workTree = places.place(of: $0) { true } else { false } }
+    }
+
+    /// Where a changed path is, for ``classify(_:)``.
+    private struct GitPlaces {
+        enum Place {
+            case workTree
+            /// In the working tree's own git directory, with the path inside it.
+            case gitDirectory(String)
+            /// In the git directory linked working trees share, with the path inside it.
+            case commonDirectory(String)
+        }
+
+        let gitDirectory: String
+        /// `nil` when the git directory is the common one (the main working tree).
+        let commonDirectory: String?
+
+        init(_ repository: GitRepository) {
+            gitDirectory = repository.gitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+            let common = repository.commonGitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+            commonDirectory = common == gitDirectory ? nil : common
+        }
+
+        func place(of path: String) -> Place {
+            if path.hasPrefix(gitDirectory) { return .gitDirectory(String(path.dropFirst(gitDirectory.count))) }
+            if path + "/" == gitDirectory { return .gitDirectory("") }
+            if let commonDirectory {
+                if path.hasPrefix(commonDirectory) { return .commonDirectory(String(path.dropFirst(commonDirectory.count))) }
+                if path + "/" == commonDirectory { return .commonDirectory("") }
+            }
+            return .workTree
+        }
     }
 }
 

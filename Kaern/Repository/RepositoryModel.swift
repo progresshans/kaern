@@ -187,7 +187,14 @@ final class RepositoryModel: Identifiable {
     var worktreeChanges: [String: Int] = [:]
     var worktreeDetails: WorktreeDetails?
     private(set) var stashes: [Stash] = []
-    private(set) var worktrees: [Worktree] = []
+    private(set) var worktrees: [Worktree] = [] {
+        didSet { if worktrees != oldValue { nestedRootsCache = nil } }
+    }
+    /// Folders by the path FSEvents and git name them with (symbolic links resolved): asked for on
+    /// every pass of the sidebar and the history, so each is resolved once.
+    @ObservationIgnored var canonicalPaths: [String: String] = [:]
+    /// The other working trees' folders that are inside this one's (``nestedWorktreeRoots()``).
+    @ObservationIgnored var nestedRootsCache: [String]?
     /// Watches the other worktrees' folders while this tab shows, so their change counts follow edits made
     /// there (``updateWorktreeWatching()``); the repository's own watcher doesn't see those folders.
     @ObservationIgnored var worktreeWatcher: FileSystemWatcher?
@@ -436,7 +443,10 @@ final class RepositoryModel: Identifiable {
     /// wait for this to clear instead of sleeping).
     var debugIsBusy: Bool {
         activity != nil || phase == .opening || phase == .loading || refreshTask != nil || isReloadingHistory || isLoadingMoreHistory
+            || ignoreChecks > 0
     }
+    /// File events being checked against .gitignore before they start a refresh (``filesChanged(_:)``).
+    @ObservationIgnored private var ignoreChecks = 0
     /// How long loading steps took, in seconds (the debug dump's measurements).
     @ObservationIgnored var debugTimings: [String: Double] = [:]
 
@@ -637,8 +647,13 @@ final class RepositoryModel: Identifiable {
 
     private func startWatching(_ repository: GitRepository) {
         var paths = [repository.root.path(percentEncoded: false)]
-        let gitDir = repository.gitDirectory.path(percentEncoded: false)
-        if !gitDir.hasPrefix(paths[0]) { paths.append(gitDir) }
+        // A linked working tree: its own git directory (HEAD, index) is inside the one it shares
+        // with the others, where the branches and tags are. A commit made in Terminal moves a
+        // branch there and touches nothing else that says so.
+        for folder in [repository.commonGitDirectory, repository.gitDirectory] {
+            let path = folder.path(percentEncoded: false)
+            if !paths.contains(where: { path.hasPrefix($0) }) { paths.append(path) }
+        }
         let watcher = FileSystemWatcher(paths: paths, latency: 0.3) { [weak self] changed in
             Task { @MainActor in self?.filesChanged(changed) }
         }
@@ -679,6 +694,28 @@ final class RepositoryModel: Identifiable {
         guard let repository, !noticeMissingFolder() else { return }
         let scope = repository.classify(paths)
         guard !scope.isEmpty else { return }
+        guard scope == .workTree else {
+            filesChanged(scope)
+            return
+        }
+        // Only files of the working tree. What git ignores (build output, caches) and what's in
+        // another working tree's folder inside this one changes nothing this tab shows: a build
+        // writing thousands of files there starts no refresh.
+        let nested = nestedWorktreeRoots()
+        let own = repository.workTreePaths(paths).filter { path in !nested.contains { path.hasPrefix($0) } }
+        guard !own.isEmpty else { return }
+        ignoreChecks += 1
+        Task { [weak self] in
+            let kept = await GitCommandTrigger.$current.withValue(.background("File watcher")) {
+                await repository.notIgnored(own)
+            }
+            guard let self else { return }
+            ignoreChecks -= 1
+            if !kept.isEmpty { filesChanged(.workTree) }
+        }
+    }
+
+    private func filesChanged(_ scope: ChangeScope) {
         pendingScope.formUnion(scope)
         if isVisible, phase == .ready {
             runPendingRefresh()
