@@ -11,8 +11,10 @@ import QuartzCore
 ///     frames start           begins measuring
 ///     frames stop <file>     writes what was measured since, as JSON
 ///     scrollRun <x> <y> <dy> <count> [per second]
-///                            `count` scroll events of `dy` points at the window point (x, y), 120 a
-///                            second unless said otherwise, as a finger on the trackpad sends them
+///                            moves the scroll view at the window point (x, y) by `dy` points `count`
+///                            times, 120 a second unless said otherwise (negative: down the content).
+///                            It moves the scroll view itself: a posted scroll event doesn't scroll a
+///                            SwiftUI list in a window that isn't under the pointer
 ///
 /// Events, SwiftUI updates, layout and the layer commit all happen on the main run loop, so two
 /// things are measured there:
@@ -22,6 +24,28 @@ import QuartzCore
 ///   late or drops it.
 extension DebugDriver {
     static let frameCommands: Set<String> = ["frames", "scrollRun"]
+
+    /// The scroll view that shows the window point (x, y) (top-left origin): the innermost one there.
+    private func scrollView(atX x: Double, y: Double) -> NSScrollView? {
+        guard let nsWindow = controller?.window, let frameView = nsWindow.contentView?.superview else { return nil }
+        let point = NSPoint(x: x, y: nsWindow.frame.height - y)
+        var view = frameView.hitTest(point)
+        while let current = view {
+            if let scrollView = current as? NSScrollView { return scrollView }
+            view = current.superview
+        }
+        // SwiftUI can answer the hit test with a view beside the scroll view: look for the smallest one there.
+        var found: NSScrollView?
+        func search(_ view: NSView) {
+            if let scrollView = view as? NSScrollView, view.convert(view.bounds, to: nil).contains(point),
+               found.map({ scrollView.frame.width * scrollView.frame.height < $0.frame.width * $0.frame.height }) ?? true {
+                found = scrollView
+            }
+            view.subviews.forEach(search)
+        }
+        search(frameView)
+        return found
+    }
 
     func frames(_ command: String, _ args: [String]) {
         switch command {
@@ -36,8 +60,16 @@ extension DebugDriver {
         case "scrollRun":
             let values = args.compactMap(Double.init)
             guard values.count >= 4, values.count == args.count, values[3] >= 1 else { return }
-            DebugFrameMeter.shared.scroll(by: values[2], times: Int(values[3]), perSecond: values.count > 4 ? values[4] : 120) { [weak self] dy in
-                self?.postScroll(x: values[0], y: values[1], dx: 0, dy: dy)
+            guard let scrollView = scrollView(atX: values[0], y: values[1]) else { return }
+            DebugFrameMeter.shared.scroll(by: values[2], times: Int(values[3]), perSecond: values.count > 4 ? values[4] : 120) { dy in
+                // As the wheel does: a negative step moves down the content.
+                let clip = scrollView.contentView
+                let flipped = scrollView.documentView?.isFlipped ?? true
+                let most = max(0, (scrollView.documentView?.frame.height ?? 0) - clip.bounds.height)
+                var origin = clip.bounds.origin
+                origin.y = min(max(0, origin.y + (flipped ? -dy : dy)), most)
+                clip.scroll(to: origin)
+                scrollView.reflectScrolledClipView(clip)
             }
         default:
             break
