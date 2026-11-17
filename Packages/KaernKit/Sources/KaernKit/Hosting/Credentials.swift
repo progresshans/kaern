@@ -40,8 +40,14 @@ extension GitRunner {
 
 /// Who a GitLab token belongs to (`GET /api/v4/user`).
 public enum GitLabClient {
+    /// `https://<host>/api/v4`. A typed host that can't be an address gives a URL that answers
+    /// nothing (see `GitHubClient.apiURL`).
+    public static func apiURL(for host: String) -> URL {
+        URL(string: "https://\(host)/api/v4") ?? URL(string: "https://host.invalid/api/v4")!
+    }
+
     public static func user(host: String, token: String, baseURL: URL? = nil) async throws -> HostingUser {
-        let url = (baseURL ?? URL(string: "https://\(host)/api/v4")!).appending(path: "user")
+        let url = (baseURL ?? apiURL(for: host)).appending(path: "user")
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue(token, forHTTPHeaderField: "PRIVATE-TOKEN")
         request.setValue("Kaern", forHTTPHeaderField: "User-Agent")
@@ -67,7 +73,7 @@ public enum GitLabClient {
 
     /// Projects the token's user is a member of, most recently active first (Clone › GitLab).
     public static func projects(host: String, token: String, baseURL: URL? = nil, session: URLSession = .shared) async throws -> [HostedRepository] {
-        var components = URLComponents(url: (baseURL ?? URL(string: "https://\(host)/api/v4")!).appending(path: "projects"),
+        var components = URLComponents(url: (baseURL ?? apiURL(for: host)).appending(path: "projects"),
                                        resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "membership", value: "true"),

@@ -324,10 +324,11 @@ public struct GitHubClient: Sendable {
     public var session: URLSession = .shared
 
     /// `https://api.github.com`, or `https://<host>/api/v3` for GitHub Enterprise.
+    /// The host is typed in Sign In: one that can't be an address ("my host") gives a URL that
+    /// answers nothing (the reserved `.invalid`), so signing in fails with a message.
     public static func apiURL(for host: String) -> URL {
-        host.lowercased() == "github.com"
-            ? URL(string: "https://api.github.com")!
-            : URL(string: "https://\(host)/api/v3")!
+        if host.lowercased() == "github.com" { return URL(string: "https://api.github.com")! }
+        return URL(string: "https://\(host)/api/v3") ?? URL(string: "https://host.invalid/api/v3")!
     }
 
     public init(baseURL: URL, token: String) {

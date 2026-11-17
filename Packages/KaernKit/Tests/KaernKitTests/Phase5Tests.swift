@@ -260,6 +260,11 @@ struct HostedRepositoryTests {
                 """),
             ]
         }
+        // A typed host that can't be an address used to end the app (a force-unwrapped URL).
+        #expect(GitHubClient.apiURL(for: "my host").path() == "/api/v3")
+        #expect(GitHubClient.apiURL(for: "git.example.com").absoluteString == "https://git.example.com/api/v3")
+        #expect(GitLabClient.apiURL(for: "").path() == "/api/v4")
+        #expect(GitLabClient.apiURL(for: "gitlab.example.com").absoluteString == "https://gitlab.example.com/api/v4")
         var client = GitHubClient(baseURL: GitHubClient.apiURL(for: "github.com"), token: "ghp_test")
         client.session = StubProtocol.session()
         let list = try await client.repositories()
