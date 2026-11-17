@@ -29,6 +29,37 @@ struct RedactionTests {
         #expect(GitRedaction.redact("AKIAABCDEFGHIJKLMNOP") == "***")
     }
 
+    /// `redact` runs a pattern only when one of its telltale words is in the text. Whatever the
+    /// text, that must give what every pattern gives.
+    @Test func skippingPatternsHidesTheSame() {
+        let samples = [
+            "", "plain output", "git@github.com:progresshans/powerlens.git", "https://github.com/a/b.git",
+            "https://minji:hunter2@git.example.com/team/app.git", "ssh://deploy:pw@host/x", "user@host and http://x/y",
+            "Authorization: Bearer abc.def.ghi", "proxy-AUTHORIZATION:   Basic dXNlcg==", "authorization without a colon",
+            "PASSWORD=hunter2", "Passwd: x", "pwd = /Users/minji", "api_key=abc apikey: def API-KEY=ghi", "monkey=1 keys: 2",
+            "client_secret: abc123", "tokens=5 tokenizer=wordpiece", "oauth_refresh_token=r3fresh&x=1",
+            "\u{17F}ecret=abc", "to\u{212A}en=abc", "api_\u{212A}ey: abc", "pa\u{17F}\u{17F}word=abc",
+            "ghp_abcdefghijklmnopqrstuvwxyz0123", "ghq_abcdefghijklmnopqrstuvwxyz0123", "gho_short",
+            "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz", "glpat-abcdefghij0123456789", "glpat_abc",
+            "ATBBabcdefghijklmnopqrstuvwx", "xoxb-1234567890-abcdefghij", "xoxo",
+            "AKIAABCDEFGHIJKLMNOP", "ASIAABCDEFGHIJKLMNOP", "akiaabcdefghijklmnop",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            "한글 파일.txt | 3 ++-\n README.md | 2 +-", "diff --git a/Token.swift b/Token.swift\n+let token = load()\n-let key: String",
+        ]
+        for sample in samples {
+            #expect(GitRedaction.redact(sample) == GitRedaction.redactWithEveryPattern(sample), "\(sample)")
+        }
+        // A long diff with nothing to hide, and the same with one secret at its end.
+        let line = "+        let rows = commits.map { RowModel(commit: $0, graph: graph[$0.id]) }\n"
+        let long = String(repeating: line, count: 800)
+        #expect(GitRedaction.redact(long) == long)
+        #expect(GitRedaction.redact(long + "password=hunter2") == long + "password=***")
+        let clock = ContinuousClock()
+        let quick = clock.measure { for _ in 0..<10 { _ = GitRedaction.redact(long) } }
+        let every = clock.measure { for _ in 0..<10 { _ = GitRedaction.redactWithEveryPattern(long) } }
+        print("redact \(long.utf8.count) bytes, 10 times: \(quick) with the word check, \(every) with every pattern")
+    }
+
     @Test func leavesOrdinaryOutputAlone() {
         let output = """
         To github.com:progresshans/powerlens.git
