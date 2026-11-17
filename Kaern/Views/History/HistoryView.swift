@@ -106,7 +106,7 @@ struct HistoryView: View {
         let shown = repository.displayCommits
         let range = window.clamped(to: 0..<shown.count)
         let offset = repository.showsWorkingCopy ? 1 : 0
-        let headBranch = repository.status.branch
+        let headBranch = repository.currentBranch
         let picked = Set(repository.picked)
         let comparison = repository.comparison?.key == repository.comparisonKey ? repository.comparison : nil
         let worktreeBranches = repository.branchesInOtherWorktrees
@@ -152,12 +152,7 @@ struct HistoryView: View {
                 }
             }
             Color.clear.frame(height: CGFloat(shown.count - range.upperBound) * KMetric.graphRow)
-            if repository.isLoadingMoreHistory {
-                ProgressView().controlSize(.small).padding(8)
-            } else if repository.isShallow, !repository.hasMoreHistory, !shown.isEmpty {
-                ShallowEndRow(repository: repository, columns: columns,
-                              lane: repository.graph.last?.lane ?? 0)
-            }
+            HistoryEnd(repository: repository, columns: columns, hasRows: !shown.isEmpty)
         }
     }
 
@@ -308,6 +303,23 @@ struct HistoryView: View {
         }
         onPick()
         return .handled
+    }
+}
+
+/// What follows the last row: the spinner while a page of older history is read, or the end of a
+/// shallow clone. A view of its own, so a page being read redraws this and not every row.
+private struct HistoryEnd: View {
+    let repository: RepositoryModel
+    let columns: HistoryColumns
+    let hasRows: Bool
+
+    var body: some View {
+        if repository.isLoadingMoreHistory {
+            ProgressView().controlSize(.small).padding(8)
+        } else if repository.isShallow, !repository.hasMoreHistory, hasRows {
+            ShallowEndRow(repository: repository, columns: columns,
+                          lane: repository.graph.last?.lane ?? 0)
+        }
     }
 }
 

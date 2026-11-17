@@ -122,7 +122,7 @@ struct SidebarView: View {
     /// The checked-out branch: ahead and behind come from git status, the freshest count.
     private func currentRow(_ name: String, title: String, nested: Bool) -> some View {
         SidebarRow(icon: Icons.check, iconColor: K.accent, title: title, nested: nested, isCurrent: true,
-                   ahead: repository.status.ahead, behind: repository.status.behind)
+                   ahead: repository.upstreamDistance.ahead, behind: repository.upstreamDistance.behind)
             .help("\(name) — checked out")
             .contextTarget(.branch(name), ring: ContextRing(radius: 6, inset: 0))
     }

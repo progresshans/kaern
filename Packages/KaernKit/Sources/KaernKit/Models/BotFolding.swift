@@ -14,27 +14,38 @@ public enum BotCommits: String, Sendable, CaseIterable {
 /// deployer[bot]" (ScreenBigRepo).
 public struct BotRun: Sendable, Hashable, Identifiable {
     /// Newest first.
-    public var commits: [Commit]
-    public var bot: String
+    public let commits: [Commit]
+    public let bot: String
+    /// "13 updates by deployer[bot]", "6 dependency updates by renovate[bot]".
+    public let title: String
+    /// What the bot updated, from the subjects ("orders-api · orders-web · powerlens-feed").
+    public let detail: String
 
     public var id: String { commits[0].id }
     public var newest: Date { commits[0].author.date }
     public var oldest: Date { commits[commits.count - 1].author.date }
     public var count: Int { commits.count }
 
-    /// "13 updates by deployer[bot]", "6 dependency updates by renovate[bot]".
-    public var title: String {
+    /// The title and the detail are worked out here, once: the history asks for them on every
+    /// pass of a row.
+    public init(commits: [Commit], bot: String) {
+        self.commits = commits
+        self.bot = bot
+        title = Self.title(of: commits, bot: bot)
+        detail = Self.detail(of: commits)
+    }
+
+    private static func title(of commits: [Commit], bot: String) -> String {
         let subjects = commits.map { $0.subject.lowercased() }
         let dependency = subjects.allSatisfy { subject in
             subject.contains("deps") || subject.contains("dependency") || subject.contains("dependencies") || subject.hasPrefix("bump ")
         }
         let updates = subjects.filter { $0.contains("update") || $0.contains("bump") || $0.contains("upgrade") }.count * 2 >= subjects.count
         let noun = dependency ? "dependency updates" : updates ? "updates" : "commits"
-        return "\(count) \(noun) by \(bot)"
+        return "\(commits.count) \(noun) by \(bot)"
     }
 
-    /// What the bot updated, from the subjects ("orders-api · orders-web · powerlens-feed").
-    public var detail: String {
+    private static func detail(of commits: [Commit]) -> String {
         var names: [String] = []
         for commit in commits {
             guard let name = Self.subjectName(commit.subject), !names.contains(name) else { continue }
@@ -48,14 +59,17 @@ public struct BotRun: Sendable, Hashable, Identifiable {
     /// "build: automatic update of orders-api to 1.42.3" → "orders-api"; "Bump argocd from 2.9 to
     /// 2.10" → "argocd"; "chore(deps): update helm release loki to v5" → "loki".
     static func subjectName(_ subject: String) -> String? {
-        let pattern = #"(?i)\b(?:update|updates|updated|bump|bumps|bumped|upgrade|upgrades|upgraded)\s+(?:of\s+)?(?:the\s+)?(?:dependency\s+|module\s+|helm\s+release\s+|image\s+|docker\s+tag\s+|package\s+)?([A-Za-z0-9@][A-Za-z0-9@/._-]*)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = Self.subjectPattern,
               let match = regex.firstMatch(in: subject, range: NSRange(subject.startIndex..., in: subject)),
               let range = Range(match.range(at: 1), in: subject) else { return nil }
         let name = String(subject[range]).trimmingCharacters(in: CharacterSet(charactersIn: ".:,"))
-        let skip: Set<String> = ["to", "from", "all", "dependencies", "dependency", "deps", "the", "and"]
-        return skip.contains(name.lowercased()) ? nil : name
+        return Self.notNames.contains(name.lowercased()) ? nil : name
     }
+
+    private static let notNames: Set<String> = ["to", "from", "all", "dependencies", "dependency", "deps", "the", "and"]
+
+    /// Compiled once: a history of bot commits asks for the name in every subject.
+    private static let subjectPattern = try? NSRegularExpression(pattern: #"(?i)\b(?:update|updates|updated|bump|bumps|bumped|upgrade|upgrades|upgraded)\s+(?:of\s+)?(?:the\s+)?(?:dependency\s+|module\s+|helm\s+release\s+|image\s+|docker\s+tag\s+|package\s+)?([A-Za-z0-9@][A-Za-z0-9@/._-]*)"#)
 }
 
 /// The history as the graph shows it: a folded run is one commit that has the run's newest id and
@@ -96,14 +110,28 @@ public enum BotFolding {
     /// `.hide` leaves bot commits out. Commits in `keep` (refs, HEAD) always show, and runs whose
     /// id is in `expanded` stay open. A commit another branch grew from ends a run, so no line
     /// loses its end.
+    ///
+    /// `previous`: the runs of the last fold. One that has the same commits is taken as it is (its
+    /// title and detail read every subject), so folding a history again after a page came in
+    /// costs the new commits, not all of them.
     public static func fold(_ commits: [Commit], mode: BotCommits, keep: Set<String>, expanded: Set<String> = [],
-                            minimumRun: Int = 3) -> FoldedHistory {
+                            minimumRun: Int = 3, reusing previous: [String: BotRun] = [:]) -> FoldedHistory {
+        // The same few authors made all of the history: each is looked at once.
+        var known: [Signature.Author: Bool] = [:]
+        func isBot(_ author: Signature) -> Bool {
+            let key = Signature.Author(name: author.name, email: author.email)
+            if let answer = known[key] { return answer }
+            let answer = Self.isBot(author)
+            known[key] = answer
+            return answer
+        }
         let hasBots = commits.contains { isBot($0.author) }
         guard hasBots, mode != .show else { return FoldedHistory(commits: commits, hasBotCommits: hasBots) }
-        var byID: [String: Commit] = [:]
+        var position: [String: Int] = [:]
+        position.reserveCapacity(commits.count)
         var children: [String: Int] = [:]
-        for commit in commits {
-            byID[commit.id] = commit
+        for (index, commit) in commits.enumerated() {
+            position[commit.id] = index
             for parent in commit.parents { children[parent, default: 0] += 1 }
         }
         func foldable(_ commit: Commit) -> Bool {
@@ -154,8 +182,8 @@ public enum BotFolding {
             // Follow the first parent while the same bot made it and nothing else grew from it.
             var chain = [commit]
             var current = commit
-            while let parent = byID[current.parents[0]], foldable(parent), parent.author.name == commit.author.name,
-                  children[parent.id] == 1, !consumed.contains(parent.id) {
+            while let index = position[current.parents[0]], case let parent = commits[index], foldable(parent),
+                  parent.author.name == commit.author.name, children[parent.id] == 1, !consumed.contains(parent.id) {
                 chain.append(parent)
                 current = parent
             }
@@ -164,7 +192,14 @@ public enum BotFolding {
                 result.append(commit)
                 continue
             }
-            let run = BotRun(commits: chain, bot: commit.author.name)
+            // A run starts at its newest commit and follows first parents, so the same newest and
+            // oldest commit and the same length are the same commits.
+            let run: BotRun
+            if let old = previous[commit.id], old.commits.count == chain.count, old.commits[chain.count - 1].id == chain[chain.count - 1].id {
+                run = old
+            } else {
+                run = BotRun(commits: chain, bot: commit.author.name)
+            }
             var row = commit
             row.parents = chain[chain.count - 1].parents
             row.subject = run.title
@@ -178,5 +213,13 @@ public enum BotFolding {
             folded += chain.count
         }
         return FoldedHistory(commits: result, runs: runs, insideRun: inside, foldedCount: folded, hasBotCommits: true)
+    }
+}
+
+extension Signature {
+    /// Who made a commit, without when (``BotFolding`` looks at each author once).
+    struct Author: Hashable {
+        var name: String
+        var email: String
     }
 }

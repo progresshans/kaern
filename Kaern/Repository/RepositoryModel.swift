@@ -121,8 +121,20 @@ final class RepositoryModel: Identifiable {
     var showsPublishBanner = false
     private(set) var repository: GitRepository?
     private(set) var status: WorkingTreeStatus = .empty {
-        didSet { updateBigChanges() }
+        didSet {
+            updateBigChanges()
+            // What the history and the sidebar read of the status, kept apart: they redraw when the
+            // branch or its distance from the upstream changes, not for every file edited.
+            if currentBranch != status.branch { currentBranch = status.branch }
+            if upstreamDistance != CommitDistance(ahead: status.ahead, behind: status.behind) {
+                upstreamDistance = CommitDistance(ahead: status.ahead, behind: status.behind)
+            }
+        }
     }
+    /// The branch HEAD is on (`nil` when detached), from the last status.
+    private(set) var currentBranch: String?
+    /// How far the checked-out branch is from its upstream, from the last status.
+    private(set) var upstreamDistance = CommitDistance(ahead: 0, behind: 0)
     /// Thousands of changed files: the panel lists folders and may suggest ignoring one (ScreenBigRepo).
     private(set) var bigChanges: BigChanges?
     /// Folders whose .gitignore suggestion was put away with Not Now.
@@ -134,7 +146,13 @@ final class RepositoryModel: Identifiable {
     private(set) var statusIsFull = false
     private(set) var refs: RefSnapshot = .empty
     private(set) var tags: [TagInfo] = []
-    private(set) var commits: [Commit] = []
+    private(set) var commits: [Commit] = [] {
+        didSet { historyVersion += 1 }
+    }
+    /// Counts changes of `commits` (``rebuildGraph()`` builds nothing while it stands still).
+    @ObservationIgnored private var historyVersion = 0
+    /// Where each loaded commit is in `commits`.
+    @ObservationIgnored private var commitPositions: [String: Int] = [:]
     /// What the graph shows: `commits` with runs of bot commits folded or left out (View › Bot
     /// Commits). `graph` lines up with it.
     private(set) var displayCommits: [Commit] = []
@@ -399,8 +417,13 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private var isReloadingHistory = false
     /// Scrolling asked for more while history was reloading.
     @ObservationIgnored private var wantsMoreHistory = false
-    /// How long the last full `git status` took (the fsmonitor suggestion, the status bar).
-    var statusDuration: Duration?
+    /// How long the last full `git status` took, as the panel and the status bar print it ("2.8 s"):
+    /// to a tenth of a second, so one that took about as long as the last redraws nothing.
+    private(set) var statusDuration: Duration?
+    /// The time itself (the debug dump).
+    @ObservationIgnored private(set) var exactStatusDuration: Duration?
+    /// `git status` took longer than it should (ScreenBigRepo's 2.8 s).
+    private(set) var isStatusSlow = false
     /// `core.fsmonitor` is on here (read once a slow status makes it matter).
     var fsmonitorOn: Bool?
     /// Not Now on the fsmonitor suggestion (kept in the settings by folder).
@@ -515,7 +538,6 @@ final class RepositoryModel: Identifiable {
         return .none
     }
 
-    var currentBranch: String? { status.branch }
     /// Whether there's a repository to show (not a missing folder or an unreadable one).
     var hasContent: Bool { !isFailedOrMissing }
     var isReady: Bool { phase == .ready }
@@ -612,7 +634,7 @@ final class RepositoryModel: Identifiable {
         runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
         switch loadedHistory {
         case .commits(let loaded):
-            commits = loaded
+            showHistory(loaded)
             hasMoreHistory = !stream.isFinished
             historyIsStale = false
             historyError = nil
@@ -842,7 +864,7 @@ final class RepositoryModel: Identifiable {
             self.tags = await tags ?? self.tags
             switch await history {
             case .commits(let loaded):
-                commits = loaded
+                showHistory(loaded)
                 hasMoreHistory = !stream.isFinished
                 totalCommitCount = nil
                 historyIsStale = false
@@ -1047,10 +1069,24 @@ final class RepositoryModel: Identifiable {
     }
 
     private func appendHistory(_ page: [Commit], finished: Bool) {
-        let known = Set(commits.map(\.id))
-        commits.append(contentsOf: page.filter { !known.contains($0.id) })
+        let new = page.filter { commitPositions[$0.id] == nil }
+        if !new.isEmpty {
+            for (offset, commit) in new.enumerated() { commitPositions[commit.id] = commits.count + offset }
+            commits.append(contentsOf: new)
+        }
         hasMoreHistory = !finished
         rebuildGraph()
+    }
+
+    /// The history a first load or a refresh read. The same commits as before change nothing: a
+    /// fetch that brought none, or a ref that moved outside what's loaded.
+    private func showHistory(_ loaded: [Commit]) {
+        guard loaded != commits else { return }
+        commits = loaded
+        var positions: [String: Int] = [:]
+        positions.reserveCapacity(loaded.count)
+        for (index, commit) in loaded.enumerated() { positions[commit.id] = index }
+        commitPositions = positions
     }
 
     /// Reads older history until one of `targets` is loaded (Search stepping past the loaded
@@ -1187,7 +1223,12 @@ final class RepositoryModel: Identifiable {
     private func timedStatus(_ repository: GitRepository) async -> WorkingTreeStatus? {
         let start = ContinuousClock.now
         guard let status = try? await repository.status() else { return nil }
-        statusDuration = ContinuousClock.now - start
+        let elapsed = ContinuousClock.now - start
+        exactStatusDuration = elapsed
+        let shown = Duration.milliseconds(Int((elapsed / .milliseconds(100)).rounded()) * 100)
+        if statusDuration != shown { statusDuration = shown }
+        let slow = elapsed >= AppSettings.slowStatus
+        if isStatusSlow != slow { isStatusSlow = slow }
         if fsmonitorOn == nil, isStatusSlow {
             let value = await repository.config("core.fsmonitor")?.lowercased()
             fsmonitorOn = value != nil && value != "false"
@@ -1198,9 +1239,6 @@ final class RepositoryModel: Identifiable {
         #endif
         return status
     }
-
-    /// `git status` took longer than it should (ScreenBigRepo's 2.8 s).
-    var isStatusSlow: Bool { (statusDuration ?? .zero) >= AppSettings.slowStatus }
 
     /// The card that suggests Git's file system monitor: slow status, monitor off, not put away.
     var suggestsFSMonitor: Bool { isStatusSlow && fsmonitorOn == false && !fsmonitorDismissed }
@@ -1223,11 +1261,35 @@ final class RepositoryModel: Identifiable {
         fsmonitorDismissed = true
     }
 
+    /// What the graph was last built from.
+    private struct GraphInputs: Equatable {
+        var history: Int
+        var refs: RefSnapshot
+        var head: String?
+        var showsWorkingCopy: Bool
+        var selection: HistorySelection
+        var bots: BotCommits
+        var expanded: Set<String>
+    }
+
+    @ObservationIgnored private var graphInputs: GraphInputs?
+
+    /// Builds what the history draws from the loaded commits, the refs, HEAD and the selection. It
+    /// runs after every refresh, page and staged file, and most of those read the same things
+    /// again: then nothing is built, and nothing that reads the graph redraws.
     func rebuildGraph() {
         let rebuildStart = ContinuousClock.now
         defer { noteTiming("rebuild", since: rebuildStart) }
+        let inputs = GraphInputs(history: historyVersion, refs: refs, head: status.headID, showsWorkingCopy: !status.isClean,
+                                 selection: selection, bots: AppSettings.botCommits, expanded: expandedRuns)
+        guard inputs != graphInputs else {
+            if hasBotCommits || showsGraphScope, totalCommitCount == nil { countAllCommits() }
+            refreshComparisonIfNeeded()
+            return
+        }
+        graphInputs = inputs
         var builder = CommitGraphBuilder()
-        showsWorkingCopy = !status.isClean
+        if showsWorkingCopy != inputs.showsWorkingCopy { showsWorkingCopy = inputs.showsWorkingCopy }
         if showsWorkingCopy {
             builder.appendWorkingCopy(head: status.headID)
         }
@@ -1235,7 +1297,7 @@ final class RepositoryModel: Identifiable {
         var keep = Set(refs.refs.map(\.target))
         if let head = status.headID { keep.insert(head) }
         if case .commit(let id) = selection { keep.insert(id) }
-        let folded = BotFolding.fold(commits, mode: AppSettings.botCommits, keep: keep, expanded: expandedRuns)
+        let folded = BotFolding.fold(commits, mode: AppSettings.botCommits, keep: keep, expanded: expandedRuns, reusing: botRuns)
         displayCommits = folded.commits
         botRuns = folded.runs
         insideRun = folded.insideRun
@@ -1245,30 +1307,31 @@ final class RepositoryModel: Identifiable {
         if hasBotCommits || showsGraphScope, totalCommitCount == nil { countAllCommits() }
         builder.append(displayCommits)
         graph = builder.rows
-        if case .commit(let id) = selection, !commits.contains(where: { $0.id == id }) {
+        if case .commit(let id) = selection, commitPositions[id] == nil {
             selection = .workingCopy
         }
-        // Hide leaves bot commits out of the search too.
-        search.refreshLocalMatches(in: hiddenBotCount > 0 ? displayCommits : commits)
-        headAncestors = Self.ancestors(of: status.headID, in: commits)
-        let known = Set(commits.map(\.id))
-        if picked.contains(where: { !known.contains($0) }) {
-            picked.removeAll { !known.contains($0) }
+        // Hide leaves bot commits out of the search too. Assigned, not changed in place: a search
+        // that finds the same commits redraws nothing (the toolbar and every row read it).
+        var found = search
+        found.refreshLocalMatches(in: hiddenBotCount > 0 ? displayCommits : commits)
+        search = found
+        headAncestors = ancestors(of: status.headID)
+        if picked.contains(where: { commitPositions[$0] == nil }) {
+            picked.removeAll { commitPositions[$0] == nil }
         }
         refreshComparisonIfNeeded()
     }
 
     /// The loaded commits reachable from `head` (through loaded parents).
-    private static func ancestors(of head: String?, in commits: [Commit]) -> Set<String> {
+    private func ancestors(of head: String?) -> Set<String> {
         guard let head else { return [] }
-        let byID = Dictionary(commits.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seen = Set<String>()
         var stack = [head]
         while let id = stack.popLast() {
-            guard seen.insert(id).inserted, let commit = byID[id] else { continue }
-            stack.append(contentsOf: commit.parents)
+            guard let position = commitPositions[id], seen.insert(id).inserted else { continue }
+            stack.append(contentsOf: commits[position].parents)
         }
-        return seen.intersection(byID.keys)
+        return seen
     }
 
     /// The bar's "212,408 commits" (what the graph's scope holds): once per load, in the background.
@@ -1286,7 +1349,7 @@ final class RepositoryModel: Identifiable {
 
     /// The loaded commit with `id`.
     func commit(_ id: String) -> Commit? {
-        commits.first { $0.id == id }
+        commitPositions[id].map { commits[$0] }
     }
 
     /// Whether `id` is on the branch HEAD is on (reachable from HEAD).

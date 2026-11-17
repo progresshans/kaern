@@ -319,7 +319,7 @@ extension DebugDriver {
                 },
                 "folded": repository.foldedBotCount, "hidden": repository.hiddenBotCount, "hasBots": repository.hasBotCommits,
                 "total": repository.totalCommitCount ?? -1,
-                "statusSeconds": repository.statusDuration.map { Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 } ?? -1,
+                "statusSeconds": repository.exactStatusDuration.map { Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 } ?? -1,
                 "fsmonitorOn": repository.fsmonitorOn.map { $0 ? "on" : "off" } ?? "unknown",
                 "suggestsFSMonitor": repository.suggestsFSMonitor,
                 "searchOlder": repository.search.olderMatches, "searchPaging": repository.search.isPaging,
