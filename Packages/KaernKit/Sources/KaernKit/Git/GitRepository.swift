@@ -242,7 +242,7 @@ public struct GitRepository: Sendable, Hashable {
     /// The diff of one file between two commits (`base` `nil`: as added in `target`).
     /// `ignoringWhitespace` is `git diff -w`: lines that only changed in white space drop out.
     public func diff(of change: FileChange, from base: String?, to target: String, ignoringWhitespace: Bool = false) async throws -> FileDiff {
-        let paths = [change.oldPath, change.path].compactMap { $0 }
+        let paths = Self.literal([change.oldPath, change.path].compactMap { $0 })
         let whitespace = ignoringWhitespace ? ["-w"] : []
         let arguments: [String]
         if let base {
@@ -268,7 +268,7 @@ public struct GitRepository: Sendable, Hashable {
         var arguments = ["diff", "--no-ext-diff", "-M"]
         if staged { arguments.append("--cached") }
         if ignoringWhitespace { arguments.append("-w") }
-        arguments += ["--"] + paths
+        arguments += ["--"] + Self.literal(paths)
         let output = try await git(arguments)
         var diff = DiffParser.parse(output.stdout).first
         diff?.ignoresWhitespace = ignoringWhitespace
@@ -346,9 +346,15 @@ public struct GitRepository: Sendable, Hashable {
 
     // MARK: - Staging and committing
 
+    /// `paths` as git takes a path and nothing else: without this, a file called `notes[1].txt`
+    /// or `*.md` is a pattern too, and a command for it reaches the other files it matches.
+    static func literal(_ paths: [String]) -> [String] {
+        paths.map { ":(literal)" + $0 }
+    }
+
     public func stage(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["add", "--all", "--"] + paths)
+        try await git(["add", "--all", "--"] + Self.literal(paths))
     }
 
     public func stageAll() async throws {
@@ -358,9 +364,9 @@ public struct GitRepository: Sendable, Hashable {
     public func unstage(_ paths: [String], hasHead: Bool) async throws {
         guard !paths.isEmpty else { return }
         if hasHead {
-            try await git(["restore", "--staged", "--"] + paths)
+            try await git(["restore", "--staged", "--"] + Self.literal(paths))
         } else {
-            try await git(["rm", "--cached", "-r", "-q", "--"] + paths)
+            try await git(["rm", "--cached", "-r", "-q", "--"] + Self.literal(paths))
         }
     }
 
@@ -375,13 +381,13 @@ public struct GitRepository: Sendable, Hashable {
     /// Throws away unstaged changes of tracked files (the index is kept).
     public func discardUnstaged(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["restore", "--worktree", "--"] + paths)
+        try await git(["restore", "--worktree", "--"] + Self.literal(paths))
     }
 
     /// Restores files to HEAD in both the index and the working tree.
     public func discardAll(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["restore", "--staged", "--worktree", "--source=HEAD", "--"] + paths)
+        try await git(["restore", "--staged", "--worktree", "--source=HEAD", "--"] + Self.literal(paths))
     }
 
     /// `git apply [--cached] [--reverse] --recount -` with `patch` on standard input.

@@ -44,7 +44,7 @@ extension GitRepository {
         guard !paths.isEmpty else { return Data() }   // no paths would mean "everything"
         var arguments = ["diff", "--binary", "--no-ext-diff", "--no-color"]
         if staged { arguments.append("--cached") }
-        arguments += ["--"] + paths
+        arguments += ["--"] + Self.literal(paths)
         return try await git(arguments).stdout
     }
 

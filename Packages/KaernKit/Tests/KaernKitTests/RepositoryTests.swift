@@ -105,6 +105,53 @@ struct RepositoryTests {
         #expect(count == 2)
     }
 
+    /// A file whose name is also a pattern (`notes[1].txt` matches `notes1.txt`, `*.md` matches every Markdown file)
+    /// is that one file to every command that takes paths.
+    @Test func takesPathsLiterally() async throws {
+        let repository = try await makeRepository()
+        defer { cleanUp(repository) }
+        let names = ["notes[1].txt", "notes1.txt", "*.md", "a.md"]
+        for name in names { try write("one\n", to: name, in: repository) }
+        try await repository.stageAll()
+        try await repository.commit(message: "Files", amend: false)
+        for name in names { try write("one\ntwo\n", to: name, in: repository) }
+
+        func staged() async throws -> [String] {
+            try await repository.status().entries.filter(\.hasStagedChanges).map(\.path).sorted()
+        }
+        func changed() async throws -> [String] {
+            try await repository.status().entries.map(\.path).sorted()
+        }
+
+        try await repository.stage(["notes[1].txt"])
+        #expect(try await staged() == ["notes[1].txt"])
+        try await repository.stage(["*.md"])
+        #expect(try await staged() == ["*.md", "notes[1].txt"])
+        try await repository.unstage(["*.md"], hasHead: true)
+        #expect(try await staged() == ["notes[1].txt"])
+        try await repository.unstage(["notes[1].txt"], hasHead: true)
+        #expect(try await staged().isEmpty)
+
+        let patch = String(decoding: try await repository.patch(paths: ["*.md"], staged: false), as: UTF8.self)
+        #expect(patch.contains("a/*.md"))
+        #expect(!patch.contains("a/a.md"))
+
+        let one = try await repository.workingDiff(paths: ["notes[1].txt"], staged: false)
+        #expect(one?.path == "notes[1].txt")
+
+        // A folder still stands for what is in it.
+        try write("x\n", to: "new [1]/one.txt", in: repository)
+        try await repository.stage(["new [1]/"])
+        #expect(try await staged() == ["new [1]/one.txt"])
+        try await repository.unstage(["new [1]/"], hasHead: true)
+        try FileManager.default.removeItem(at: repository.root.appending(path: "new [1]"))
+
+        try await repository.discardUnstaged(["notes[1].txt"])
+        #expect(try await changed() == ["*.md", "a.md", "notes1.txt"])
+        try await repository.discardAll(["*.md"])
+        #expect(try await changed() == ["a.md", "notes1.txt"])
+    }
+
     @Test func stagesAndUnstagesSingleLines() async throws {
         let repository = try await makeRepository()
         defer { cleanUp(repository) }
