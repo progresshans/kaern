@@ -194,19 +194,89 @@ public enum GitRedaction {
         arguments.map(redact)
     }
 
+    /// Most of what git prints has nothing to hide, and ten patterns over all of it took longer
+    /// than many of the commands themselves (0.1 s for 64 KB, before the command returned). So
+    /// the text is first looked through for the plain words a pattern can't match without; only
+    /// the patterns whose words are there run.
     public static func redact(_ text: String) -> String {
         guard !text.isEmpty else { return text }
+        var text = text
+        let found = text.withUTF8 { Triggers($0) }
+        guard found.any else { return text }
+        return redact(text, found)
+    }
+
+    /// Every pattern, whatever the text has (what `redact` did before; the tests compare the two).
+    static func redactWithEveryPattern(_ text: String) -> String {
+        redact(text, Triggers(all: true))
+    }
+
+    private static func redact(_ text: String, _ found: Triggers) -> String {
         var result = text
         // https://user:token@host/… and https://token@host/… → https://***@host/…
-        result = result.replacing(urlCredentials) { match in "\(match.output.1)\(mask)@" }
+        if found.url { result = result.replacing(urlCredentials) { match in "\(match.output.1)\(mask)@" } }
         // Authorization: Bearer abc / Basic abc (also inside http.extraHeader=…).
-        result = result.replacing(authorizationHeader) { match in "\(match.output.1)\(mask)" }
+        if found.authorization { result = result.replacing(authorizationHeader) { match in "\(match.output.1)\(mask)" } }
         // password=…, token=…, access_token=… (query strings, credential-helper style input).
-        result = result.replacing(secretAssignment) { match in "\(match.output.1)\(match.output.2)\(mask)" }
-        for pattern in tokenPatterns {
+        if found.assignment { result = result.replacing(secretAssignment) { match in "\(match.output.1)\(match.output.2)\(mask)" } }
+        for (index, pattern) in tokenPatterns.enumerated() where found.tokens[index] {
             result = result.replacing(pattern) { _ in mask }
         }
         return result
+    }
+
+    /// Which patterns can match at all: each needs one of its plain words in the text.
+    private struct Triggers {
+        var url = false
+        var authorization = false
+        var assignment = false
+        /// One per entry of `tokenPatterns`.
+        var tokens = [Bool](repeating: false, count: 7)
+
+        var any: Bool { url || authorization || assignment || tokens.contains(true) }
+
+        init(all: Bool) {
+            url = all; authorization = all; assignment = all
+            tokens = [Bool](repeating: all, count: 7)
+        }
+
+        init(_ bytes: UnsafeBufferPointer<UInt8>) {
+            func has(_ word: StaticString, anyCase: Bool = false) -> Bool {
+                word.withUTF8Buffer { Self.contains(bytes, $0, anyCase: anyCase) }
+            }
+            url = has("://") && has("@")
+            // The patterns that ignore case also take the two letters that only fold to ASCII
+            // ones: "ſ" (s) and the Kelvin sign (k). A text with either one runs them all.
+            let folds = has("\u{17F}") || has("\u{212A}")
+            authorization = folds || has("authorization", anyCase: true)
+            assignment = folds || ["password", "passwd", "pwd", "token", "key", "secret"].contains { (word: StaticString) in has(word, anyCase: true) }
+            tokens[0] = has("ghp_") || has("gho_") || has("ghu_") || has("ghs_") || has("ghr_")
+            tokens[1] = has("github_pat_")
+            tokens[2] = has("glpat-")
+            tokens[3] = has("ATBB")
+            tokens[4] = has("xox")
+            tokens[5] = has("AKIA") || has("ASIA")
+            tokens[6] = has("eyJ")
+        }
+
+        /// Whether `text` has `word`. `anyCase`: `word` is lowercase ASCII letters, and letters of
+        /// either case match it.
+        private static func contains(_ text: UnsafeBufferPointer<UInt8>, _ word: UnsafeBufferPointer<UInt8>, anyCase: Bool) -> Bool {
+            guard !word.isEmpty, text.count >= word.count else { return false }
+            let fold: UInt8 = anyCase ? 0x20 : 0
+            let first = word[0]
+            let last = text.count - word.count
+            var index = 0
+            while index <= last {
+                if text[index] | fold == first {
+                    var offset = 1
+                    while offset < word.count, text[index + offset] | fold == word[offset] { offset += 1 }
+                    if offset == word.count { return true }
+                }
+                index += 1
+            }
+            return false
+        }
     }
 
     nonisolated(unsafe) private static let urlCredentials =
