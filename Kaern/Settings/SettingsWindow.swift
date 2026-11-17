@@ -444,6 +444,8 @@ private struct AccountsPane: View {
     @State private var signingIn = false
     @State private var signInHost = "github.com"
     @State private var identity: (name: String?, email: String?) = (nil, nil)
+    /// Sign Out… and the list's − ask first: the token leaves the Keychain.
+    @State private var asksToSignOut = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -455,7 +457,7 @@ private struct AccountsPane: View {
                     signInHost = "github.com"
                     signingIn = true
                 }
-                        SmallSquareButton(title: "−", label: "Remove account") { removeSelected() }
+                        SmallSquareButton(title: "−", label: "Remove account") { asksToSignOut = selected != nil }
                             .disabled(selected == nil)
                     }
                 }
@@ -492,6 +494,12 @@ private struct AccountsPane: View {
         }
         .onChange(of: SettingsRouter.shared.signInHost) { takeSignInRequest() }
         .task(id: selection) { await loadIdentity() }
+        .alert(selected.map { "Sign out of \($0.login) on \($0.host)?" } ?? "Sign out?", isPresented: $asksToSignOut) {
+            Button("Sign Out", role: .destructive) { removeSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Kaern takes its token out of the Keychain. Your repositories stay as they are; to fetch or push over HTTPS on this server, you sign in again.")
+        }
     }
 
     private var selected: HostingAccount? { accounts.first { $0.id == selection } }
@@ -578,7 +586,7 @@ private struct AccountsPane: View {
             }
             GridRow {
                 Color.clear.frame(width: 100, height: 1)
-                Button("Sign Out…") { removeSelected() }
+                Button("Sign Out…") { asksToSignOut = true }
                     .controlSize(.regular)
             }
         }
