@@ -378,8 +378,9 @@ final class RepositoryModel: Identifiable {
     /// Repository Settings › Pull, when this repository sets its own (pull.rebase / pull.ff).
     var pullOverride: PullChoice?
     @ObservationIgnored var stashTask: Task<Void, Never>?
-    /// Commits reachable from HEAD among the loaded ones ("on this branch").
-    @ObservationIgnored private(set) var headAncestors: Set<String> = []
+    /// Commits reachable from HEAD among the loaded ones ("on this branch"). Observed: Revert in
+    /// the commit panel is on or off by it, and it changes after the switch that the panel saw.
+    private(set) var headAncestors: Set<String> = []
     /// Where the action that's about to run was started from ("Commit menu"), for the Command Log.
     @ObservationIgnored var uiSource: String?
     @ObservationIgnored var toastTask: Task<Void, Never>?
