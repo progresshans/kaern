@@ -555,10 +555,12 @@ struct HistoryColumns: Equatable {
     var showsDescriptions = true
 
     init(width: CGFloat, stored: ColumnWidths, automaticGraph: CGFloat, tier: NarrowTier = .wide) {
-        ref = stored.ref
-        graph = stored.graph > 0 ? stored.graph : automaticGraph
-        date = stored.date
-        sha = stored.sha
+        // Whole points: a column dragged to 163.3 would put every row's lanes and texts between
+        // pixels (the header's borders too).
+        ref = stored.ref.rounded()
+        graph = (stored.graph > 0 ? stored.graph : automaticGraph).rounded()
+        date = stored.date.rounded()
+        sha = stored.sha.rounded()
         // The window folds in the Narrow board's order; the history's own width still decides
         // when panels leave it little room.
         if tier >= .shortDates {
@@ -686,6 +688,166 @@ fileprivate final class HistoryRowActions {
     var pickWorkingCopy: () -> Void = {}
     /// The pointer came onto a commit's list of labels, or left it.
     var labelList: (String, Bool) -> Void = { _, _ in }
+}
+
+/// A commit row's picture: its background, the graph with the commit's node, the subject and the
+/// description, the date and the hash, drawn in one Canvas.
+///
+/// As views these were about eighty per row, and making, laying out and comparing them was most
+/// of what scrolling the history and switching to a tab cost. The drawing puts every piece where
+/// the views were, to the pixel (compared row by row, in every state and at many widths, when it
+/// was written: on a width that isn't whole points only the row's last pixel column differed).
+private struct CommitRowDrawing: View, Equatable {
+    let commit: Commit
+    let graph: GraphRow?
+    /// The label column has a label: its line carries on to the node.
+    let hasLabels: Bool
+    let isSelected: Bool
+    let isAlternate: Bool
+    let isHovered: Bool
+    let tint: CommitRow.Tint
+    let columns: HistoryColumns
+    /// Without a signature the hash is drawn here; with one, the row shows hash and shield as views.
+    let drawsHash: Bool
+    /// Search is filtering and this commit doesn't match (`.dim`).
+    let isDimmed: Bool
+
+    /// The sizes the row is drawn with (the Tokens board's, as the views had them).
+    private enum Metric {
+        static let textSize: CGFloat = 13
+        static let messageLeading: CGFloat = 12
+        static let messageTrailing: CGFloat = 14
+        static let descriptionGap: CGFloat = 6
+        static let laneBarWidth: CGFloat = 2.5
+        static let laneBarInset: CGFloat = 5
+        static let tintBarWidth: CGFloat = 3
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            draw(in: &context, size: size)
+        }
+        .accessibilityElement()
+        .accessibilityLabel([commit.subject, commit.bodyPreview, dateText, commit.shortID].filter { !$0.isEmpty }.joined(separator: ", "))
+    }
+
+    private var dateText: String {
+        columns.compactDates ? Formatters.compactDate(commit.author.date) : Formatters.historyDate(commit.author.date)
+    }
+
+    private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
+    private var secondary: Color { isSelected ? .white.opacity(0.85) : K.label2 }
+
+    private func draw(in context: inout GraphicsContext, size: CGSize) {
+        // Views sit on whole pixels; what is drawn here is put on them the same way.
+        let scale = context.environment.displayScale
+        func snap(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        let height = size.height
+        let whole = Path(CGRect(origin: .zero, size: size))
+        // A dimmed row's pieces are each see-through, as the views were (not the row as one
+        // picture made see-through: where pieces lie over each other that looks different).
+        context.opacity = isDimmed ? CommitRow.dimmedOpacity : 1
+
+        // `.row`, `.row:hover`, `.inr`.
+        if tint == .inRange, !isSelected {
+            context.fill(whole, with: .color(K.content))
+            context.fill(whole, with: .color(K.accentSoft))
+        } else if isHovered, !isSelected {
+            context.fill(whole, with: .color(K.content))
+            context.fill(whole, with: .color(K.hover))
+        } else {
+            context.fill(whole, with: .color(background))
+        }
+
+        let lane = graph?.lane ?? 0
+        let isMerge = graph?.isMerge ?? commit.isMerge
+        let graphX = snap(columns.ref)
+        let messageX = snap(columns.ref + columns.graph)
+        let shaX = snap(size.width - (columns.showsSHA ? columns.sha : 0))
+        let dateX = snap(size.width - (columns.showsSHA ? columns.sha : 0) - (columns.showsDate ? columns.date : 0))
+
+        // The graph cell: the label's line under the lanes, the lanes, the node.
+        do {
+            var cell = context
+            cell.clip(to: Path(CGRect(x: graphX, y: 0, width: columns.graph, height: height)))
+            cell.translateBy(x: graphX, y: 0)
+            let nodeX = GraphMetrics.x(lane: lane)
+            if hasLabels {
+                let line = CGRect(x: 0, y: height / 2 - GraphMetrics.labelLineWidth / 2,
+                                  width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.labelLineWidth)
+                cell.fill(Path(line), with: .color(isSelected ? Color.white.opacity(0.75) : K.lane(lane)))
+            }
+            // The lanes are one picture (they were a Canvas of their own).
+            if let graph { cell.drawLayer { lines in GraphLines.draw(graph, in: &lines, height: height) } }
+            let center = CGPoint(x: nodeX, y: height / 2)
+            func disc(_ diameter: CGFloat, _ color: Color) {
+                let rect = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
+                cell.fill(Path(ellipseIn: rect), with: .color(color))
+            }
+            if isMerge {
+                disc(14, background)
+                disc(10, K.lane(lane))
+            } else {
+                disc(25, K.lane(lane))
+                disc(21, background)
+                disc(18, AvatarPalette.color(for: commit.author.email.isEmpty ? commit.author.name : commit.author.email))
+                let initials = cell.resolve(Text(commit.author.initials).font(.system(size: 7.5, weight: .bold)).tracking(0.2).foregroundStyle(.white))
+                let fits = initials.measure(in: CGSize(width: CGFloat.infinity, height: .infinity))
+                let rect = CGRect(x: snap(graphX + center.x - fits.width / 2) - graphX, y: snap(center.y - fits.height / 2),
+                                  width: fits.width, height: fits.height)
+                if isDimmed { cell.drawLayer { $0.draw(initials, in: rect) } } else { cell.draw(initials, in: rect) }
+            }
+        }
+
+        let body = Font.system(size: Metric.textSize)
+        let subject = Text(commit.subject).font(body).foregroundStyle(isSelected ? Color.white : K.label)
+
+        // The lane's bar at the message's edge: as tall as the line of text, less its inset.
+        let textHeight = context.resolve(subject).measure(in: CGSize(width: CGFloat.infinity, height: height)).height
+        let bar = CGRect(x: messageX, y: snap((height - textHeight) / 2) + Metric.laneBarInset,
+                         width: Metric.laneBarWidth, height: textHeight - Metric.laneBarInset * 2)
+        context.fill(Path(roundedRect: bar, cornerRadius: 2), with: .color(isSelected ? Color.white : K.lane(lane)))
+
+        // One line of text, cut with "…" where its room ends, centered in the row.
+        @discardableResult
+        func line(_ text: Text, at x: CGFloat, width: CGFloat) -> CGFloat {
+            guard width > 0 else { return 0 }
+            let resolved = context.resolve(text)
+            let fits = resolved.measure(in: CGSize(width: width, height: height))
+            let single = resolved.measure(in: CGSize(width: CGFloat.infinity, height: height)).height
+            let rect = CGRect(x: snap(x), y: snap((height - single) / 2), width: width, height: single)
+            // Dimmed, the text is drawn whole and then made see-through, as a text view is.
+            if isDimmed { context.drawLayer { $0.draw(resolved, in: rect) } } else { context.draw(resolved, in: rect) }
+            return min(fits.width, width)
+        }
+
+        // The subject, then the description in what is left of the message's room.
+        let textX = messageX + Metric.messageLeading
+        // (Its room as the layout had it, not from where the date was put on a pixel.)
+        let messageEnd = size.width - (columns.showsSHA ? columns.sha : 0) - (columns.showsDate ? columns.date : 0)
+        let room = messageEnd - (columns.ref + columns.graph) - Metric.messageLeading - Metric.messageTrailing
+        if columns.showsDescriptions, !commit.bodyPreview.isEmpty {
+            let description = Text(commit.bodyPreview).font(body).foregroundStyle(secondary)
+            // The subject comes first (`layoutPriority`): it gets all but the least the description takes.
+            let least = context.resolve(description).measure(in: CGSize(width: 0, height: height)).width
+            let used = line(subject, at: textX, width: room - Metric.descriptionGap - least)
+            line(description, at: textX + used + Metric.descriptionGap, width: room - used - Metric.descriptionGap)
+        } else {
+            line(subject, at: textX, width: room)
+        }
+
+        if columns.showsDate {
+            line(Text(dateText).font(body).foregroundStyle(secondary), at: dateX, width: columns.date)
+        }
+        if columns.showsSHA, drawsHash {
+            line(Text(commit.shortID).font(KFont.hash).foregroundStyle(secondary), at: shaX, width: columns.sha)
+        }
+
+        // `.ahd`, `.bhd`: only on this branch, only on the other one.
+        if !isSelected, tint == .ours || tint == .theirs {
+            context.fill(Path(CGRect(x: 0, y: 0, width: Metric.tintBarWidth, height: height)), with: .color(tint == .ours ? K.accent : K.lane2))
+        }
+    }
 }
 
 /// A row is the same while what it shows is: SwiftUI then leaves it alone.
@@ -854,6 +1016,9 @@ private struct CommitRow: View {
     let columns: HistoryColumns
     /// A click on the row, and a double-click on one of its labels, here or in its list.
     let actions: HistoryRowActions
+    /// How see-through a commit is that the search doesn't match.
+    static let dimmedOpacity = 0.3
+    private var dim: Double { isDimmed ? Self.dimmedOpacity : 1 }
 
     private func switchTo(_ label: RefLabelItem) { actions.switchTo(label) }
 
@@ -890,85 +1055,9 @@ private struct CommitRow: View {
     }
 
     private var lane: Int { graph?.lane ?? 0 }
-    private var background: Color { isSelected ? K.sel : (isAlternate ? K.alt : K.content) }
 
     var body: some View {
-        let nodeX = GraphMetrics.x(lane: lane)
-        let isMerge = graph?.isMerge ?? commit.isMerge
-        HStack(spacing: 0) {
-            // A fixed-width slot (an empty `if` would collapse the column).
-            Color.clear
-                .frame(width: columns.ref, height: KMetric.graphRow)
-                .overlay(alignment: .leading) { refColumn }
-            ZStack(alignment: .topLeading) {
-                if !labels.isEmpty {
-                    // The label's line carries on from the label column to the node's edge, under the
-                    // lanes it passes (drawn first). It's a 1 pt hairline against 2.2 pt lanes, so it
-                    // reads as a pointer to the label, not a branch joining at this row (canvas v60).
-                    Rectangle()
-                        .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
-                        .frame(width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.labelLineWidth)
-                        .offset(y: KMetric.graphRow / 2 - GraphMetrics.labelLineWidth / 2)
-                }
-                if let graph { GraphLines(row: graph, height: KMetric.graphRow) }
-                CommitNode(commit: commit, isMerge: isMerge, lane: lane, gap: background)
-                    .offset(x: nodeX - 9, y: KMetric.graphRow / 2 - 9)
-            }
-            .frame(width: columns.graph, height: KMetric.graphRow, alignment: .topLeading)
-            .clipped()
-            HStack(spacing: 6) {
-                Text(commit.subject)
-                    .layoutPriority(1)
-                if columns.showsDescriptions, !commit.bodyPreview.isEmpty {
-                    Text(commit.bodyPreview)
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .truncationMode(.tail)
-            .padding(.leading, 12)
-            .padding(.trailing, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(isSelected ? Color.white : K.lane(lane))
-                    .frame(width: 2.5)
-                    .padding(.vertical, 5)
-            }
-            if columns.showsDate {
-                Text(columns.compactDates ? Formatters.compactDate(commit.author.date) : Formatters.historyDate(commit.author.date))
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    .frame(width: columns.date, alignment: .leading)
-            }
-            if columns.showsSHA {
-                HStack(spacing: 5) {
-                    Text(commit.shortID)
-                        .font(KFont.hash)
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                    if let signature {
-                        // `.sig`: the shield in its color, white on the selected row.
-                        Icon(signature.icon, size: 12)
-                            .foregroundStyle(isSelected ? Color.white : signature.color)
-                            .help(signature.tooltip)
-                    }
-                }
-                .frame(width: columns.sha, alignment: .leading)
-            }
-        }
-        .font(.system(size: 13))
-        .foregroundStyle(isSelected ? .white : K.label)
-        .lineLimit(1)
-        .frame(height: KMetric.graphRow)
-        .background {
-            // `.row:hover`: the hover tint on the list's background.
-            if tint == .inRange, !isSelected { ZStack { K.content; K.accentSoft } }
-            else if isHovered, !isSelected { ZStack { K.content; K.hover } } else { background }
-        }
-        .overlay(alignment: .leading) {
-            if !isSelected, tint == .ours || tint == .theirs {
-                (tint == .ours ? K.accent : K.lane2).frame(width: 3)
-            }
-        }
+        drawn
         // The whole row takes the pointer, its empty parts too. Only the row: the list of labels lies
         // outside it, over other rows, and takes the pointer there (it is this row's, above the others).
         .contentShape(Rectangle())
@@ -979,11 +1068,12 @@ private struct CommitRow: View {
                              minWidth: shownLabelsWidth, switchTo: switchTo) {
                     pointer(onList: $0)
                 }
+                .opacity(dim)
                 .transition(.opacity)
             }
         }
+        // (A dimmed row: the drawing dims its own pieces, the views over it where they are made.)
         .contextTarget(.commit(commit.id))
-        .opacity(isDimmed ? 0.3 : 1)
         .help("\(commit.subject)\n\(commit.author.name) · \(commit.shortID)")
         // The list of labels lies over the rows below.
         .zIndex(listShown ? 1 : 0)
@@ -993,6 +1083,42 @@ private struct CommitRow: View {
         // Beside a label's double-click (which switches), not after it: the click picks the
         // commit at once instead of waiting to see whether a second one follows.
         .simultaneousGesture(TapGesture().onEnded { actions.click(commit.id) })
+    }
+
+    /// The row as one drawing (`CommitRowDrawing`), with the parts that are more than a picture
+    /// on top as views: the labels (they open a list, take double-clicks and have menus) and a
+    /// signature's shield with its tooltip.
+    private var drawn: some View {
+        CommitRowDrawing(commit: commit, graph: graph, hasLabels: !labels.isEmpty, isSelected: isSelected, isAlternate: isAlternate,
+                         isHovered: isHovered, tint: tint, columns: columns, drawsHash: signature == nil, isDimmed: isDimmed)
+            .frame(height: KMetric.graphRow)
+            .overlay(alignment: .leading) {
+                if !labels.isEmpty {
+                    Color.clear
+                        .frame(width: columns.ref, height: KMetric.graphRow)
+                        .overlay(alignment: .leading) { refColumn }
+                        .opacity(dim)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if let signature, columns.showsSHA { hashCell(signature).opacity(dim) }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(isSelected ? .white : K.label)
+            .lineLimit(1)
+    }
+
+    /// The hash with a signature's shield (`.sig`): in its color, white on the selected row.
+    private func hashCell(_ signature: SignatureMark) -> some View {
+        HStack(spacing: 5) {
+            Text(commit.shortID)
+                .font(KFont.hash)
+                .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
+            Icon(signature.icon, size: 12)
+                .foregroundStyle(isSelected ? Color.white : signature.color)
+                .help(signature.tooltip)
+        }
+        .frame(width: columns.sha, alignment: .leading)
     }
 
     @ViewBuilder

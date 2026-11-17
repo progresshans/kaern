@@ -35,51 +35,57 @@ struct GraphLines: View {
 
     var body: some View {
         Canvas { context, size in
-            let mid = height / 2
-            let radius = GraphMetrics.corner
-            for edge in row.up {
-                let from = GraphMetrics.x(lane: edge.from)
-                let to = GraphMetrics.x(lane: edge.to)
-                var path = Path()
-                switch edge.turn {
-                case .straight:
-                    path.move(to: CGPoint(x: from, y: 0))
-                    path.addLine(to: CGPoint(x: from, y: mid))
-                case .leavesNode:
-                    // The turn happened in the row above; here the line is already in its lane.
-                    path.move(to: CGPoint(x: to, y: 0))
-                    path.addLine(to: CGPoint(x: to, y: mid))
-                case .joinsNode:
-                    // Down the lane, a quarter circle, then along the row's center into the node.
-                    path.move(to: CGPoint(x: from, y: 0))
-                    path.addArc(tangent1End: CGPoint(x: from, y: mid), tangent2End: CGPoint(x: to, y: mid), radius: radius)
-                    path.addLine(to: CGPoint(x: to, y: mid))
-                }
-                stroke(path, edge, in: &context)
-            }
-            for edge in row.down {
-                let from = GraphMetrics.x(lane: edge.from)
-                let to = GraphMetrics.x(lane: edge.to)
-                var path = Path()
-                switch edge.turn {
-                case .straight, .joinsNode:
-                    // A joining lane makes its turn in the row below.
-                    path.move(to: CGPoint(x: from, y: mid))
-                    path.addLine(to: CGPoint(x: from, y: size.height))
-                case .leavesNode:
-                    // Out of the merge dot's side, a quarter circle, then down the new lane.
-                    path.move(to: CGPoint(x: from, y: mid))
-                    path.addArc(tangent1End: CGPoint(x: to, y: mid), tangent2End: CGPoint(x: to, y: size.height), radius: radius)
-                    path.addLine(to: CGPoint(x: to, y: size.height))
-                }
-                stroke(path, edge, in: &context)
-            }
+            Self.draw(row, in: &context, height: size.height, dashColor: dashColor)
         }
         .frame(height: height)
         .allowsHitTesting(false)
     }
 
-    private func stroke(_ path: Path, _ edge: GraphEdge, in context: inout GraphicsContext) {
+    /// Draws `row`'s lines from the top of the context to `height` (a commit row draws them in its
+    /// own Canvas, beside its texts).
+    static func draw(_ row: GraphRow, in context: inout GraphicsContext, height: CGFloat, dashColor: Color = K.wip) {
+        let mid = height / 2
+        let radius = GraphMetrics.corner
+        for edge in row.up {
+            let from = GraphMetrics.x(lane: edge.from)
+            let to = GraphMetrics.x(lane: edge.to)
+            var path = Path()
+            switch edge.turn {
+            case .straight:
+                path.move(to: CGPoint(x: from, y: 0))
+                path.addLine(to: CGPoint(x: from, y: mid))
+            case .leavesNode:
+                // The turn happened in the row above; here the line is already in its lane.
+                path.move(to: CGPoint(x: to, y: 0))
+                path.addLine(to: CGPoint(x: to, y: mid))
+            case .joinsNode:
+                // Down the lane, a quarter circle, then along the row's center into the node.
+                path.move(to: CGPoint(x: from, y: 0))
+                path.addArc(tangent1End: CGPoint(x: from, y: mid), tangent2End: CGPoint(x: to, y: mid), radius: radius)
+                path.addLine(to: CGPoint(x: to, y: mid))
+            }
+            stroke(path, edge, in: &context, dashColor: dashColor)
+        }
+        for edge in row.down {
+            let from = GraphMetrics.x(lane: edge.from)
+            let to = GraphMetrics.x(lane: edge.to)
+            var path = Path()
+            switch edge.turn {
+            case .straight, .joinsNode:
+                // A joining lane makes its turn in the row below.
+                path.move(to: CGPoint(x: from, y: mid))
+                path.addLine(to: CGPoint(x: from, y: height))
+            case .leavesNode:
+                // Out of the merge dot's side, a quarter circle, then down the new lane.
+                path.move(to: CGPoint(x: from, y: mid))
+                path.addArc(tangent1End: CGPoint(x: to, y: mid), tangent2End: CGPoint(x: to, y: height), radius: radius)
+                path.addLine(to: CGPoint(x: to, y: height))
+            }
+            stroke(path, edge, in: &context, dashColor: dashColor)
+        }
+    }
+
+    private static func stroke(_ path: Path, _ edge: GraphEdge, in context: inout GraphicsContext, dashColor: Color) {
         if edge.dashed {
             context.stroke(path, with: .color(dashColor),
                            style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, dash: [2.4, 3]))
