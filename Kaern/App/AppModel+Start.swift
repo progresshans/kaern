@@ -158,7 +158,9 @@ extension AppModel {
         let writable = files.filter { !FileManager.default.fileExists(atPath: folder.appending(path: $0.path).path(percentEncoded: false)) }
         if !writable.isEmpty { steps.append(("write", "Write " + writable.map(\.path).joined(separator: ", "))) }
         if model.firstCommit { steps.append(("commit", "git add -A && git commit -m \"Initial commit\"")) }
-        if model.publish { steps.append(("publish", "Create \(name) on GitHub (\(model.isPrivate ? "private" : "public")) and push \(branch)")) }
+        // GitHub's own name for it (a space or 한글 in the folder's name is a dash there).
+        let githubName = GitHubClient.repositoryName(for: name)
+        if model.publish { steps.append(("publish", "Create \(githubName) on GitHub (\(model.isPrivate ? "private" : "public")) and push \(branch)")) }
         model.setSteps(steps)
         let center = ActivityCenter.shared
         let taskID = center.begin(repositoryPath: folder.path(percentEncoded: false), repositoryName: name, title: "Creating \(name)")
@@ -192,7 +194,7 @@ extension AppModel {
                 if model.publish, let account = model.githubAccount {
                     model.advance(to: "publish")
                     do {
-                        try await publish(repository, name: name, isPrivate: model.isPrivate, account: account, runner: runner)
+                        try await publish(repository, name: githubName, isPrivate: model.isPrivate, account: account, runner: runner)
                     } catch {
                         publishError = error
                     }
@@ -248,8 +250,8 @@ extension AppModel {
         guard let git = target.repository else { return }
         model.isRunning = true
         model.error = nil
-        model.progress = "Creating \(model.name) on GitHub…"
-        let name = model.name.trimmingCharacters(in: .whitespaces)
+        let name = model.githubName
+        model.progress = "Creating \(name) on GitHub…"
         Task {
             guard let runner = await waitForGit() else {
                 model.isRunning = false

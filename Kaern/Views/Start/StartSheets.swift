@@ -551,7 +551,7 @@ struct CreateSheet: View {
                     .font(.system(size: 12.5))
                 if model.publish {
                     HStack(spacing: 8) {
-                        PathText(path: "Name on GitHub: \(model.existingFolder?.lastPathComponent ?? model.cleanName)")
+                        PathText(path: "Name on GitHub: \(GitHubClient.repositoryName(for: model.existingFolder?.lastPathComponent ?? model.cleanName))")
                         Spacer()
                         SegmentedChoice(options: [(true, "Private"), (false, "Public")], selection: $model.isPrivate, label: "Visibility")
                     }
@@ -649,6 +649,8 @@ struct PublishSheet: View {
                         SheetField(placeholder: "name", text: $model.name, isBad: !model.nameIsValid, focus: $focused, onSubmit: publish)
                         if !model.nameIsValid {
                             FormNote(text: "Letters, numbers, - _ and . only", isError: true)
+                        } else if model.githubName != model.name {
+                            FormNote(text: "GitHub will call it \(model.githubName)")
                         }
                     }
                 }
