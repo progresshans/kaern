@@ -28,6 +28,8 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 - Scrolling the history is smoother, and Kaern does less in the background: a refresh starts only for files that
   count (not ones Git ignores), and the graph is rebuilt only when something in it changed.
+- Coming back to a tab takes about a third of the work: Kaern keeps the screens of the five tabs you used last,
+  as you left them, instead of building them again.
 - Review opens on thousands of changed files without stopping the window. It lists the first 40 files, with
   "N more" for the rest, and loads diffs as you scroll.
 - When Create New Repository can't publish to GitHub, the repository still opens, and a sheet says what was made

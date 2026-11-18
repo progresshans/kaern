@@ -62,6 +62,7 @@ struct HistoryView: View {
     @State private var window = HistoryWindow()
     /// What the rows do when clicked (`HistoryRowActions`).
     @State private var actions = HistoryRowActions()
+    @State private var hasAppeared = false
 
     private static let overscan = 8
 
@@ -121,7 +122,9 @@ struct HistoryView: View {
                 return .handled
             }
             .onAppear {
-                restoreAnchor()
+                // The first time only: a tab that shows again has its list where it was.
+                if !hasAppeared { restoreAnchor() }
+                hasAppeared = true
                 focusUnlessTyping()
             }
             .onChange(of: repository.historyFocusRequest) { listFocused = true }
@@ -1201,8 +1204,7 @@ final class DebugRefLabels {
 extension View {
     /// Debug builds: tells the driver where this part of a commit's labels is (`DebugRefLabels.frames`).
     func debugLabelsFrame(_ key: String) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { DebugRefLabels.shared.frames[key] = $0 }
-            .onDisappear { DebugRefLabels.shared.frames[key] = nil }
+        modifier(DebugFrameReport { DebugRefLabels.shared.frames[key] = $0 })
     }
 }
 #else

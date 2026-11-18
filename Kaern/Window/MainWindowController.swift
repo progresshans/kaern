@@ -8,6 +8,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let model: WindowModel
     private weak var app: AppModel?
     private var lights: TrafficLights?
+    private let content: WindowContentView
     /// Where this window's rows with context menus are.
     let contextTracker = ContextMenuTracker()
 
@@ -34,13 +35,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
 
         let tracker = contextTracker
+        let screens = TabScreensHandle()
         let root = WindowRootView(window: model)
             .environment(app)
             .environment(tracker)
+            .environment(screens)
             .takesDriverClicksInBackground()
         let hosting = KaernHostingView(rootView: root)
         hosting.sizingOptions = []
-        window.contentView = hosting
+        // The tabs' screens are views of their own behind this one (`TabScreensView`).
+        let content = WindowContentView(chrome: hosting)
+        self.content = content
+        screens.view = content.screens
+        content.screens.make = { [weak app] path, inputs in
+            guard let app else { return AnyView(EmptyView()) }
+            return AnyView(
+                RepositoryScreen(window: model, repository: app.repository(for: path),
+                                 showsToolbar: inputs.showsToolbar, showsStatusBar: inputs.showsStatusBar)
+                    .environment(\.windowTier, inputs.tier)
+                    .environment(\.toolbarFoldsMake, inputs.toolbarFoldsMake)
+                    .environment(\.repositorySwitching, inputs.switching)
+                    .background(K.win)
+                    .environment(app)
+                    .environment(tracker)
+                    .takesDriverClicksInBackground()
+            )
+        }
+        // A press on the screen's place is the screen's, unless a sheet of the window's covers it.
+        hosting.leaves = { [weak screens] point in model.sheet == nil && screens?.takes(point) == true }
+        content.open = { [weak app] folders in app?.open(folders, in: model) }
+        content.targeted = { model.isDropTarget = $0 }
+        window.contentView = content
 
         super.init(window: window)
         window.delegate = self
@@ -172,8 +197,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        content.screens.removeAll()
         app?.windowWillClose(self)
     }
+
+    /// The folders whose screens are kept, the shown one last (the debug dump).
+    var keptScreens: [String] { content.screens.keptPaths }
 
     func windowDidMove(_ notification: Notification) { rememberFrame() }
     func windowDidResize(_ notification: Notification) { rememberFrame() }
@@ -253,6 +282,13 @@ final class KaernWindow: NSWindow {
 /// `WindowDragGesture`.
 final class KaernHostingView<Content: View>: NSHostingView<Content> {
     var onLayout: (() -> Void)?
+    /// Says where a press isn't this view's (in its own points): there the view behind gets it.
+    var leaves: ((CGPoint) -> Bool)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let leaves, leaves(convert(point, from: superview)) { return nil }
+        return super.hitTest(point)
+    }
 
     override func layout() {
         super.layout()

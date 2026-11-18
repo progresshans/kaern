@@ -164,8 +164,26 @@ enum PaneFrames {
 extension View {
     /// Debug builds: tells the driver where this pane is (`dump` › `phase5.layout.panes`).
     func debugPaneFrame(_ name: String, window: UUID) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { PaneFrames.frames[window, default: [:]][name] = $0 }
-            .onDisappear { PaneFrames.frames[window]?[name] = nil }
+        modifier(DebugFrameReport { frame in
+            if let frame { PaneFrames.frames[window, default: [:]][name] = frame } else { PaneFrames.frames[window]?[name] = nil }
+        })
+    }
+}
+
+/// Debug builds: where a view is in the window, told when it moves and when it comes back on
+/// screen unmoved (its tab shows again), and `nil` when it leaves.
+struct DebugFrameReport: ViewModifier {
+    let report: (CGRect?) -> Void
+    @State private var place = FramePlace()
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
+                report(frame)
+            }
+            .onAppear { if let frame = place.frame { report(frame) } }
+            .onDisappear { report(nil) }
     }
 }
 #else

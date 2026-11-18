@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 struct WindowRootView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
-    @State private var isDropTarget = false
     @State private var width: CGFloat = 0
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
     @AppStorage(SettingsKey.repositorySwitching, store: .kaern) private var switching = RepositorySwitching.tabs
@@ -29,11 +28,13 @@ struct WindowRootView: View {
         .environment(\.toolbarFoldsMake, width > 0 && width < 1000)
         .environment(\.repositorySwitching, switching)
         .frame(minWidth: 760, minHeight: 520)
-        .background(K.win)
+        // No background of its own: the window's is the same color, and the tab's screen is a view
+        // behind this one (`ScreenSlot`), which a background would cover.
         .ignoresSafeArea()
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .overlay {
-            if isDropTarget {
+            // Folders dragged over the window (`WindowContentView` takes the drop).
+            if window.isDropTarget {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(K.accent, lineWidth: 3)
                     .padding(4)
@@ -41,15 +42,6 @@ struct WindowRootView: View {
                     .ignoresSafeArea()
             }
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            let folders = urls.filter { url in
-                var isDirectory: ObjCBool = false
-                return FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) && isDirectory.boolValue
-            }
-            guard !folders.isEmpty else { return false }
-            app.open(folders, in: window)
-            return true
-        } isTargeted: { isDropTarget = $0 }
     }
 
     /// The tab row, then the repository (its toolbar first). A window has no tab only while it
@@ -59,12 +51,7 @@ struct WindowRootView: View {
             TabBar(window: window)
                 .zIndex(3)
             ZStack(alignment: .top) {
-                if let tab = window.activeTab {
-                    RepositoryScreen(window: window, repository: app.repository(for: tab.path))
-                        .id(tab.path)
-                } else {
-                    K.win
-                }
+                ScreenSlot(window: window)
                 // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
                 WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
             }
@@ -109,15 +96,9 @@ struct WindowRootView: View {
                                 .transition(.move(edge: .leading))
                         }
                     }
-                    Group {
-                        if let tab = window.activeTab {
-                            RepositoryScreen(window: window, repository: app.repository(for: tab.path), showsToolbar: false, showsStatusBar: false)
-                                .id(tab.path)
-                        } else {
-                            K.win
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The list's resize handle is half over the screen's edge (9 pt wide, on the edge).
+                    ScreenSlot(window: window, showsToolbar: false, showsStatusBar: false,
+                               coveredLeading: switching == .sidebar && !(window.listFolded || railByWidth) ? 4.5 : 0)
                 }
                 .animation(.easeOut(duration: 0.18), value: window.listFolded || railByWidth)
                 WindowSheetHost(window: window, topInset: 0)
@@ -366,7 +347,9 @@ struct RepositoryScreen: View {
         // Space and File › Quick Look (ScreenMarks).
         .quickLookPreview($repository.quickLookURL)
         .overlay {
-            if window.showsQuickOpen, repository.isReady {
+            // In the tab that shows only: the screens of the window's other tabs are kept, and each
+            // would make a panel (and list its repository's files) for the same switch.
+            if window.showsQuickOpen, repository.isReady, window.activeTab?.path == repository.path {
                 ZStack(alignment: .top) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
