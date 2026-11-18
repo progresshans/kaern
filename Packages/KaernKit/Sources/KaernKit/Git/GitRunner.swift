@@ -39,7 +39,8 @@ public struct GitError: Error, LocalizedError, Sendable, Equatable {
         return trimmed
     }
 
-    /// Removes progress noise and the `error:`/`fatal:` prefixes git puts on every line.
+    /// Removes progress noise and the `error:`/`fatal:` prefixes git puts on every line, and puts the one
+    /// sentence git sends on two lines back on one, so it wraps at the width it is shown in.
     static func clean(_ message: String) -> String {
         let lines = message
             .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
@@ -60,6 +61,8 @@ public struct GitError: Error, LocalizedError, Sendable, Equatable {
                     && !line.hasPrefix("remote: Total")
             }
         return lines.joined(separator: "\n")
+            .replacingOccurrences(of: "the correct access rights\nand the repository exists.",
+                                  with: "the correct access rights and the repository exists.")
     }
 }
 
