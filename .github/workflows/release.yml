@@ -1,10 +1,11 @@
 # Kaern's releases. Pushing a version tag builds the app on a GitHub Mac, signs it with the Developer ID, notarizes it,
 # publishes the DMG and the ZIP as a GitHub release, then adds it to the appcast that offers updates (appcast.xml on the
 # gh-pages branch, which GitHub Pages serves with the website that site.yml puts there):
-# - v1.1.0 makes a release, offered to every copy;
-# - v1.1.0-beta.2 makes a beta: a GitHub pre-release, offered only to copies with Get beta versions on.
+# - v1.1.0 makes a release, offered to every copy. Its commit must be on main, which gets develop for a release;
+# - v1.1.0-beta.2 makes a beta: a GitHub pre-release, offered only to copies with Get beta versions on. Its commit
+#   must be on develop, where work lands.
 #
-# The same build, signed ad hoc and with no secrets, runs on each push to main (ci.yml).
+# The same build, signed ad hoc and with no secrets, runs on each push to develop and main (ci.yml).
 #
 # The setup (the release environment and its secrets) is in Packaging/README.md.
 name: Release
@@ -46,14 +47,14 @@ jobs:
         id: tag
         run: |
           set -euo pipefail
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME isn't on main: only commits on main are released"
-            exit 1
-          fi
           version="${GITHUB_REF_NAME#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [[ "$version" == *-beta.* ]]; then prerelease=true; else prerelease=false; fi
+          if [[ "$version" == *-beta.* ]]; then prerelease=true; branch=develop; else prerelease=false; branch=main; fi
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
+            echo "::error::$GITHUB_REF_NAME isn't on $branch: a beta is tagged on develop, a release on main"
+            exit 1
+          fi
           # script/release.sh builds this version (and its build number) instead of the project's.
           echo "KAERN_VERSION=$version" >> "$GITHUB_ENV"
           # The appcast as published, which the release is added to. Publishing checks that it hasn't changed since.
