@@ -21,6 +21,8 @@ struct RepositorySheetHost: View {
                         TagSheet(repository: repository, request: request)
                     case .pick(let request):
                         PickSheet(repository: repository, request: request)
+                    case .finish(let request):
+                        FinishSheet(repository: repository, request: request)
                     case .renameStash(let stash):
                         RenameStashSheet(repository: repository, stash: stash)
                     case .repositorySettings:

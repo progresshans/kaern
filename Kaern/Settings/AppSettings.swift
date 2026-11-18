@@ -31,6 +31,8 @@ nonisolated enum SettingsKey {
     static let fsmonitorDismissed = "KaernFSMonitorDismissed"
     /// The Graph: choice per repository path (ScreenBigRepo): "all", "local" or "current".
     static let graphScopes = "KaernGraphScopes"
+    /// Finish Feature's choices per repository path: "merge,delete,rebase", each there when it's on.
+    static let finishOptions = "KaernFinishOptions"
     /// "<repository path>\t<folder>" for each .gitignore suggestion put away with Not Now.
     static let ignoreSuggestionsDismissed = "KaernIgnoreSuggestionsDismissed"
     /// Where Clone and Create New Repository put new folders (the last one used).
