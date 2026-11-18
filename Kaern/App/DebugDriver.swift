@@ -232,8 +232,9 @@ final class DebugDriver {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
         case "press":
-            // press up|down|return|escape|space [shift] [option] [command] — a key down through the
-            // window, to the focused view.
+            // press up|down|return|escape|space [shift] [option] [command] [hold <n> [every <ms>]] — a key
+            // down through the window, to the focused view. hold: the key stays down for n repeats (33 ms
+            // apart unless `every` says otherwise) before it comes up, as a held key does.
             press(args.first ?? "", modifiers: Array(args.dropFirst()))
         case "front":
             // Makes the window key, so snapshots show the active-window look (traffic lights, checkboxes).
@@ -810,13 +811,31 @@ final class DebugDriver {
         if names.contains("command") { flags.insert(.command) }
         // Arrow keys carry the function-key flag, as real ones do.
         if [126, 125].contains(code) { flags.insert([.function, .numericPad]) }
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
+        func number(after word: String) -> Int? {
+            names.firstIndex(of: word).flatMap { names.indices.contains($0 + 1) ? Int(names[$0 + 1]) : nil }
+        }
+        let repeats = max(number(after: "hold") ?? 0, 0)
+        let interval = number(after: "every") ?? 33
+        func send(_ type: NSEvent.EventType, isRepeat: Bool = false) {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: nsWindow.windowNumber, context: nil, characters: characters,
-                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
-            ) else { continue }
+                charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
+            ) else { return }
             nsWindow.sendEvent(event)
+        }
+        // A plain press stays in this turn; a held key's repeats come one after the other, as a keyboard sends them.
+        guard repeats > 0 else { send(.keyDown); send(.keyUp); return }
+        pointerTasks += 1
+        Task {
+            defer { pointerTasks -= 1 }
+            send(.keyDown)
+            for _ in 0..<repeats {
+                try? await Task.sleep(for: .milliseconds(interval))
+                send(.keyDown, isRepeat: true)
+            }
+            try? await Task.sleep(for: .milliseconds(interval))
+            send(.keyUp)
         }
     }
 
@@ -833,7 +852,7 @@ final class DebugDriver {
         nsWindow.sendEvent(event)
     }
 
-    /// Clicks and drags still being sent (each takes a moment): a script waits for none
+    /// Clicks, drags and held keys still being sent (each takes a moment): a script waits for none
     /// (`driver.pointerBusy`) before the next one, or a press could land inside another's drag.
     private var pointerTasks = 0
 
@@ -951,6 +970,7 @@ final class DebugDriver {
                 "selection": selection,
                 "focused": window.isFocused,
                 "drawer": window.showsDrawer,
+                "drawerPath": repository.drawerPath ?? "",
                 "review": repository.review.map { ["all": $0.showsAllFiles, "path": $0.path ?? ""] as [String: Any] } ?? NSNull(),
                 "search": ["open": repository.search.isOpen, "query": repository.search.query, "scope": repository.search.scope.rawValue,
                            "matches": repository.search.matches.compactMap { id in repository.commits.firstIndex { $0.id == id } }],
