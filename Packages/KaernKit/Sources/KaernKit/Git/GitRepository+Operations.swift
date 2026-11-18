@@ -76,13 +76,16 @@ extension GitRepository {
     }
 
     /// `git merge --no-edit --autostash <revision>`. Conflicts stop the merge instead of throwing.
-    public func merge(_ revision: String, fastForward: FastForward = .allowed) async throws -> OperationOutcome {
+    /// `message` is the merge commit's, when one is made (git's "Merge branch '…'" without it); a
+    /// merge that stops keeps it as the message to continue with.
+    public func merge(_ revision: String, fastForward: FastForward = .allowed, message: String? = nil) async throws -> OperationOutcome {
         var arguments = ["merge", "--no-edit", "--autostash"]
         switch fastForward {
         case .allowed: break
         case .never: arguments.append("--no-ff")
         case .only: arguments.append("--ff-only")
         }
+        if let message, !message.isEmpty { arguments += ["-m", message] }
         arguments.append(revision)
         return try await runStoppable(arguments)
     }

@@ -19,6 +19,10 @@ What changed in each version of Kaern. A version's section is what its update wi
   own. Right-click a worktree to open it, show or copy its folder, lock it, or remove it with or without its
   branch. A branch checked out in another worktree offers Open Worktree instead of Checkout, and no Delete while
   that worktree is there.
+- Finish a feature branch in one step, as Gitflow has it: right-click a `feature/…` branch (or Branch › Finish
+  Feature…) in a repository with a `develop` branch. Kaern merges it into develop with a merge commit whose message
+  you write, can replay it on develop first and delete it afterwards, and keeps those choices for the repository.
+  Each step can be taken back with ⌘Z.
 
 ### Improved
 

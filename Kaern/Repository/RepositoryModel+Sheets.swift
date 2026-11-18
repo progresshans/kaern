@@ -31,6 +31,8 @@ enum RepositorySheet: Equatable, Identifiable {
     case branch(BranchSheetRequest)
     case tag(TagSheetRequest)
     case pick(PickSheetRequest)
+    /// Finish Feature…: the branch goes into develop.
+    case finish(FinishSheetRequest)
     case renameStash(Stash)
     case repositorySettings
     case interactiveRebase(RebaseDraft)
@@ -42,6 +44,7 @@ enum RepositorySheet: Equatable, Identifiable {
         case .branch(let request): "branch:\(request.kind)"
         case .tag(let request): "tag:\(request.commit)"
         case .pick(let request): "pick:\(request.kind)"
+        case .finish(let request): "finish:\(request.branch)"
         case .renameStash(let stash): "stash:\(stash.id)"
         case .repositorySettings: "settings"
         case .interactiveRebase(let draft): "rebase:\(draft.base)"

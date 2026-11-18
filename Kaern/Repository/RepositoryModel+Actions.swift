@@ -443,10 +443,10 @@ extension RepositoryModel {
 
     /// Records a branch move; when the uncommitted changes had to stay in the stash list, the
     /// toast says so and ⌘Z brings them back too.
-    func recordMove(label: String, branch: String?, from: String, to: String, kept: String?, toast: String) {
+    func recordMove(label: String, branch: String?, from: String, to: String, kept: String?, toast: String?) {
         if let kept {
             record(.moveBranchKeepingStash(label: label, branch: branch, from: from, to: to, stash: kept),
-                   toast: toast + " · your changes touch the same files, so they’re in Stashes")
+                   toast: toast.map { $0 + " · your changes touch the same files, so they’re in Stashes" })
         } else {
             record(.moveBranch(label: label, branch: branch, from: from, to: to), toast: toast)
         }

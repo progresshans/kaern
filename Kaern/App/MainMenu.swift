@@ -334,6 +334,10 @@ enum MainMenu {
         menu.addItem(MenuAction.item("Interactive Rebase…", enabled: { canAct() && interactiveRebaseBase != nil }) {
             if let base = interactiveRebaseBase { repository?.from("Branch menu") { repository?.askInteractiveRebase(onto: base) } }
         })
+        // The branch you're on, when it's a feature/… branch and the repository has develop.
+        menu.addItem(MenuAction.item("Finish Feature…", enabled: { canAct() && (repository?.status.branch).map { repository?.canFinish($0) == true } == true }) {
+            if let branch = repository?.status.branch { repository?.from("Branch menu") { repository?.askFinish(branch: branch) } }
+        })
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Publish Branch…", enabled: {
             isIdle && repository?.status.branch != nil && repository?.status.upstream == nil && repository?.remotes.isEmpty == false

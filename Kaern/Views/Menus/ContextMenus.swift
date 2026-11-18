@@ -275,6 +275,12 @@ enum ContextMenus {
             })
         }
         menu.addItem(.separator())
+        // Gitflow's Finish (GitKraken's branch menu): on a feature/… branch, in a repository with develop.
+        if r.canFinish(name) {
+            menu.addItem(item("Finish Feature…", hint: elsewhere, enabled: idle && tree == nil) {
+                r.from(source) { r.askFinish(branch: name) }
+            })
+        }
         let noBranch = current == nil
         menu.addItem(item("Merge into “\(cur)”", hint: merged ? "Already merged" : noBranch ? "Not on a branch" : nil,
                           enabled: idle && !isCurrent && !merged && !noBranch) {
