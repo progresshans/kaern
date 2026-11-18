@@ -80,16 +80,16 @@ struct RepoListItem: Identifiable {
 struct RepoAvatar: View {
     let name: String
     var size: CGFloat = 26
-    var radius: CGFloat = 7
+    var radius: CGFloat = z(7)
     var fontSize: CGFloat = 10.5
     var dimmed = false
 
     var body: some View {
         Text(Self.initials(name))
-            .font(.system(size: fontSize, weight: .bold))
+            .font(.system(size: z(fontSize), weight: .bold))
             .tracking(0.2)
             .foregroundStyle(.white)
-            .frame(width: size, height: size)
+            .frame(width: z(size), height: z(size))
             .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Self.color(for: name)))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
             .saturation(dimmed ? 0 : 1)
@@ -136,7 +136,7 @@ private struct RepoStatusMarks: View {
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: z(4)) {
             if item.ahead > 0 {
                 pill("↑\(item.ahead)", fill: K.accentSoft, color: K.accentText)
             }
@@ -145,7 +145,7 @@ private struct RepoStatusMarks: View {
             }
             switch item.mark {
             case .changes:
-                Circle().fill(selected ? Color.white : K.warn).frame(width: 7, height: 7)
+                Circle().fill(selected ? Color.white : K.warn).frame(width: z(7), height: z(7))
             case .warning: badge("!", K.warn)
             case .error: badge("!", K.err)
             case .missing: badge("?", K.label3)
@@ -157,19 +157,19 @@ private struct RepoStatusMarks: View {
 
     private func pill(_ text: String, fill: Color, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: z(10), weight: .bold))
             .monospacedDigit()
             .foregroundStyle(selected ? .white : color)
-            .padding(.horizontal, 5)
-            .frame(height: 16)
+            .padding(.horizontal, z(5))
+            .frame(height: z(16))
             .background(Capsule().fill(selected ? Color.white.opacity(0.22) : fill))
     }
 
     private func badge(_ text: String, _ color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .heavy))
+            .font(.system(size: z(10), weight: .heavy))
             .foregroundStyle(.white)
-            .frame(width: 15, height: 15)
+            .frame(width: z(15), height: z(15))
             .background(Circle().fill(color))
             .overlay(Circle().stroke(selected ? Color.white : .clear, lineWidth: 1.5))
     }
@@ -182,21 +182,21 @@ private struct TreeLines: View {
     let isFirst: Bool
     let isLast: Bool
     let isSelected: Bool
-    var top: CGFloat = 2
-    var firstTop: CGFloat = 10
-    var tick: CGFloat = 10
+    var top: CGFloat = z(2)
+    var firstTop: CGFloat = z(10)
+    var tick: CGFloat = z(10)
 
     var body: some View {
         GeometryReader { geometry in
             let mid = geometry.size.height / 2
             ZStack(alignment: .topLeading) {
                 Rectangle().fill(color)
-                    .frame(width: 2, height: (isLast ? mid : geometry.size.height + top) + (isFirst ? firstTop : top))
-                    .offset(x: -4, y: -(isFirst ? firstTop : top))
+                    .frame(width: z(2), height: (isLast ? mid : geometry.size.height + top) + (isFirst ? firstTop : top))
+                    .offset(x: -z(4), y: -(isFirst ? firstTop : top))
                 UnevenRoundedRectangle(bottomTrailingRadius: 1, topTrailingRadius: 1)
                     .fill(color)
-                    .frame(width: isSelected ? 4 : tick, height: 2)
-                    .offset(x: -4, y: mid - 1)
+                    .frame(width: isSelected ? z(4) : tick, height: z(2))
+                    .offset(x: -z(4), y: mid - 1)
             }
         }
         .allowsHitTesting(false)
@@ -208,7 +208,7 @@ private struct TreeLines: View {
 /// WindowRepoSidebar's named list (228 pt unless dragged): Repositories ‹, a filter, the repositories
 /// in strip order with folder groups as a compact tree, and Add Repository….
 struct RepositoryListView: View {
-    static let width: CGFloat = 228
+    static var width: CGFloat { z(228) }
 
     let window: WindowModel
     @Environment(AppModel.self) private var app
@@ -220,31 +220,31 @@ struct RepositoryListView: View {
         let items = RepoListItem.items(window, app: app)
         let query = filter.trimmingCharacters(in: .whitespaces)
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Text("Repositories").font(.system(size: 12, weight: .bold)).foregroundStyle(K.label2)
-                Text("\(window.tabs.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(K.label3)
+            HStack(spacing: z(6)) {
+                Text("Repositories").font(.system(size: z(12), weight: .bold)).foregroundStyle(K.label2)
+                Text("\(window.tabs.count)").font(.system(size: z(11), weight: .semibold)).foregroundStyle(K.label3)
                 Spacer()
                 ListIconButton(icon: Icons.arrowLeft, label: "Fold the sidebar into icons", tip: "Fold into Icons") {
                     withAnimation(.easeOut(duration: 0.18)) { window.listFolded = true }
                 }
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
-            .frame(height: 36)
-            HStack(spacing: 6) {
+            .padding(.leading, z(14))
+            .padding(.trailing, z(8))
+            .frame(height: z(36))
+            HStack(spacing: z(6)) {
                 Icon(Icons.search(1.4), size: 12).foregroundStyle(K.label2)
                 TextField("Filter", text: $filter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .focused($filterFocused)
                     .onSubmit { openFirstMatch(items, query: query) }
             }
-            .padding(.horizontal, 8)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field)
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
+            .padding(.horizontal, z(8))
+            .frame(height: z(26))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.field)
+                .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
+            .padding(.horizontal, z(10))
+            .padding(.bottom, z(6))
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     let blocks = filtered(window.blocks, items: items, query: query)
@@ -260,16 +260,16 @@ struct RepositoryListView: View {
                     }
                     if blocks.isEmpty {
                         Text(query.isEmpty ? "Open a repository to list it here." : "No repository matches “\(query)”.")
-                            .font(.system(size: 12))
+                            .font(.system(size: z(12)))
                             .foregroundStyle(K.label2)
-                            .padding(EdgeInsets(top: 12, leading: 8, bottom: 0, trailing: 8))
+                            .padding(EdgeInsets(top: z(12), leading: z(8), bottom: 0, trailing: z(8)))
                     }
                 }
-                .padding(EdgeInsets(top: 2, leading: 8, bottom: 8, trailing: 8))
+                .padding(EdgeInsets(top: z(2), leading: z(8), bottom: z(8), trailing: z(8)))
             }
             .scrollIndicators(.automatic)
             AddRepositoryButton(window: window)
-                .padding(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
+                .padding(EdgeInsets(top: z(6), leading: z(8), bottom: z(8), trailing: z(8)))
                 .overlay(alignment: .top) { K.sep.frame(height: 1) }
         }
         .frame(maxWidth: .infinity)
@@ -343,8 +343,8 @@ private struct ListIconButton: View {
         Button(action: action) {
             Icon(icon, size: 12)
                 .foregroundStyle(hovering ? K.label : K.label2)
-                .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+                .frame(width: z(24), height: z(24))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering ? K.hover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -367,7 +367,7 @@ private struct GroupHeaderRow: View {
         Button {
             withAnimation(.easeOut(duration: 0.15)) { window.toggleCollapsed(group.id) }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 Icon(Icons.chevronDown, size: 9)
                     .foregroundStyle(K.label2)
                     .rotationEffect(.degrees(isOpen ? 0 : -90))
@@ -380,21 +380,21 @@ private struct GroupHeaderRow: View {
                 Text("\(count)")
                     .font(KFont.weighted(10.5, 0.35))
                     .foregroundStyle(K.label2)
-                    .padding(.horizontal, 5)
-                    .frame(minWidth: 18, minHeight: 16)
+                    .padding(.horizontal, z(5))
+                    .frame(minWidth: z(18), minHeight: z(16))
                     .background(Capsule().fill(K.chip2))
                 if let attention {
-                    Circle().fill(attention).frame(width: 7, height: 7)
+                    Circle().fill(attention).frame(width: z(7), height: z(7))
                 }
             }
-            .padding(.leading, 4)
-            .padding(.trailing, 6)
-            .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+            .padding(.leading, z(4))
+            .padding(.trailing, z(6))
+            .frame(height: z(28))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.top, 6)
+        .padding(.top, z(6))
         .onHover { hovering = $0 }
         .contextMenu { RepoListMenus.group(group, window: window) }
         .accessibilityLabel("\(group.name), \(count) repositories")
@@ -417,16 +417,16 @@ private struct ListRow: View {
         Button {
             window.activate(item.tab.id)
         } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: z(9)) {
                 RepoAvatar(name: item.tab.name, dimmed: missing)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(selected ? Color.white.opacity(0.75) : .clear, lineWidth: 1.5))
+                    .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).stroke(selected ? Color.white.opacity(0.75) : .clear, lineWidth: 1.5))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.label)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: z(13), weight: .semibold))
                         .foregroundStyle(selected ? .white : (missing ? K.label3 : K.label))
                     if showsBranch {
                         Text(item.branch)
-                            .font(.system(size: 11))
+                            .font(.system(size: z(11)))
                             .foregroundStyle(selected ? .white.opacity(0.82) : (missing ? K.label3 : K.label2))
                     }
                 }
@@ -435,22 +435,22 @@ private struct ListRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 RepoStatusMarks(item: item, selected: selected)
             }
-            .padding(.horizontal, 8)
-            .frame(height: showsBranch ? 42 : 32)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(selected ? K.sel : (hovering ? K.hover : .clear)))
+            .padding(.horizontal, z(8))
+            .frame(height: showsBranch ? z(42) : z(32))
+            .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(selected ? K.sel : (hovering ? K.hover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.leading, tree == nil ? 0 : 12)
+        .padding(.leading, tree == nil ? 0 : z(12))
         .overlay(alignment: .leading) {
             if let tree {
                 TreeLines(color: tree.color, isFirst: tree.first, isLast: tree.last, isSelected: selected)
-                    .frame(width: 14)
-                    .padding(.leading, 12)
+                    .frame(width: z(14))
+                    .padding(.leading, z(12))
                     .padding(.vertical, 0)
             }
         }
-        .padding(.top, 2)
+        .padding(.top, z(2))
         .onHover { hovering = $0 }
         .contextMenu { RepoListMenus.repository(item.tab, window: window, app: app) }
         .help("\(item.tab.name) — \(Formatters.abbreviatedPath(item.tab.path))")
@@ -473,16 +473,16 @@ private struct AddRepositoryButton: View {
             Group {
                 if compact {
                     Icon(Icons.plus, size: 13)
-                        .frame(width: 36, height: 36)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 1))
+                        .frame(width: z(36), height: z(36))
+                        .background(RoundedRectangle(cornerRadius: z(10), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 1))
                 } else {
-                    HStack(spacing: 7) {
+                    HStack(spacing: z(7)) {
                         Icon(Icons.plus, size: 12)
-                        Text("Add Repository…").font(.system(size: 12.5))
+                        Text("Add Repository…").font(.system(size: z(12.5)))
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .frame(height: 28)
+                    .padding(.horizontal, z(8))
+                    .frame(height: z(28))
                 }
             }
             .foregroundStyle(hovering ? K.label : K.label2)
@@ -515,12 +515,12 @@ struct RepositoryRailView: View {
             ListIconButton(icon: Icons.arrowRight, label: "Unfold the sidebar to show names", tip: "Show Names") {
                 withAnimation(.easeOut(duration: 0.18)) { window.listFolded = false }
             }
-            .padding(.top, 6)
-            .padding(.bottom, 2)
+            .padding(.top, z(6))
+            .padding(.bottom, z(2))
             .disabled(isAutomatic)
             .opacity(isAutomatic ? 0.35 : 1)
             ScrollView {
-                VStack(spacing: 6) {
+                VStack(spacing: z(6)) {
                     ForEach(window.blocks) { block in
                         switch block {
                         case .tab(let tab):
@@ -530,15 +530,15 @@ struct RepositoryRailView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, z(4))
                 .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.never)
             AddRepositoryButton(window: window, compact: true)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
+                .padding(.top, z(6))
+                .padding(.bottom, z(10))
         }
-        .frame(width: 60)
+        .frame(width: z(60))
         .background(K.band)
         .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
     }
@@ -554,26 +554,26 @@ private struct RailTile: View {
     var body: some View {
         let selected = item.tab.id == window.activeTabID
         Button { window.activate(item.tab.id) } label: {
-            RepoAvatar(name: item.tab.name, size: 32, radius: 9, fontSize: 11.5, dimmed: item.mark == .missing)
+            RepoAvatar(name: item.tab.name, size: 32, radius: z(9), fontSize: 11.5, dimmed: item.mark == .missing)
                 .overlay {
                     if selected {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(K.accent, lineWidth: 2).padding(-4)
+                        RoundedRectangle(cornerRadius: z(11), style: .continuous).stroke(K.accent, lineWidth: 2).padding(-z(4))
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     if let color = dotColor {
-                        Circle().fill(color).frame(width: 10, height: 10)
+                        Circle().fill(color).frame(width: z(10), height: z(10))
                             .overlay(Circle().stroke(K.band, lineWidth: 2))
-                            .offset(x: 2, y: -2)
+                            .offset(x: z(2), y: -z(2))
                     }
                 }
-                .frame(width: 40, height: 40)
+                .frame(width: z(40), height: z(40))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .overlay(alignment: .leading) {
             if selected {
-                RoundedRectangle(cornerRadius: 2).fill(K.label).frame(width: 4, height: 20).offset(x: -10)
+                RoundedRectangle(cornerRadius: z(2)).fill(K.label).frame(width: z(4), height: z(20)).offset(x: -z(10))
             }
         }
         .contextMenu { RepoListMenus.repository(item.tab, window: window, app: app) }
@@ -601,19 +601,19 @@ private struct RailGroup: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: z(6)) {
             Button {
                 withAnimation(.easeOut(duration: 0.15)) { window.toggleCollapsed(group.id) }
             } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: z(3)) {
                     Icon(Icons.folderFilled, size: 16).foregroundStyle(group.color.color)
-                    Text("\(members.count)").font(.system(size: 10, weight: .bold)).foregroundStyle(K.label2)
+                    Text("\(members.count)").font(.system(size: z(10), weight: .bold)).foregroundStyle(K.label2)
                 }
-                .frame(width: 40, height: 26)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? K.hover : .clear))
+                .frame(width: z(40), height: z(26))
+                .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(hovering ? K.hover : .clear))
                 .overlay(alignment: .topTrailing) {
                     if members.contains(where: { $0.needsAttention || $0.mark == .changes }) {
-                        Circle().fill(members.contains { $0.mark == .error } ? K.err : K.warn).frame(width: 7, height: 7).offset(x: -3, y: 2)
+                        Circle().fill(members.contains { $0.mark == .error } ? K.err : K.warn).frame(width: z(7), height: z(7)).offset(x: -z(3), y: z(2))
                     }
                 }
                 .contentShape(Rectangle())
@@ -628,9 +628,9 @@ private struct RailGroup: View {
                 RailTile(item: active, window: window)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, z(2))
         .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2).fill(group.color.color).frame(width: 3).padding(.vertical, 4).offset(x: -7)
+            RoundedRectangle(cornerRadius: z(2)).fill(group.color.color).frame(width: z(3)).padding(.vertical, z(4)).offset(x: -z(7))
         }
     }
 }
@@ -700,41 +700,41 @@ struct RepositoryPopover: View {
         let items = RepoListItem.items(window, app: app)
         let rows = visibleRows(items)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 Icon(Icons.search(1.4), size: 12).foregroundStyle(K.label2)
                 TextField("Filter repositories", text: $filter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                     .focused($focused)
                     .onSubmit { pick(highlighted ?? rows.compactMap(\.item).first?.id) }
                     .onKeyPress(.downArrow) { step(1, rows); return .handled }
                     .onKeyPress(.upArrow) { step(-1, rows); return .handled }
                     .onKeyPress(.escape) { close(); return .handled }
-                Text("↑↓ Return").font(.system(size: 10.5)).foregroundStyle(K.label3)
+                Text("↑↓ Return").font(.system(size: z(10.5))).foregroundStyle(K.label3)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field)
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
-            .padding(EdgeInsets(top: 2, leading: 2, bottom: 6, trailing: 2))
+            .padding(.horizontal, z(9))
+            .frame(height: z(30))
+            .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field)
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
+            .padding(EdgeInsets(top: z(2), leading: z(2), bottom: z(6), trailing: z(2)))
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         if let group = row.group {
-                            HStack(spacing: 6) {
+                            HStack(spacing: z(6)) {
                                 Icon(Icons.folderFilled, size: 13).foregroundStyle(group.color.color)
                                 Text(group.name)
                                 Text("\(row.count)")
                                     .font(KFont.weighted(10.5, 0.35))
-                                    .padding(.horizontal, 5)
-                                    .frame(minWidth: 18, minHeight: 16)
+                                    .padding(.horizontal, z(5))
+                                    .frame(minWidth: z(18), minHeight: z(16))
                                     .background(Capsule().fill(K.chip2))
                             }
                             .font(KFont.weighted(11.5, 0.35))
                             .foregroundStyle(K.label2)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .padding(.top, 4)
+                            .padding(.horizontal, z(8))
+                            .frame(height: z(24))
+                            .padding(.top, z(4))
                         } else if let item = row.item {
                             PopoverRow(item: item, isHighlighted: item.id == (highlighted ?? window.activeTabID),
                                        isCurrent: item.id == window.activeTabID, tree: row.tree) { pick(item.id) }
@@ -742,23 +742,23 @@ struct RepositoryPopover: View {
                         }
                     }
                     if rows.isEmpty {
-                        Text("No repository matches “\(filter)”.").font(.system(size: 12)).foregroundStyle(K.label2).padding(12)
+                        Text("No repository matches “\(filter)”.").font(.system(size: z(12))).foregroundStyle(K.label2).padding(z(12))
                     }
                 }
             }
-            .frame(maxHeight: 520)
+            .frame(maxHeight: z(520))
             .fixedSize(horizontal: false, vertical: true)
             VStack(spacing: 0) {
                 MenuLikeButton(title: "Open Repository…", shortcut: "⌘O") { close(); app.showOpenPanel(for: window) }
                 MenuLikeButton(title: "Clone Repository…", shortcut: "⇧⌘C") { close(); app.showClone(in: window) }
                 MenuLikeButton(title: "Repositories Window", shortcut: "⇧⌘R") { close(); RepositoriesWindowController.shared.show() }
             }
-            .padding(.top, 4)
+            .padding(.top, z(4))
             .overlay(alignment: .top) { K.sep.frame(height: 1) }
-            .padding(.top, 4)
+            .padding(.top, z(4))
         }
-        .padding(6)
-        .frame(width: 356)
+        .padding(z(6))
+        .frame(width: z(356))
         .onAppear { DispatchQueue.main.async { focused = true } }
         .onChange(of: filter) { highlighted = rows.compactMap(\.item).first?.id }
     }
@@ -819,34 +819,34 @@ private struct PopoverRow: View {
     var body: some View {
         let missing = item.mark == .missing
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: z(9)) {
                 RepoAvatar(name: item.tab.name, dimmed: missing)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.label).font(.system(size: 13, weight: .semibold))
+                    Text(item.label).font(.system(size: z(13), weight: .semibold))
                         .foregroundStyle(isHighlighted ? .white : (missing ? K.label3 : K.label))
-                    Text(item.branch).font(.system(size: 11))
+                    Text(item.branch).font(.system(size: z(11)))
                         .foregroundStyle(isHighlighted ? .white.opacity(0.82) : (missing ? K.label3 : K.label2))
                 }
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 RepoStatusMarks(item: item, selected: isHighlighted)
                 Text(isCurrent ? "✓" : "")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: z(12), weight: .bold))
                     .foregroundStyle(isHighlighted ? .white : K.accent)
-                    .frame(width: 14)
+                    .frame(width: z(14))
             }
-            .padding(.horizontal, 8)
-            .frame(height: 38)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isHighlighted ? K.sel : .clear))
+            .padding(.horizontal, z(8))
+            .frame(height: z(38))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(isHighlighted ? K.sel : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.leading, tree == nil ? 0 : 18)
+        .padding(.leading, tree == nil ? 0 : z(18))
         .overlay(alignment: .leading) {
             if let tree {
                 TreeLines(color: tree.color, isFirst: tree.first, isLast: tree.last, isSelected: isHighlighted, top: 0, firstTop: 4)
-                    .frame(width: 14)
-                    .padding(.leading, 18)
+                    .frame(width: z(14))
+                    .padding(.leading, z(18))
             }
         }
         .accessibilityLabel("\(item.tab.name), \(item.summary)")
@@ -863,14 +863,14 @@ private struct MenuLikeButton: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(title).font(.system(size: 13))
+                Text(title).font(.system(size: z(13)))
                 Spacer()
-                Text(shortcut).font(.system(size: 12)).foregroundStyle(hovering ? .white.opacity(0.85) : K.label3)
+                Text(shortcut).font(.system(size: z(12))).foregroundStyle(hovering ? .white.opacity(0.85) : K.label3)
             }
             .foregroundStyle(hovering ? .white : K.label)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(hovering ? K.accent : .clear))
+            .padding(.horizontal, z(10))
+            .frame(height: z(26))
+            .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(hovering ? K.accent : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

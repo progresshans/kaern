@@ -26,15 +26,16 @@ struct TabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: window.isFullScreen ? 10 : 78)
+                // The lights keep their size at any zoom: 78 pt is their room, not a size of the design.
+                .frame(width: window.isFullScreen ? z(10) : 78)
                 .contentShape(Rectangle())
                 .windowDragArea()
             GeometryReader { geometry in
                 strip(available: geometry.size.width)
             }
             NewTabButton(window: window)
-                .padding(.leading, 4)
-                .padding(.trailing, 6)
+                .padding(.leading, z(4))
+                .padding(.trailing, z(6))
         }
         .frame(height: KMetric.tabRow)
         .background {
@@ -62,7 +63,7 @@ struct TabBar: View {
         HStack(spacing: 0) {
             if layout.overflows {
                 ArrowButton(icon: Icons.arrowLeft, label: "Scroll tabs left", disabled: scrollX <= 1) { page(-1) }
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, z(2))
             }
             ScrollView(.horizontal) {
                 ZStack(alignment: .bottomLeading) {
@@ -93,7 +94,7 @@ struct TabBar: View {
             if layout.overflows {
                 ArrowButton(icon: Icons.arrowRight, label: "Scroll tabs right",
                             disabled: scrollX + viewport >= layout.contentWidth - 1) { page(1) }
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, z(2))
             }
         }
         .onChange(of: window.activeTabID) { reveal(in: layout) }
@@ -143,7 +144,7 @@ struct TabBar: View {
             startPoint: edge == .leading ? .leading : .trailing,
             endPoint: edge == .leading ? .trailing : .leading
         )
-        .frame(width: 28)
+        .frame(width: z(28))
         .padding(.bottom, 1)
         .allowsHitTesting(false)
     }
@@ -164,7 +165,7 @@ struct TabBar: View {
     /// Scrolls so the selected tab (or the chip of its folded group) clears the fades.
     private func reveal(in layout: StripModel) {
         guard layout.overflows, let unit = layout.revealUnit(active: window.activeTabID) else { return }
-        let pad: CGFloat = 32
+        let pad: CGFloat = z(32)
         let visibleWidth = viewport > 0 ? viewport : layout.viewportEstimate
         if unit.x < scrollX + pad {
             withAnimation(.easeOut(duration: 0.2)) { scrollPosition.scrollTo(x: max(0, unit.x - pad)) }

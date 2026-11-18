@@ -38,23 +38,23 @@ private struct FSMonitorCard: View {
     let repository: RepositoryModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: z(8)) {
             Text("\(Text("git status takes \(seconds) in this repository.").bold()) Git’s file system monitor makes it close to instant.")
-                .font(.system(size: 12.5))
-                .lineSpacing(2)
+                .font(.system(size: z(12.5)))
+                .lineSpacing(z(2))
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 PrimaryButton(title: "Turn On") { repository.from("File system monitor tip") { repository.turnOnFSMonitor() } }
                     .disabled(repository.activity != nil)
                 GhostButton(title: "Not Now") { repository.dismissFSMonitorSuggestion() }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.accentSoft)
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
-        .padding(EdgeInsets(top: 10, leading: 10, bottom: 0, trailing: 10))
+        .padding(.horizontal, z(12))
+        .padding(.vertical, z(10))
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.accentSoft)
+            .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
+        .padding(EdgeInsets(top: z(10), leading: z(10), bottom: 0, trailing: z(10)))
     }
 
     private var seconds: String {
@@ -86,13 +86,13 @@ private struct WorkingCopyPanel: View {
                 }
                 BigChangesList(repository: repository, big: big, tree: $tree)
             } else if entries.isEmpty {
-                VStack(spacing: 6) {
-                    Text("Working tree clean").font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label2)
+                VStack(spacing: z(6)) {
+                    Text("Working tree clean").font(.system(size: z(13), weight: .semibold)).foregroundStyle(K.label2)
                     Text("Changes you make in this folder show up here.")
-                        .font(.system(size: 12)).foregroundStyle(K.label2).multilineTextAlignment(.center)
+                        .font(.system(size: z(12))).foregroundStyle(K.label2).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(20)
+                .padding(z(20))
             } else {
                 // In the order they show (a tree sorts them by folder).
                 let unstaged = FileList.files(entries.filter(\.hasUnstagedChanges), tree: tree)
@@ -110,7 +110,7 @@ private struct WorkingCopyPanel: View {
                             FileList(repository: repository, entries: staged, staged: true, tree: tree,
                                      current: current?.staged == true ? current?.path : nil) { open($0, staged: true) }
                         }
-                        .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+                        .padding(EdgeInsets(top: 0, leading: z(8), bottom: z(8), trailing: z(8)))
                     }
                     .contextClip()
                     .arrowKeySteps($filesFocused) { step($0, unstaged: unstaged, staged: staged, proxy: proxy) }
@@ -159,31 +159,31 @@ private struct WorkingCopyPanel: View {
 
     /// `.ph`: "13 file changes on [branch]", then Path / Tree and Review All.
     private func header(count: Int) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: z(9)) {
             let branch = repository.currentBranch ?? (repository.operation?.kind == .rebase ? repository.operation?.branch : nil)
-            FlowLayout(spacing: 5) {
+            FlowLayout(spacing: z(5)) {
                 Text((count == 0 ? "No changes" : Formatters.count(count, "file change", "file changes")) + (branch == nil ? "" : " on"))
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .frame(height: 20)
+                    .font(.system(size: z(12.5), weight: .semibold))
+                    .frame(height: z(20))
                 if let branch {
                     Text(branch)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: z(11.5), weight: .semibold))
                         .foregroundStyle(K.accentText)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .padding(.horizontal, 7)
-                        .frame(height: 20)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.lt1))
+                        .padding(.horizontal, z(7))
+                        .frame(height: z(20))
+                        .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.lt1))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 SegmentedChoice(options: [(false, "Path"), (true, "Tree")], selection: $tree, label: "File list style")
                 Spacer(minLength: 0)
                 if repository.bigChanges != nil {
                     // Thousands of files: how long git status takes instead of Review All.
                     Text(bigNote(count: count))
-                        .font(.system(size: 11))
+                        .font(.system(size: z(11)))
                         .foregroundStyle(K.label2)
                         .lineLimit(1)
                 } else {
@@ -192,7 +192,7 @@ private struct WorkingCopyPanel: View {
                 }
             }
         }
-        .padding(EdgeInsets(top: 12, leading: 14, bottom: 8, trailing: 14))
+        .padding(EdgeInsets(top: z(12), leading: z(14), bottom: z(8), trailing: z(14)))
     }
 }
 
@@ -205,9 +205,9 @@ struct PanelSectionHeader: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             Text(title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
                 .allowsTightening(true)
@@ -215,20 +215,20 @@ struct PanelSectionHeader: View {
             Spacer(minLength: 0)
             Button(action: run) {
                 Text(action)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: z(11.5), weight: .semibold))
                     .foregroundStyle(K.accentText)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(hovering && isEnabled ? K.accentSoft : .clear))
+                    .padding(.horizontal, z(5))
+                    .padding(.vertical, z(2))
+                    .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(hovering && isEnabled ? K.accentSoft : .clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .opacity(isEnabled ? 1 : 0.4)
             .onHover { hovering = $0 }
         }
-        .padding(.horizontal, 6)
-        .frame(height: 28)
-        .padding(.top, 4)
+        .padding(.horizontal, z(6))
+        .frame(height: z(28))
+        .padding(.top, z(4))
     }
 }
 
@@ -246,18 +246,18 @@ private struct FileList: View {
         ForEach(Self.rows(entries, tree: tree, root: repository.name)) { row in
             switch row.kind {
             case .folder(let label):
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Icon(Icons.folder, size: 13)
                     Text(label).lineLimit(1).truncationMode(.middle)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
-                .padding(.horizontal, 6)
-                .frame(height: 24)
+                .padding(.horizontal, z(6))
+                .frame(height: z(24))
             case .file(let entry):
                 PanelFileRow(repository: repository, entry: entry, staged: staged, showsDirectory: !tree,
                              isReviewed: entry.path == current) { open(entry.path) }
-                    .padding(.leading, tree ? 14 : 0)
+                    .padding(.leading, tree ? z(14) : 0)
                     .id(Self.rowID(entry.path, staged: staged))
             }
         }
@@ -323,19 +323,19 @@ private struct PanelFileRow: View {
 
     var body: some View {
         let stat = staged ? repository.lineStats.staged[entry.path] : repository.lineStats.unstaged[entry.path]
-        HStack(spacing: 2) {
+        HStack(spacing: z(2)) {
             StageCheckbox(isOn: staged, label: (staged ? "Unstage " : "Stage ") + entry.path) {
                 if staged { repository.unstage([entry.path]) } else { repository.stage([entry.path]) }
             }
             .disabled(!repository.canChangeIndex)
             Button(action: open) {
-                HStack(spacing: 7) {
+                HStack(spacing: z(7)) {
                     StatusTile(letter: letter, selected: isReviewed)
                     FilePathText(path: entry.path, showsDirectory: showsDirectory, selected: isReviewed)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if entry.stageState == .partial {
                         Text("partial")
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: z(10.5), weight: .semibold))
                             .foregroundStyle(isReviewed ? .white.opacity(0.85) : K.accentText)
                     }
                     let marks = FileMarks(lfs: repository.workingMarks.lfsSizes[entry.path],
@@ -348,10 +348,10 @@ private struct PanelFileRow: View {
                         marks
                     }
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, z(6))
                 .frame(height: KMetric.fileRow)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: z(6), style: .continuous)
                         .fill(isReviewed ? K.sel : (hovering ? K.hover : .clear))
                 )
                 .contentShape(Rectangle())
@@ -359,7 +359,7 @@ private struct PanelFileRow: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help(entry.path)
-            .contextTarget(.file(path: entry.path, staged: staged), ring: ContextRing(radius: 6, inset: 0))
+            .contextTarget(.file(path: entry.path, staged: staged), ring: ContextRing(radius: z(6), inset: 0))
         }
     }
 
@@ -379,48 +379,48 @@ private struct Composer: View {
     @FocusState private var descriptionFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: z(7)) {
             Toggle(isOn: Binding(get: { repository.composer.amend }, set: { repository.setAmend($0) })) {
                 Text("Amend previous commit")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
             }
             .toggleStyle(.checkbox)
             .controlSize(.small)
             .disabled(repository.status.headID == nil)
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 TextField("Commit summary", text: $repository.composer.summary)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: z(13), weight: .semibold))
                     .onSubmit { descriptionFocused = true }
                 SummaryCounter(count: repository.composer.summary.count)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 30)
+            .padding(.horizontal, z(9))
+            .frame(height: z(30))
             .background(FieldBackground())
             TextEditor(text: $repository.composer.body)
-                .font(.system(size: 12))
-                .lineSpacing(3)
+                .font(.system(size: z(12)))
+                .lineSpacing(z(3))
                 .scrollContentBackground(.hidden)
                 .focused($descriptionFocused)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 5)
-                .frame(height: 64)
+                .padding(.horizontal, z(4))
+                .padding(.vertical, z(5))
+                .frame(height: z(64))
                 .background(FieldBackground())
                 .overlay(alignment: .topLeading) {
                     if repository.composer.body.isEmpty {
                         Text("Description")
-                            .font(.system(size: 12))
+                            .font(.system(size: z(12)))
                             .foregroundStyle(K.label2)
-                            .padding(.leading, 9)
-                            .padding(.top, 7)
+                            .padding(.leading, z(9))
+                            .padding(.top, z(7))
                             .allowsHitTesting(false)
                     }
                 }
             HStack(spacing: 0) {
                 Button { repository.commit() } label: {
                     Text(repository.commitButtonTitle)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: z(13), weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
@@ -437,7 +437,7 @@ private struct Composer: View {
                 } label: {
                     Icon(Icons.chevronDown, size: 11)
                         .foregroundStyle(.white)
-                        .frame(width: 30, height: 32)
+                        .frame(width: z(30), height: z(32))
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.button)
@@ -447,11 +447,11 @@ private struct Composer: View {
                 .overlay(alignment: .leading) { Color.white.opacity(0.3).frame(width: 1) }
                 .accessibilityLabel("Commit options")
             }
-            .frame(height: 32)
+            .frame(height: z(32))
             .background(K.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: z(8), style: .continuous))
         }
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 12, trailing: 12))
+        .padding(EdgeInsets(top: z(10), leading: z(12), bottom: z(12), trailing: z(12)))
         .overlay(alignment: .top) { K.sep.frame(height: 1) }
     }
 }
@@ -459,9 +459,9 @@ private struct Composer: View {
 /// `--field` with the 0.5 pt `--sepStrong` ring and 7 pt corners.
 private struct FieldBackground: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        RoundedRectangle(cornerRadius: z(7), style: .continuous)
             .fill(K.field)
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
     }
 }
 
@@ -506,7 +506,7 @@ struct CommitInfoView: View {
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: z(8)) {
                     Text("commit").foregroundStyle(K.label2)
                     Text(details.commit.shortID).font(KFont.hash).foregroundStyle(K.label)
                         .textSelection(.enabled)
@@ -514,9 +514,9 @@ struct CommitInfoView: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(details.commit.id, forType: .string)
                     } label: {
-                        Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18).contentShape(Rectangle())
+                        Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: z(18), height: z(18)).contentShape(Rectangle())
                     }
-                    .buttonStyle(HoverPlateStyle(radius: 5))
+                    .buttonStyle(HoverPlateStyle(radius: z(5)))
                     .help("Copy the full commit hash")
                     ForEach(details.commit.parents, id: \.self) { parent in
                         Text("parent").foregroundStyle(K.label2)
@@ -532,39 +532,39 @@ struct CommitInfoView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .font(.system(size: 11.5))
-                HStack(spacing: 9) {
+                .font(.system(size: z(11.5)))
+                HStack(spacing: z(9)) {
                     Text(details.commit.author.initials)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: z(11), weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 28, height: 28)
+                        .frame(width: z(28), height: z(28))
                         .background(Circle().fill(AvatarPalette.color(for: details.commit.author.email.isEmpty
                             ? details.commit.author.name : details.commit.author.email)))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(details.commit.author.name).font(.system(size: 13, weight: .semibold))
+                        Text(details.commit.author.name).font(.system(size: z(13), weight: .semibold))
                         Text("authored \(Formatters.authoredAt(details.commit.author.date))")
-                            .font(.system(size: 11.5)).foregroundStyle(K.label2)
+                            .font(.system(size: z(11.5))).foregroundStyle(K.label2)
                     }
                 }
-                .padding(.top, 12)
+                .padding(.top, z(12))
                 // ScreenMarks › 서명: who signed it (the selected commit's panel).
                 if let signed = repository.selectedSignature, signed.id == details.commit.id {
                     SignatureCard(repository: repository, signed: signed, committer: details.committer)
                 }
                 Text(details.commit.subject)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineSpacing(2)
-                    .padding(.top, 12)
+                    .font(.system(size: z(14), weight: .semibold))
+                    .lineSpacing(z(2))
+                    .padding(.top, z(12))
                     .textSelection(.enabled)
                 if !details.body.isEmpty {
                     Text(details.body)
-                        .font(.system(size: 13))
+                        .font(.system(size: z(13)))
                         .foregroundStyle(K.label2)
-                        .lineSpacing(2)
-                        .padding(.top, 5)
+                        .lineSpacing(z(2))
+                        .padding(.top, z(5))
                         .textSelection(.enabled)
                 }
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Text(files.count == 1 ? "1 file changed" : "\(files.count.formatted()) files changed")
                     LineCounts(additions: files.reduce(0) { $0 + ($1.stat?.additions ?? 0) },
                                deletions: files.reduce(0) { $0 + ($1.stat?.deletions ?? 0) })
@@ -574,21 +574,21 @@ struct CommitInfoView: View {
                             .disabled(files.isEmpty)
                     }
                 }
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(K.label2)
-                .padding(.top, 16)
-                .padding(.bottom, 4)
+                .padding(.top, z(16))
+                .padding(.bottom, z(4))
                 ForEach(files) { file in
                     CommitFileRow(file: file, isHighlighted: file.path == highlightedPath,
                                   marks: repository.commitMarks?.id == details.commit.id ? repository.commitMarks : nil) {
                         filesFocused = true
                         openFile(file)
                     }
-                    .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: 6, inset: 0))
+                    .contextTarget(.commitFile(path: file.path, commit: details.commit.id), ring: ContextRing(radius: z(6), inset: 0))
                     .id("file:" + file.path)
                 }
             }
-            .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+            .padding(EdgeInsets(top: z(14), leading: z(14), bottom: z(10), trailing: z(14)))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contextClip()
@@ -640,7 +640,7 @@ private struct CommitFileRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 StatusTile(letter: file.submodule != nil ? "S" : file.kind.letter, selected: isHighlighted)
                 FilePathText(path: file.path, selected: isHighlighted)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -652,10 +652,10 @@ private struct CommitFileRow: View {
                     fileMarks
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, z(6))
             .frame(height: KMetric.fileRow)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: z(6), style: .continuous)
                     .fill(isHighlighted ? K.sel : (hovering ? K.hover : .clear))
             )
             .contentShape(Rectangle())

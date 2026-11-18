@@ -29,8 +29,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.collectionBehavior.insert(.fullScreenPrimary)
-        // ScreenNarrow's narrowest window.
-        window.minSize = NSSize(width: 760, height: 520)
+        window.minSize = Self.minimumSize
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x323232) : K.hex(0xececec) }
         window.isReleasedWhenClosed = false
 
@@ -41,6 +40,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             .environment(tracker)
             .environment(screens)
             .takesDriverClicksInBackground()
+            .zoomed()
         let hosting = KaernHostingView(rootView: root)
         hosting.sizingOptions = []
         // The tabs' screens are views of their own behind this one (`TabScreensView`).
@@ -59,6 +59,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                     .environment(app)
                     .environment(tracker)
                     .takesDriverClicksInBackground()
+                    .zoomed()
             )
         }
         // A press on the screen's place is the screen's, unless a sheet of the window's covers it.
@@ -96,7 +97,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Tabs: the lights sit in the 36 pt tab row. Sidebar and Toolbar: in the toolbar, which is
     /// the title bar (52 pt, 58 with names).
+    /// ScreenNarrow's narrowest window, at the zoom.
+    static var minimumSize: NSSize { NSSize(width: z(760), height: z(520)) }
+
+    /// The zoom changed (or any setting): the narrowest window follows it, and a window narrower
+    /// than that grows to it from its top left.
+    private func applyZoom() {
+        UIScale.load()
+        guard let window, window.minSize != Self.minimumSize else { return }
+        let minimum = Self.minimumSize
+        window.minSize = minimum
+        guard !window.styleMask.contains(.fullScreen),
+              window.frame.width < minimum.width || window.frame.height < minimum.height else { return }
+        var frame = window.frame
+        let top = frame.maxY
+        frame.size = NSSize(width: max(frame.width, minimum.width), height: max(frame.height, minimum.height))
+        frame.origin.y = top - frame.height
+        window.setFrame(frame, display: true)
+    }
+
     private func applyChrome() {
+        applyZoom()
         let style = ToolbarStyle(rawValue: UserDefaults.kaern.string(forKey: SettingsKey.toolbarStyle) ?? "") ?? .iconOnly
         let tabs = AppSettings.repositorySwitching == .tabs
         let center = tabs ? KMetric.tabRow / 2 : style.titleBarHeight / 2

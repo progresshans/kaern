@@ -459,7 +459,7 @@ private struct HistoryEnd: View {
 
     var body: some View {
         if repository.isLoadingMoreHistory {
-            ProgressView().controlSize(.small).padding(8)
+            ProgressView().controlSize(.small).padding(z(8))
         } else if repository.isShallow, !repository.hasMoreHistory, hasRows {
             ShallowEndRow(repository: repository, columns: columns,
                           lane: repository.graph.last?.lane ?? 0)
@@ -484,19 +484,19 @@ private struct ShallowEndRow: View {
                 path.addLine(to: CGPoint(x: x, y: 30))
             }
             .stroke(K.lane(lane), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [3, 3]))
-            .frame(width: columns.graph, height: 40, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 8) {
+            .frame(width: columns.graph, height: z(40), alignment: .topLeading)
+            VStack(alignment: .leading, spacing: z(8)) {
                 Text("History stops here. This clone has the newest \(count.formatted()) \(count == 1 ? "commit" : "commits") (git clone --depth \(count)).")
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .foregroundStyle(K.label2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let activity = repository.activity, activity.statusText.hasPrefix("Fetching") {
-                    HStack(spacing: 8) {
+                    HStack(spacing: z(8)) {
                         ProgressView().controlSize(.small)
-                        Text(activity.statusText).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                        Text(activity.statusText).font(.system(size: z(11.5))).foregroundStyle(K.label2)
                     }
                 }
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     GhostButton(title: "Fetch 100 More") {
                         repository.from("History") { repository.fetchMoreHistory(100) }
                     }
@@ -506,11 +506,11 @@ private struct ShallowEndRow: View {
                 }
                 .disabled(repository.activity != nil || repository.remotes.isEmpty)
             }
-            .padding(EdgeInsets(top: 10, leading: 12, bottom: 0, trailing: 14))
+            .padding(EdgeInsets(top: z(10), leading: z(12), bottom: 0, trailing: z(14)))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.bottom, 14)
-        .frame(minHeight: 92, alignment: .top)
+        .padding(.bottom, z(14))
+        .frame(minHeight: z(92), alignment: .top)
         .overlay(alignment: .top) {
             // `border-top: 1px dashed`.
             GeometryReader { proxy in
@@ -557,13 +557,13 @@ struct HistoryColumns: Equatable {
     /// The gray description after the subject (hidden under 860 pt).
     var showsDescriptions = true
 
+    /// `width` and `automaticGraph` are what's on screen. The stored widths and the widths the
+    /// columns fold at are the design's: the columns are worked out at actual size, then set at the zoom.
     init(width: CGFloat, stored: ColumnWidths, automaticGraph: CGFloat, tier: NarrowTier = .wide) {
-        // Whole points: a column dragged to 163.3 would put every row's lanes and texts between
-        // pixels (the header's borders too).
-        ref = stored.ref.rounded()
-        graph = (stored.graph > 0 ? stored.graph : automaticGraph).rounded()
-        date = stored.date.rounded()
-        sha = stored.sha.rounded()
+        let scale = UIScale.value
+        let width = width / scale
+        var ref = CGFloat(stored.ref)
+        var date = CGFloat(stored.date)
         // The window folds in the Narrow board's order; the history's own width still decides
         // when panels leave it little room.
         if tier >= .shortDates {
@@ -574,10 +574,17 @@ struct HistoryColumns: Equatable {
         if tier >= .compact { showsDescriptions = false }
         showsSHA = tier < .noHash
         showsDate = tier < .compact
-        guard width > 0 else { return }
-        showsSHA = showsSHA && width >= 734
-        showsDate = showsDate && width >= 560
-        if width < 520 { ref = min(ref, 124) }
+        if width > 0 {
+            showsSHA = showsSHA && width >= 734
+            showsDate = showsDate && width >= 560
+            if width < 520 { ref = min(ref, 124) }
+        }
+        // Whole points: a column dragged to 163.3 would put every row's lanes and texts between
+        // pixels (the header's borders too).
+        self.ref = (ref * scale).rounded()
+        graph = (stored.graph > 0 ? CGFloat(stored.graph) * scale : automaticGraph).rounded()
+        self.date = (date * scale).rounded()
+        sha = (CGFloat(stored.sha) * scale).rounded()
     }
 }
 
@@ -592,25 +599,25 @@ private struct HistoryHeader: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Text("Branch / Tag").padding(.leading, 10).frame(width: columns.ref, alignment: .leading)
+            Text("Branch / Tag").padding(.leading, z(10)).frame(width: columns.ref, alignment: .leading)
             Text("Graph").frame(width: columns.graph, alignment: .leading)
-            Text("Commit Message").padding(.leading, 12).frame(maxWidth: .infinity, alignment: .leading)
+            Text("Commit Message").padding(.leading, z(12)).frame(maxWidth: .infinity, alignment: .leading)
             if columns.showsDate {
                 Text("Date").frame(width: columns.date, alignment: .leading)
             }
             if columns.showsSHA {
                 // The board sets this header in the hash column's monospaced face.
-                HStack(spacing: 5) {
-                    Text("Commit").font(.system(size: 11.5, design: .monospaced)).fontWeight(.regular)
+                HStack(spacing: z(5)) {
+                    Text("Commit").font(.system(size: z(11.5), design: .monospaced)).fontWeight(.regular)
                     SignatureLegendButton()
                 }
                 .frame(width: columns.sha, alignment: .leading)
             }
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: z(11), weight: .semibold))
         .foregroundStyle(K.label2)
         .lineLimit(1)
-        .frame(height: 26)
+        .frame(height: z(26))
         .background(K.content)
         .overlay(alignment: .topLeading) { handles }
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
@@ -622,7 +629,7 @@ private struct HistoryHeader: View {
             ColumnResizeHandle(edge: columns.ref, value: $ref, range: ColumnWidths.refRange, grows: .right,
                                reset: ColumnWidths.defaultRef)
             ColumnResizeHandle(edge: columns.ref + columns.graph, value: Binding(
-                get: { graph > 0 ? graph : Double(columns.graph) }, set: { graph = $0 }
+                get: { graph > 0 ? graph : Double(columns.graph / UIScale.value) }, set: { graph = $0 }
             ), range: ColumnWidths.graphRange, grows: .right, reset: 0)
             if columns.showsDate {
                 ColumnResizeHandle(edge: width - (columns.showsSHA ? columns.sha : 0) - columns.date, value: $date,
@@ -633,7 +640,7 @@ private struct HistoryHeader: View {
                                    reset: ColumnWidths.defaultSHA)
             }
         }
-        .frame(height: 26)
+        .frame(height: z(26))
     }
 }
 
@@ -654,10 +661,10 @@ private struct ColumnResizeHandle: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: 9, height: 26)
+            .frame(width: z(9), height: z(26))
             .overlay {
                 if hovering || start != nil {
-                    K.sepStrong.frame(width: 1, height: 14)
+                    K.sepStrong.frame(width: 1, height: z(14))
                 }
             }
             .contentShape(Rectangle())
@@ -668,13 +675,14 @@ private struct ColumnResizeHandle: View {
                     .onChanged { drag in
                         let base = start ?? value
                         if start == nil { start = value }
-                        let delta = Double(drag.translation.width) * (grows == .right ? 1 : -1)
+                        // The stored width is the design's: the drag is on screen, at the zoom.
+                        let delta = Double(drag.translation.width / UIScale.value) * (grows == .right ? 1 : -1)
                         value = min(max(base + delta, range.lowerBound), range.upperBound)
                     }
                     .onEnded { _ in start = nil }
             )
             .onTapGesture(count: 2) { value = reset }
-            .offset(x: edge - 4.5)
+            .offset(x: edge - z(4.5))
             .accessibilityHidden(true)
     }
 }
@@ -717,13 +725,13 @@ private struct CommitRowDrawing: View, Equatable {
 
     /// The sizes the row is drawn with (the Tokens board's, as the views had them).
     private enum Metric {
-        static let textSize: CGFloat = 13
-        static let messageLeading: CGFloat = 12
-        static let messageTrailing: CGFloat = 14
-        static let descriptionGap: CGFloat = 6
-        static let laneBarWidth: CGFloat = 2.5
-        static let laneBarInset: CGFloat = 5
-        static let tintBarWidth: CGFloat = 3
+        static var textSize: CGFloat { z(13) }
+        static var messageLeading: CGFloat { z(12) }
+        static var messageTrailing: CGFloat { z(14) }
+        static var descriptionGap: CGFloat { z(6) }
+        static var laneBarWidth: CGFloat { z(2.5) }
+        static var laneBarInset: CGFloat { z(5) }
+        static var tintBarWidth: CGFloat { z(3) }
     }
 
     var body: some View {
@@ -794,7 +802,7 @@ private struct CommitRowDrawing: View, Equatable {
                 disc(25, K.lane(lane))
                 disc(21, background)
                 disc(18, AvatarPalette.color(for: commit.author.email.isEmpty ? commit.author.name : commit.author.email))
-                let initials = cell.resolve(Text(commit.author.initials).font(.system(size: 7.5, weight: .bold)).tracking(0.2).foregroundStyle(.white))
+                let initials = cell.resolve(Text(commit.author.initials).font(.system(size: z(7.5), weight: .bold)).tracking(0.2).foregroundStyle(.white))
                 let fits = initials.measure(in: CGSize(width: CGFloat.infinity, height: .infinity))
                 let rect = CGRect(x: snap(graphX + center.x - fits.width / 2) - graphX, y: snap(center.y - fits.height / 2),
                                   width: fits.width, height: fits.height)
@@ -809,7 +817,7 @@ private struct CommitRowDrawing: View, Equatable {
         let textHeight = context.resolve(subject).measure(in: CGSize(width: CGFloat.infinity, height: height)).height
         let bar = CGRect(x: messageX, y: snap((height - textHeight) / 2) + Metric.laneBarInset,
                          width: Metric.laneBarWidth, height: textHeight - Metric.laneBarInset * 2)
-        context.fill(Path(roundedRect: bar, cornerRadius: 2), with: .color(isSelected ? Color.white : K.lane(lane)))
+        context.fill(Path(roundedRect: bar, cornerRadius: z(2)), with: .color(isSelected ? Color.white : K.lane(lane)))
 
         // One line of text, cut with "…" where its room ends, centered in the row.
         @discardableResult
@@ -889,21 +897,21 @@ private struct WorkingCopyRow: View {
             ZStack(alignment: .topLeading) {
                 GraphLines(row: graph, height: KMetric.wipRow, dashColor: isSelected ? .white.opacity(0.8) : K.wip)
                 WorkingCopyNode(selected: isSelected)
-                    .offset(x: GraphMetrics.x(lane: graph.lane) - 9, y: KMetric.wipRow / 2 - 9)
+                    .offset(x: GraphMetrics.x(lane: graph.lane) - z(9), y: KMetric.wipRow / 2 - z(9))
             }
             .frame(width: columns.graph, height: KMetric.wipRow, alignment: .topLeading)
             .clipped()
             if inline {
                 inlineForm
             } else {
-                HStack(spacing: 6) {
-                    Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
+                HStack(spacing: z(6)) {
+                    Text("Uncommitted changes").font(.system(size: z(13), weight: .semibold))
                         .layoutPriority(-1)
                     WorkingChip(text: Formatters.count(repository.changeCount, "file", "files"), selected: isSelected)
                     if repository.statusIsFull { WorkingChip(text: "\(repository.stagedCount) staged", selected: isSelected) }
                 }
-                .padding(.leading, 12)
-                .padding(.trailing, 14)
+                .padding(.leading, z(12))
+                .padding(.trailing, z(14))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if columns.showsDate {
                     Text(columns.compactDates ? "now" : "Now")
@@ -915,7 +923,7 @@ private struct WorkingCopyRow: View {
                 }
             }
         }
-        .font(.system(size: 13))
+        .font(.system(size: z(13)))
         .foregroundStyle(isSelected ? .white : K.label)
         .lineLimit(1)
         .frame(height: KMetric.wipRow)
@@ -930,45 +938,45 @@ private struct WorkingCopyRow: View {
     private var inlineForm: some View {
         HStack(spacing: 0) {
             Button(action: pick) {
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Text(Formatters.count(repository.changeCount, "change", "changes"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: z(13), weight: .semibold))
                     WorkingChip(text: "\(repository.stagedCount) staged", selected: isSelected)
                 }
-                .padding(.horizontal, 8)
-                .frame(height: 26)
+                .padding(.horizontal, z(8))
+                .frame(height: z(26))
                 .contentShape(Rectangle())
             }
-            .buttonStyle(HoverPlateStyle(radius: 7, selected: isSelected))
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
+            .buttonStyle(HoverPlateStyle(radius: z(7), selected: isSelected))
+            HStack(spacing: z(8)) {
+                HStack(spacing: z(6)) {
                     TextField("Commit summary", text: $repository.composer.summary)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: z(13), weight: .semibold))
                         .foregroundStyle(K.label)
                         .onSubmit { repository.commit() }
                     SummaryCounter(count: repository.composer.summary.count)
                 }
-                .padding(.horizontal, 9)
-                .frame(height: 26)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                .padding(.horizontal, z(9))
+                .frame(height: z(26))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.field))
+                .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
                 Button { repository.commit() } label: {
                     Text(repository.status.stagedCount == 0 && !repository.composer.amend ? "Commit" : repository.commitButtonTitle)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: z(13), weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.accent))
+                        .padding(.horizontal, z(12))
+                        .frame(height: z(26))
+                        .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.accent))
                 }
                 .buttonStyle(.plain)
                 .disabled(!repository.canCommit)
                 .opacity(repository.canCommit ? 1 : 0.45)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, z(12))
             .frame(maxWidth: .infinity)
         }
-        .padding(.leading, 4)
+        .padding(.leading, z(4))
     }
 }
 
@@ -979,10 +987,10 @@ private struct WorkingChip: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: z(11), weight: .semibold))
             .foregroundStyle(selected ? .white : K.label2)
-            .padding(.horizontal, 7)
-            .frame(height: 18)
+            .padding(.horizontal, z(7))
+            .frame(height: z(18))
             .background(Capsule().fill(selected ? Color.white.opacity(0.22) : K.hover))
             .fixedSize()
     }
@@ -994,7 +1002,7 @@ struct SummaryCounter: View {
 
     var body: some View {
         Text("\(count)/\(CommitDraft.summaryLimit)")
-            .font(.system(size: 11))
+            .font(.system(size: z(11)))
             .monospacedDigit()
             .foregroundStyle(count > CommitDraft.summaryLimit ? K.warn : K.label2)
             .fixedSize()
@@ -1106,14 +1114,14 @@ private struct CommitRow: View {
             .overlay(alignment: .trailing) {
                 if let signature, columns.showsSHA { hashCell(signature).opacity(dim) }
             }
-            .font(.system(size: 13))
+            .font(.system(size: z(13)))
             .foregroundStyle(isSelected ? .white : K.label)
             .lineLimit(1)
     }
 
     /// The hash with a signature's shield (`.sig`): in its color, white on the selected row.
     private func hashCell(_ signature: SignatureMark) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: z(5)) {
             Text(commit.shortID)
                 .font(KFont.hash)
                 .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
@@ -1131,13 +1139,13 @@ private struct CommitRow: View {
                 HStack(spacing: 0) {
                     RefLabel(label: first, lane: lane, selected: isSelected)
                         .onTapGesture(count: 2) { switchTo(first) }
-                        .contextTarget(first.contextTarget, ring: ContextRing(radius: 6, inset: -2))
+                        .contextTarget(first.contextTarget, ring: ContextRing(radius: z(6), inset: -2))
                         .layoutPriority(1)
                     if labels.count > 1 {
                         Text("+\(labels.count - 1)")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: z(11), weight: .semibold))
                             .foregroundStyle(isSelected ? .white.opacity(0.85) : K.label2)
-                            .padding(.horizontal, 4)
+                            .padding(.horizontal, z(4))
                             .fixedSize()
                             .opacity(listShown ? 0 : 1)
                             .accessibilityLabel("\(labels.count - 1) more: " + labels.dropFirst().map(\.title).joined(separator: ", "))
@@ -1150,10 +1158,10 @@ private struct CommitRow: View {
                 .debugLabelsFrame("row \(commit.id)")
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
-                    .frame(minWidth: 8, maxWidth: .infinity)
+                    .frame(minWidth: z(8), maxWidth: .infinity)
                     .frame(height: GraphMetrics.labelLineWidth)
             }
-            .padding(.leading, 10)
+            .padding(.leading, z(10))
         }
     }
 
@@ -1204,7 +1212,7 @@ final class DebugRefLabels {
 extension View {
     /// Debug builds: tells the driver where this part of a commit's labels is (`DebugRefLabels.frames`).
     func debugLabelsFrame(_ key: String) -> some View {
-        modifier(DebugFrameReport { DebugRefLabels.shared.frames[key] = $0 })
+        modifier(DebugFrameReport(key: "label:\(key)") { DebugRefLabels.shared.frames[key] = $0 })
     }
 }
 #else
@@ -1228,9 +1236,9 @@ private struct RefLabelList: View {
     let switchTo: (RefLabelItem) -> Void
     let hover: (Bool) -> Void
 
-    static let labelHeight: CGFloat = 20
-    private static let gap: CGFloat = 4
-    private static let pad: CGFloat = 4
+    static var labelHeight: CGFloat { z(20) }
+    private static var gap: CGFloat { z(4) }
+    private static var pad: CGFloat { z(4) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -1246,19 +1254,19 @@ private struct RefLabelList: View {
                     RefLabel(label: label, lane: lane, selected: false)
                         .fixedSize()
                         .onTapGesture(count: 2) { switchTo(label) }
-                        .contextTarget(label.contextTarget, ring: ContextRing(radius: 6, inset: -2))
+                        .contextTarget(label.contextTarget, ring: ContextRing(radius: z(6), inset: -2))
                 }
             }
             .frame(minWidth: minWidth, alignment: .leading)
             .padding(Self.pad)
             // Solid: the rows under it don't show through.
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: z(8), style: .continuous)
                     .fill(K.popSolid)
-                    .shadow(color: K.shadowPop, radius: 8, y: 6)
+                    .shadow(color: K.shadowPop, radius: z(8), y: 6)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: z(8), style: .continuous)
                     .strokeBorder(K.popRing, lineWidth: 0.5)
                     .allowsHitTesting(false)
             }
@@ -1272,7 +1280,7 @@ private struct RefLabelList: View {
 
 /// A plain button with the board's hover plate (`.wsel:hover`).
 struct HoverPlateStyle: ButtonStyle {
-    var radius: CGFloat = 7
+    var radius: CGFloat = z(7)
     var selected = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1301,7 +1309,7 @@ private struct SelectionBar: View {
     let repository: RepositoryModel
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             Text(repository.picked.count == 1 ? "1 commit picked" : "\(repository.picked.count) commits picked")
             Spacer(minLength: 0)
             Text("⌘-click adds a commit · ⇧-click picks a range")
@@ -1310,11 +1318,11 @@ private struct SelectionBar: View {
                 .lineLimit(1)
             GhostButton(title: "Clear") { repository.clearPicks() }
         }
-        .font(.system(size: 12.5, weight: .semibold))
+        .font(.system(size: z(12.5), weight: .semibold))
         .foregroundStyle(K.accentText)
-        .padding(.leading, 14)
-        .padding(.trailing, 12)
-        .frame(height: 34)
+        .padding(.leading, z(14))
+        .padding(.trailing, z(12))
+        .frame(height: z(34))
         .background { ZStack { K.content; K.accentSoft } }
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
@@ -1340,7 +1348,7 @@ private struct GraphBar: View {
     @AppStorage(SettingsKey.botCommits, store: .kaern) private var mode = BotCommits.collapse
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             if repository.hasBotCommits {
                 Menu {
                     Picker("Bot Commits", selection: $mode) {
@@ -1362,10 +1370,10 @@ private struct GraphBar: View {
                 GraphScopeChip(repository: repository)
             }
             Spacer()
-            Text(summary).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
+            Text(summary).font(.system(size: z(11.5))).foregroundStyle(K.label2).lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
+        .padding(.horizontal, z(10))
+        .frame(height: z(32))
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
         .onChange(of: mode) {
@@ -1423,14 +1431,14 @@ private struct BarChip: View {
     let value: String
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: z(4)) {
             Text(label).foregroundStyle(K.label2)
             Text(value).fontWeight(.semibold).foregroundStyle(K.label)
             Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
         }
-        .font(.system(size: 11.5))
-        .padding(.horizontal, 8)
-        .frame(height: 22)
+        .font(.system(size: z(11.5)))
+        .padding(.horizontal, z(8))
+        .frame(height: z(22))
         .background(Capsule().fill(K.hover))
         .contentShape(Capsule())
     }
@@ -1457,20 +1465,20 @@ private struct BotRunRow: View {
                 // `.node.gnode`: a 20 × 12 pill with two dots, ringed in the lane color.
                 Capsule()
                     .fill(K.content)
-                    .frame(width: 20, height: 12)
+                    .frame(width: z(20), height: z(12))
                     .overlay(Capsule().strokeBorder(K.lane(lane), lineWidth: 1.5))
                     .overlay {
-                        HStack(spacing: 4) {
-                            Circle().fill(K.lane(lane)).frame(width: 3, height: 3)
-                            Circle().fill(K.lane(lane)).frame(width: 3, height: 3)
+                        HStack(spacing: z(4)) {
+                            Circle().fill(K.lane(lane)).frame(width: z(3), height: z(3))
+                            Circle().fill(K.lane(lane)).frame(width: z(3), height: z(3))
                         }
                     }
-                    .background(Capsule().fill(isAlternate ? K.alt : K.content).padding(-3))
-                    .offset(x: GraphMetrics.x(lane: lane) - 10, y: KMetric.graphRow / 2 - 6)
+                    .background(Capsule().fill(isAlternate ? K.alt : K.content).padding(-z(3)))
+                    .offset(x: GraphMetrics.x(lane: lane) - z(10), y: KMetric.graphRow / 2 - z(6))
             }
             .frame(width: columns.graph, height: KMetric.graphRow, alignment: .topLeading)
             .clipped()
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 Icon(Icons.arrowRight, size: 10).foregroundStyle(K.label2)
                 Text(run.title).fontWeight(.semibold).layoutPriority(1)
                 if columns.showsDescriptions {
@@ -1478,8 +1486,8 @@ private struct BotRunRow: View {
                 }
             }
             .truncationMode(.tail)
-            .padding(.leading, 12)
-            .padding(.trailing, 14)
+            .padding(.leading, z(12))
+            .padding(.trailing, z(14))
             .frame(maxWidth: .infinity, alignment: .leading)
             if columns.showsDate {
                 Text(dateRange)
@@ -1488,15 +1496,15 @@ private struct BotRunRow: View {
             }
             if columns.showsSHA {
                 Text("×\(run.count)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: z(11), weight: .semibold))
                     .foregroundStyle(K.label2)
-                    .padding(.horizontal, 6)
-                    .frame(height: 17)
+                    .padding(.horizontal, z(6))
+                    .frame(height: z(17))
                     .background(Capsule().fill(K.hover))
                     .frame(width: columns.sha, alignment: .leading)
             }
         }
-        .font(.system(size: 13))
+        .font(.system(size: z(13)))
         .foregroundStyle(K.label)
         .lineLimit(1)
         .frame(height: KMetric.graphRow)
@@ -1547,27 +1555,27 @@ private struct SignatureLegendButton: View {
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .popover(isPresented: $hovering, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Signatures").font(.system(size: 11.5, weight: .bold))
+                VStack(alignment: .leading, spacing: z(5)) {
+                    Text("Signatures").font(.system(size: z(11.5), weight: .bold))
                     legendRow(K.ok, "Verified")
                     legendRow(K.warn, "Signed, key not trusted")
                     legendRow(K.err, "Bad signature")
-                    HStack(spacing: 7) {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(K.label3, lineWidth: 1.5).frame(width: 10, height: 10)
+                    HStack(spacing: z(7)) {
+                        RoundedRectangle(cornerRadius: z(3), style: .continuous).strokeBorder(K.label3, lineWidth: 1.5).frame(width: z(10), height: z(10))
                         Text("Not signed")
                     }
                 }
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.system(size: z(11.5), weight: .medium))
                 .foregroundStyle(K.label)
-                .padding(EdgeInsets(top: 9, leading: 11, bottom: 9, trailing: 11))
-                .frame(width: 190, alignment: .leading)
+                .padding(EdgeInsets(top: z(9), leading: z(11), bottom: z(9), trailing: z(11)))
+                .frame(width: z(190), alignment: .leading)
             }
             .accessibilityLabel("Signature marks")
     }
 
     private func legendRow(_ color: Color, _ title: String) -> some View {
-        HStack(spacing: 7) {
-            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(color).frame(width: 10, height: 10)
+        HStack(spacing: z(7)) {
+            RoundedRectangle(cornerRadius: z(3), style: .continuous).fill(color).frame(width: z(10), height: z(10))
             Text(title)
         }
     }

@@ -13,7 +13,7 @@ struct WelcomeView: View {
     var body: some View {
         HStack(spacing: 0) {
             leftColumn
-                .frame(width: 352)
+                .frame(width: z(352))
             recentColumn
         }
         .background(K.content)
@@ -25,19 +25,19 @@ struct WelcomeView: View {
         VStack(spacing: 0) {
             // Under the traffic lights, as on the board (their 12 pt row, then 26 pt).
             AppMark()
-                .padding(.top, 38)
+                .padding(.top, z(38))
             Text("Kaern")
-                .font(.system(size: 26, weight: .bold))
-                .padding(.top, 16)
+                .font(.system(size: z(26), weight: .bold))
+                .padding(.top, z(16))
             Text(versionText)
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
-                .padding(.top, 2)
+                .padding(.top, z(2))
             if let closed = app.lastClosed {
                 lastSession(closed)
-                    .padding(.top, 20)
+                    .padding(.top, z(20))
             }
-            VStack(spacing: 7) {
+            VStack(spacing: z(7)) {
                 WelcomeAction(title: "Open Repository…", shortcut: "⌘O", symbol: "folder") {
                     app.showOpenPanel(for: window)
                 }
@@ -48,30 +48,30 @@ struct WelcomeView: View {
                     app.showCreate(in: window)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
             Spacer(minLength: 0)
             // The board's checkbox, as Settings › General › On launch: on, last time's repositories
             // open by themselves; off, they wait here behind Reopen.
             Toggle(isOn: reopensAtLaunch) {
                 Text(AppSettings.repositorySwitching == .tabs ? "Reopen last time’s tabs at launch" : "Reopen last time’s repositories at launch")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
             }
             .toggleStyle(.checkbox)
         }
-        .padding(EdgeInsets(top: 16, leading: 26, bottom: 18, trailing: 26))
+        .padding(EdgeInsets(top: z(16), leading: z(26), bottom: z(18), trailing: z(26)))
     }
 
     private func lastSession(_ closed: Session.ClosedWindow) -> some View {
         let tabs = closed.window.tabs
         let groups = closed.window.groups
         let loose = tabs.filter { $0.group == nil }.count
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        return VStack(alignment: .leading, spacing: z(9)) {
+            HStack(alignment: .firstTextBaseline, spacing: z(8)) {
                 Text("Last session").font(KFont.body650)
                 Spacer()
                 Text("Closed \(Formatters.closedAt(closed.date))")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
             }
             FlowChips(items: groups.map { group in
@@ -82,18 +82,18 @@ struct WelcomeView: View {
             } label: {
                 Text(AppSettings.repositorySwitching == .tabs ? (tabs.count == 1 ? "Reopen 1 Tab" : "Reopen \(tabs.count) Tabs")
                      : (tabs.count == 1 ? "Reopen 1 Repository" : "Reopen \(tabs.count) Repositories"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: z(13), weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.accent))
+                    .frame(height: z(30))
+                    .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.accent))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
         }
-        .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 12))
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(K.accentSoft))
+        .padding(EdgeInsets(top: z(12), leading: z(14), bottom: z(12), trailing: z(12)))
+        .background(RoundedRectangle(cornerRadius: z(12), style: .continuous).fill(K.accentSoft))
     }
 
     /// "Version 1.1.0", or "Version 1.1.0-beta.2". The build number is made from the version (script/release.sh), so it
@@ -117,27 +117,27 @@ struct WelcomeView: View {
             if !names.contains(key) { names.append(key) }
         }.sorted { a, b in a.isEmpty ? false : (b.isEmpty ? true : false) }
         return VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Text("Recent Repositories").font(KFont.body650)
                 Spacer()
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Icon(Icons.search(1.4), size: 12).foregroundStyle(K.label2)
                     TextField("Filter", text: $filter)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: z(12)))
                 }
-                .padding(.horizontal, 8)
-                .frame(width: 170, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.hover))
+                .padding(.horizontal, z(8))
+                .frame(width: z(170), height: z(26))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.hover))
             }
-            .padding(EdgeInsets(top: 16, leading: 18, bottom: 8, trailing: 16))
+            .padding(EdgeInsets(top: z(16), leading: z(18), bottom: z(8), trailing: z(16)))
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(order, id: \.self) { key in
                         let members = grouped[key] ?? []
-                        HStack(spacing: 7) {
+                        HStack(spacing: z(7)) {
                             if let color = members.first?.groupColor {
-                                Circle().fill(color.color).frame(width: 8, height: 8)
+                                Circle().fill(color.color).frame(width: z(8), height: z(8))
                             }
                             Text(key.isEmpty ? "Other" : key)
                             Spacer()
@@ -145,9 +145,9 @@ struct WelcomeView: View {
                         }
                         .font(KFont.weighted(11.5, 0.35))
                         .foregroundStyle(K.label2)
-                        .padding(.horizontal, 8)
-                        .frame(height: 28)
-                        .padding(.top, 6)
+                        .padding(.horizontal, z(8))
+                        .frame(height: z(28))
+                        .padding(.top, z(6))
                         ForEach(members) { item in
                             RecentRow(item: item) {
                                 app.open([URL(filePath: item.path, directoryHint: .isDirectory)], in: window)
@@ -156,30 +156,30 @@ struct WelcomeView: View {
                     }
                     if app.recent.isEmpty {
                         Text("Repositories you open show up here.")
-                            .font(.system(size: 12))
+                            .font(.system(size: z(12)))
                             .foregroundStyle(K.label2)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 60)
+                            .padding(.top, z(60))
                     } else if items.isEmpty {
                         Text("No recent repository matches “\(filter)”.")
-                            .font(.system(size: 12))
+                            .font(.system(size: z(12)))
                             .foregroundStyle(K.label2)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                            .padding(.top, z(40))
                     }
                 }
-                .padding(EdgeInsets(top: 0, leading: 10, bottom: 8, trailing: 10))
+                .padding(EdgeInsets(top: 0, leading: z(10), bottom: z(8), trailing: z(10)))
             }
             Text("Drop a folder here to open it")
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
                 .frame(maxWidth: .infinity)
-                .padding(10)
+                .padding(z(10))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: z(10), style: .continuous)
                         .strokeBorder(K.sepStrong, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                 )
-                .padding(EdgeInsets(top: 6, leading: 12, bottom: 12, trailing: 12))
+                .padding(EdgeInsets(top: z(6), leading: z(12), bottom: z(12), trailing: z(12)))
         }
         .background(K.sidebar)
         .overlay(alignment: .leading) { K.sep.frame(width: 1) }
@@ -189,10 +189,10 @@ struct WelcomeView: View {
 /// The app mark from the Welcome board (three bars).
 private struct AppMark: View {
     var body: some View {
-        VStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: K.hex(0x0a7cff))).frame(width: 26, height: 13)
-            RoundedRectangle(cornerRadius: 6).fill(AppMark.middle).frame(width: 46, height: 15)
-            RoundedRectangle(cornerRadius: 6).fill(AppMark.bottom).frame(width: 64, height: 17)
+        VStack(spacing: z(5)) {
+            RoundedRectangle(cornerRadius: z(6)).fill(Color(nsColor: K.hex(0x0a7cff))).frame(width: z(26), height: z(13))
+            RoundedRectangle(cornerRadius: z(6)).fill(AppMark.middle).frame(width: z(46), height: z(15))
+            RoundedRectangle(cornerRadius: z(6)).fill(AppMark.bottom).frame(width: z(64), height: z(17))
         }
         .accessibilityHidden(true)
     }
@@ -211,15 +211,15 @@ private struct WelcomeAction: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol).foregroundStyle(K.accent).frame(width: 18)
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label)
+            HStack(spacing: z(10)) {
+                Image(systemName: symbol).foregroundStyle(K.accent).frame(width: z(18))
+                Text(title).font(.system(size: z(13), weight: .semibold)).foregroundStyle(K.label)
                 Spacer()
-                Text(shortcut).font(.system(size: 12, weight: .medium)).foregroundStyle(K.label2)
+                Text(shortcut).font(.system(size: z(12), weight: .medium)).foregroundStyle(K.label2)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering && isEnabled ? K.chip2 : K.hover))
+            .padding(.horizontal, z(12))
+            .frame(height: z(36))
+            .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(hovering && isEnabled ? K.chip2 : K.hover))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -235,26 +235,26 @@ private struct RecentRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Text(String(item.name.prefix(1)).uppercased())
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: z(13), weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(item.groupColor?.color ?? AvatarPalette.color(for: item.path)))
+                    .frame(width: z(30), height: z(30))
+                    .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(item.groupColor?.color ?? AvatarPalette.color(for: item.path)))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(K.label)
-                    Text(Formatters.abbreviatedPath(item.path)).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                    Text(item.name).font(.system(size: z(13), weight: .semibold)).foregroundStyle(K.label)
+                    Text(Formatters.abbreviatedPath(item.path)).font(.system(size: z(11.5))).foregroundStyle(K.label2)
                         .truncationMode(.middle)
                 }
                 .lineLimit(1)
                 Spacer()
                 Text(Formatters.historyDate(item.lastOpened))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 46)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering ? K.hover : .clear))
+            .padding(.horizontal, z(10))
+            .frame(height: z(46))
+            .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -268,14 +268,14 @@ private struct FlowChips: View {
     let items: [(Color?, String)]
 
     var body: some View {
-        FlowLayout(spacing: 5) {
+        FlowLayout(spacing: z(5)) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                HStack(spacing: 5) {
-                    if let color = item.0 { Circle().fill(color).frame(width: 8, height: 8) }
-                    Text(item.1).font(.system(size: 11.5, weight: .semibold))
+                HStack(spacing: z(5)) {
+                    if let color = item.0 { Circle().fill(color).frame(width: z(8), height: z(8)) }
+                    Text(item.1).font(.system(size: z(11.5), weight: .semibold))
                 }
-                .padding(.horizontal, 8)
-                .frame(height: 20)
+                .padding(.horizontal, z(8))
+                .frame(height: z(20))
                 .background(Capsule().fill(K.content))
             }
         }
@@ -333,7 +333,7 @@ struct NewTabPopover: View {
         let items = app.recentNotOpen(in: window).filter {
             filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) || $0.path.localizedCaseInsensitiveContains(filter)
         }
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: z(8)) {
             TextField("Filter recent repositories", text: $filter)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
@@ -351,32 +351,32 @@ struct NewTabPopover: View {
                 .onChange(of: filter) { highlighted = 0 }
             if items.isEmpty {
                 Text(app.recent.isEmpty ? "Repositories you open show up here." : "No other recent repositories.")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, z(6))
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(Array(items.prefix(40).enumerated()), id: \.element.id) { index, item in
                             Button { open(item) } label: {
-                                HStack(spacing: 8) {
+                                HStack(spacing: z(8)) {
                                     if let color = item.groupColor {
-                                        Circle().fill(color.color).frame(width: 7, height: 7)
+                                        Circle().fill(color.color).frame(width: z(7), height: z(7))
                                     } else {
-                                        Color.clear.frame(width: 7, height: 7)
+                                        Color.clear.frame(width: z(7), height: z(7))
                                     }
-                                    Text(item.name).font(.system(size: 13, weight: .semibold))
+                                    Text(item.name).font(.system(size: z(13), weight: .semibold))
                                     Text(Formatters.abbreviatedPath(item.path))
-                                        .font(.system(size: 11.5))
+                                        .font(.system(size: z(11.5)))
                                         .foregroundStyle(index == highlighted ? .white.opacity(0.85) : K.label2)
                                         .truncationMode(.middle)
                                     Spacer(minLength: 0)
                                 }
                                 .lineLimit(1)
                                 .foregroundStyle(index == highlighted ? .white : K.label)
-                                .padding(.horizontal, 8)
-                                .frame(height: 26)
-                                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(index == highlighted ? K.sel : .clear))
+                                .padding(.horizontal, z(8))
+                                .frame(height: z(26))
+                                .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(index == highlighted ? K.sel : .clear))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -384,7 +384,7 @@ struct NewTabPopover: View {
                         }
                     }
                 }
-                .frame(maxHeight: 300)
+                .frame(maxHeight: z(300))
             }
             Divider()
             footerButton("Open Repository…", "⌘O") { openPanel() }
@@ -403,8 +403,8 @@ struct NewTabPopover: View {
                 }
             }
         }
-        .padding(10)
-        .frame(width: 340)
+        .padding(z(10))
+        .frame(width: z(340))
         .onAppear { focused = true }
     }
 
@@ -415,9 +415,9 @@ struct NewTabPopover: View {
                 Spacer()
                 Text(shortcut).foregroundStyle(K.label2)
             }
-            .font(.system(size: 13))
-            .padding(.horizontal, 8)
-            .frame(height: 26)
+            .font(.system(size: z(13)))
+            .padding(.horizontal, z(8))
+            .frame(height: z(26))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

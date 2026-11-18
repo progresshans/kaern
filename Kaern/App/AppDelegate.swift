@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
         NSWindow.allowsAutomaticWindowTabbing = false
         NSApp.setActivationPolicy(.regular)
+        // View › Zoom: the scale the windows' sizes are made with.
+        UIScale.load()
         NSApp.mainMenu = MainMenu.build(showSettings: { SettingsWindowController.shared.show() })
         // General › Appearance (a Debug run's `-KaernAppearance dark|light` wins, for tests).
         AppSettings.applyTheme()

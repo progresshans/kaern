@@ -28,7 +28,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.tabStyle = .toolbar
         tabs.canPropagateSelectedChildViewControllerTitle = true
         for pane in Pane.allCases {
-            let host = NSHostingController(rootView: SettingsPaneView(pane: pane).environment(AppModel.shared))
+            let host = NSHostingController(rootView: SettingsPaneView(pane: pane).environment(AppModel.shared).zoomed())
             host.sizingOptions = [.preferredContentSize]
             host.title = pane.rawValue
             let item = NSTabViewItem(viewController: host)
@@ -89,16 +89,16 @@ private struct SettingsPaneView: View {
                 case .advanced: AdvancedPane()
                 }
             }
-            .padding(EdgeInsets(top: 24, leading: 40, bottom: 18, trailing: 40))
-            .frame(maxWidth: .infinity, minHeight: 430, alignment: .topLeading)
+            .padding(EdgeInsets(top: z(24), leading: z(40), bottom: z(18), trailing: z(40)))
+            .frame(maxWidth: .infinity, minHeight: z(430), alignment: .topLeading)
             K.sep.frame(height: 1)
             Text("These apply to every repository. Options for one repository are in Repository Settings (⌥⌘,).")
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(K.label2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(EdgeInsets(top: 12, leading: 40, bottom: 14, trailing: 40))
+                .padding(EdgeInsets(top: z(12), leading: z(40), bottom: z(14), trailing: z(40)))
         }
-        .frame(width: 780)
+        .frame(width: z(780))
         .fixedSize(horizontal: false, vertical: true)
         .background(K.content)
         .foregroundStyle(K.label)
@@ -110,7 +110,7 @@ private struct SettingsGrid<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 16) {
+        Grid(alignment: .topLeading, horizontalSpacing: z(14), verticalSpacing: z(16)) {
             content
         }
     }
@@ -123,10 +123,10 @@ private struct SettingsRow<Content: View>: View {
     var body: some View {
         GridRow {
             Text(label)
-                .font(.system(size: 13))
-                .frame(width: 170, alignment: .trailing)
-                .padding(.top, 5)
-            VStack(alignment: .leading, spacing: 7) {
+                .font(.system(size: z(13)))
+                .frame(width: z(170), alignment: .trailing)
+                .padding(.top, z(5))
+            VStack(alignment: .leading, spacing: z(7)) {
                 content
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,8 +147,8 @@ private struct Checkbox: View {
     var body: some View {
         Toggle(title, isOn: $isOn)
             .toggleStyle(.checkbox)
-            .font(.system(size: 13))
-            .frame(minHeight: 26)
+            .font(.system(size: z(13)))
+            .frame(minHeight: z(26))
     }
 }
 
@@ -164,10 +164,10 @@ private struct Hint: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
-            .lineSpacing(2)
+            .font(.system(size: z(11.5)))
+            .lineSpacing(z(2))
             .foregroundStyle(strong ? K.label : K.label2)
-            .frame(maxWidth: 440, alignment: .leading)
+            .frame(maxWidth: z(440), alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -205,13 +205,13 @@ private struct GeneralPane: View {
                      : "Last time’s \(switching == .tabs ? "tabs wait" : "repositories wait") behind the Reopen button of the welcome window.")
             }
             SettingsRow(label: "Switch repositories:") {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: z(10)) {
                     ForEach(RepositorySwitching.allCases, id: \.self) { mode in
                         SwitchingModeButton(mode: mode, isOn: switching == mode)
                             .onTapGesture { switching = mode }
                     }
                 }
-                .padding(.top, -2)
+                .padding(.top, -z(2))
                 Hint(switchingDescription, strong: true)
                 Hint("Quick Open (⇧⌘O) and Window › Repositories (⇧⌘R) work with every option. Changing it keeps your open repositories and groups.")
             }
@@ -219,7 +219,7 @@ private struct GeneralPane: View {
                 Checkbox("Group repositories from the same folder", isOn: $groupFolders)
                 switch switching {
                 case .tabs:
-                    HStack(spacing: 7) {
+                    HStack(spacing: z(7)) {
                         Text("Shrink a tab until it shows")
                         Picker("Characters kept", selection: $tabCharacters) {
                             ForEach([8, 12, 16], id: \.self) { Text("\($0)").tag($0) }
@@ -228,7 +228,7 @@ private struct GeneralPane: View {
                         .fixedSize()
                         Text("characters, then scroll")
                     }
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                 case .sidebar:
                     Checkbox("Show the current branch under each name", isOn: $listShowsBranch)
                     Checkbox("Fold into icons when the window is narrower than 1,100 pt", isOn: $listFoldsNarrow)
@@ -237,7 +237,7 @@ private struct GeneralPane: View {
                 }
             }
             SettingsRow(label: "Fetch:") {
-                HStack(spacing: 7) {
+                HStack(spacing: z(7)) {
                     Checkbox("Fetch in the background every", isOn: $autoFetch)
                     Picker("Fetch interval", selection: $autoFetchMinutes) {
                         Text("1 minute").tag(1)
@@ -248,7 +248,7 @@ private struct GeneralPane: View {
                     .fixedSize()
                     .disabled(!autoFetch)
                 }
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
             }
             SettingsRow(label: "Pull:") {
                 Picker("Default pull", selection: $pull) {
@@ -304,13 +304,13 @@ private struct SwitchingModeButton: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: z(5)) {
             SwitchingThumbnail(mode: mode)
-                .frame(width: 74, height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .frame(width: z(74), height: z(50))
+                .clipShape(RoundedRectangle(cornerRadius: z(7), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous)
                     .strokeBorder(isOn ? K.accent : K.sepStrong, lineWidth: 1))
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isOn ? K.accentSoft : .clear).padding(-3))
+                .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(isOn ? K.accentSoft : .clear).padding(-z(3)))
             Text(title)
                 .font(KFont.weighted(11.5, isOn ? 0.4 : 0.23))
                 .foregroundStyle(isOn ? K.accentText : K.label)
@@ -319,12 +319,12 @@ private struct SwitchingModeButton: View {
                 .font(KFont.weighted(9.5, 0.4))
                 .tracking(0.3)
                 .foregroundStyle(K.label3)
-                .padding(.top, -3)
+                .padding(.top, -z(3))
                 .opacity(mode == .tabs ? 1 : 0)
         }
-        .frame(width: 86)
-        .padding(EdgeInsets(top: 6, leading: 4, bottom: 5, trailing: 4))
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(hovering && isEnabled && !isOn ? K.hover : .clear))
+        .frame(width: z(86))
+        .padding(EdgeInsets(top: z(6), leading: z(4), bottom: z(5), trailing: z(4)))
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(hovering && isEnabled && !isOn ? K.hover : .clear))
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
@@ -347,7 +347,7 @@ private struct SwitchingThumbnail: View {
 
     var body: some View {
         Canvas { context, size in
-            func fill(_ rect: CGRect, _ color: Color, radius: CGFloat = 2) {
+            func fill(_ rect: CGRect, _ color: Color, radius: CGFloat = z(2)) {
                 context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color))
             }
             func lines(left: CGFloat, top: CGFloat, count: Int) {
@@ -370,8 +370,8 @@ private struct SwitchingThumbnail: View {
                 lines(left: 28, top: 14, count: 3)
             case .toolbar:
                 fill(CGRect(x: 0, y: 0, width: size.width, height: 11), K.chip2, radius: 0)
-                fill(CGRect(x: 6, y: 3, width: 30, height: 5), K.accent, radius: 3)
-                fill(CGRect(x: 38, y: 3, width: 18, height: 5), K.label3, radius: 3)
+                fill(CGRect(x: 6, y: 3, width: 30, height: 5), K.accent, radius: z(3))
+                fill(CGRect(x: 38, y: 3, width: 18, height: 5), K.label3, radius: z(3))
                 lines(left: 6, top: 17, count: 4)
             }
         }
@@ -449,8 +449,8 @@ private struct AccountsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 28) {
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: z(28)) {
+                VStack(alignment: .leading, spacing: z(8)) {
                     accountList
                     HStack(spacing: 0) {
                         SmallSquareButton(title: "+", label: "Add account") {
@@ -467,16 +467,16 @@ private struct AccountsPane: View {
                     Text(accounts.isEmpty
                          ? "Sign in to GitHub or GitLab so Kaern can fetch and push over HTTPS and show who made each commit."
                          : "Choose an account.")
-                        .font(.system(size: 12.5))
+                        .font(.system(size: z(12.5)))
                         .foregroundStyle(K.label2)
-                        .frame(maxWidth: 360, alignment: .leading)
-                        .padding(.top, 8)
+                        .frame(maxWidth: z(360), alignment: .leading)
+                        .padding(.top, z(8))
                 }
             }
             Text("Kaern keeps each token in the Keychain through git’s credential helper — the same place Terminal’s git looks.")
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(K.label2)
-                .padding(.top, 52)
+                .padding(.top, z(52))
         }
         .sheet(isPresented: $signingIn) {
             SignInSheet(initialHost: signInHost) { account in
@@ -512,51 +512,51 @@ private struct AccountsPane: View {
     }
 
     private var accountList: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: z(2)) {
             ForEach(accounts) { account in
                 let isOn = account.id == selection
                 Button { selection = account.id } label: {
-                    HStack(spacing: 9) {
+                    HStack(spacing: z(9)) {
                         Text(account.initials)
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: z(10), weight: .bold))
                             .foregroundStyle(.white)
-                            .frame(width: 26, height: 26)
+                            .frame(width: z(26), height: z(26))
                             .background(Circle().fill(account.kind == .gitlab ? Color(nsColor: K.hex(0xc2410c)) : Color(nsColor: K.hex(0x2f62c8))))
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(account.login).font(.system(size: 12.5, weight: .bold))
-                            Text(account.host).font(.system(size: 11.5)).foregroundStyle(isOn ? .white.opacity(0.85) : K.label2)
+                            Text(account.login).font(.system(size: z(12.5), weight: .bold))
+                            Text(account.host).font(.system(size: z(11.5))).foregroundStyle(isOn ? .white.opacity(0.85) : K.label2)
                         }
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(isOn ? .white : K.label)
-                    .padding(.horizontal, 8)
-                    .frame(height: 44)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isOn ? K.sel : .clear))
+                    .padding(.horizontal, z(8))
+                    .frame(height: z(44))
+                    .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(isOn ? K.sel : .clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
         }
-        .padding(6)
-        .frame(width: 230, height: 250, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.field)
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+        .padding(z(6))
+        .frame(width: z(230), height: z(250), alignment: .top)
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.field)
+            .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
     }
 
     private func details(_ account: HostingAccount) -> some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 14) {
+        Grid(alignment: .topLeading, horizontalSpacing: z(14), verticalSpacing: z(14)) {
             GridRow {
                 label("Account:")
-                Text(account.login).font(.system(size: 13)).padding(.top, 5)
+                Text(account.login).font(.system(size: z(13))).padding(.top, z(5))
             }
             GridRow {
                 label("Server:")
-                Text(account.host).font(.system(size: 13)).padding(.top, 5)
+                Text(account.host).font(.system(size: z(13))).padding(.top, z(5))
             }
             GridRow {
                 label("Signed in:")
-                Text("with a token · in the Keychain").font(.system(size: 13)).padding(.top, 5)
+                Text("with a token · in the Keychain").font(.system(size: z(13))).padding(.top, z(5))
             }
             GridRow {
                 label("Clone with:")
@@ -585,7 +585,7 @@ private struct AccountsPane: View {
                 }
             }
             GridRow {
-                Color.clear.frame(width: 100, height: 1)
+                Color.clear.frame(width: z(100), height: 1)
                 Button("Sign Out…") { asksToSignOut = true }
                     .controlSize(.regular)
             }
@@ -593,7 +593,7 @@ private struct AccountsPane: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.system(size: 13)).frame(width: 100, alignment: .trailing).padding(.top, 5)
+        Text(text).font(.system(size: z(13))).frame(width: z(100), alignment: .trailing).padding(.top, z(5))
     }
 
     private struct Identity { var title: String; var email: String }
@@ -650,9 +650,9 @@ private struct SmallSquareButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 24, height: 22)
-                .controlSurface(radius: 5)
+                .font(.system(size: z(13), weight: .semibold))
+                .frame(width: z(24), height: z(22))
+                .controlSurface(radius: z(5))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -677,9 +677,9 @@ struct SignInSheet: View {
     @State private var check: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Sign In").font(.system(size: 13, weight: .bold))
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 10) {
+        VStack(alignment: .leading, spacing: z(12)) {
+            Text("Sign In").font(.system(size: z(13), weight: .bold))
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: z(10), verticalSpacing: z(10)) {
                 GridRow {
                     Text("Server").foregroundStyle(K.label2).gridColumnAlignment(.trailing)
                     Picker("Server", selection: $server) {
@@ -705,17 +705,17 @@ struct SignInSheet: View {
                         .onSubmit(signIn)
                 }
             }
-            .font(.system(size: 12.5))
+            .font(.system(size: z(12.5)))
             Text(note)
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(failure == nil ? K.label2 : K.err)
                 .fixedSize(horizontal: false, vertical: true)
             if let page = tokenPage {
                 Button(server == "gitlab.com" ? "Create a Token on GitLab…" : "Create a Token on GitHub…") { NSWorkspace.shared.open(page) }
                     .buttonStyle(.link)
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 if checking { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
                 Button("Cancel") {
@@ -728,8 +728,8 @@ struct SignInSheet: View {
                     .disabled(checking || token.trimmingCharacters(in: .whitespaces).isEmpty || host.isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 420)
+        .padding(z(20))
+        .frame(width: z(420))
         .onAppear {
             if initialHost == "github.com" || initialHost == "gitlab.com" {
                 server = initialHost
@@ -812,8 +812,8 @@ private struct GitPane: View {
                 Hint("Saved in your global Git config. Repository Settings (⌥⌘,) can override it per repository.")
             }
             SettingsRow(label: "New repositories:") {
-                HStack(spacing: 7) {
-                    Text("Default branch name").font(.system(size: 13))
+                HStack(spacing: z(7)) {
+                    Text("Default branch name").font(.system(size: z(13)))
                     field($branch, label: "Default branch name", key: "init.defaultBranch", width: 110)
                 }
             }
@@ -845,8 +845,8 @@ private struct GitPane: View {
     private func field(_ text: Binding<String>, label: String, key: String, width: CGFloat = 320) -> some View {
         TextField(label, text: text)
             .textFieldStyle(.roundedBorder)
-            .font(.system(size: 13))
-            .frame(width: width)
+            .font(.system(size: z(13)))
+            .frame(width: z(width))
             .labelsHidden()
             .onSubmit { save(key, text.wrappedValue) }
             .onChange(of: text.wrappedValue) { old, new in
@@ -961,7 +961,7 @@ private struct DiffPane: View {
                     Hint("Every diff opens this way. Switch one diff with the Split / Unified control or ⌥⌘D.")
                 }
                 SettingsRow(label: "Context:") {
-                    HStack(spacing: 7) {
+                    HStack(spacing: z(7)) {
                         Text("Show")
                         Picker("Context lines", selection: $context) {
                             ForEach([3, 5, 10], id: \.self) { Text("\($0)").tag($0) }
@@ -970,7 +970,7 @@ private struct DiffPane: View {
                         .fixedSize()
                         Text("unchanged lines around each change")
                     }
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                 }
                 SettingsRow(label: "Display:") {
                     VStack(alignment: .leading, spacing: 0) {
@@ -980,15 +980,15 @@ private struct DiffPane: View {
                     }
                 }
                 SettingsRow(label: "Font:") {
-                    HStack(spacing: 10) {
-                        Text(fontDescription).font(.system(size: 13))
+                    HStack(spacing: z(10)) {
+                        Text(fontDescription).font(.system(size: z(13)))
                         Button("Choose…") { DiffFontPicker.shared.show() }
                     }
                 }
             }
             DiffPreview(layout: layout, font: previewFont)
-                .padding(.leading, 184)
-                .padding(.top, 22)
+                .padding(.leading, z(184))
+                .padding(.top, z(22))
         }
         .onChange(of: context) { reloadDiffs() }
         .onChange(of: ignoresWhitespace) { reloadDiffs() }
@@ -1026,10 +1026,10 @@ private struct DiffPreview: View {
                 Spacer()
                 Text(layout == .split ? "Split — before on the left, after on the right" : "Unified — one column")
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: z(11), weight: .semibold))
             .foregroundStyle(K.hunkText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, z(10))
+            .padding(.vertical, z(4))
             .background(K.hunk)
             if layout == .split {
                 HStack(spacing: 0) {
@@ -1055,21 +1055,21 @@ private struct DiffPreview: View {
             }
         }
         .font(font)
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: z(9), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
     }
 
     private func line(_ number: Int, _ text: String, _ fill: Color?) -> some View {
         HStack(spacing: 0) {
             Text("\(number)")
                 .foregroundStyle(K.label2)
-                .frame(width: 34, alignment: .trailing)
-                .padding(.trailing, 8)
+                .frame(width: z(34), alignment: .trailing)
+                .padding(.trailing, z(8))
             Text(text).foregroundStyle(K.code)
             Spacer(minLength: 0)
         }
         .lineLimit(1)
-        .frame(height: 20)
+        .frame(height: z(20))
         .background(fill ?? .clear)
     }
 }
@@ -1090,7 +1090,7 @@ final class DiffFontPicker: NSObject {
     @objc func changeFont(_ sender: Any?) {
         let manager = NSFontManager.shared
         let font = manager.convert(AppSettings.diffFont)
-        let isSystemMono = font.fontName.hasPrefix(".") || font.familyName == NSFont.monospacedSystemFont(ofSize: 12, weight: .regular).familyName
+        let isSystemMono = font.fontName.hasPrefix(".") || font.familyName == NSFont.monospacedSystemFont(ofSize: z(12), weight: .regular).familyName
         UserDefaults.kaern.set(isSystemMono ? "" : font.fontName, forKey: SettingsKey.diffFontName)
         UserDefaults.kaern.set(Double(font.pointSize), forKey: SettingsKey.diffFontSize)
     }
@@ -1110,9 +1110,9 @@ private struct AdvancedPane: View {
     var body: some View {
         SettingsGrid {
             SettingsRow(label: "Git:") {
-                HStack(spacing: 10) {
+                HStack(spacing: z(10)) {
                     Text(currentGit)
-                        .font(.system(size: 13))
+                        .font(.system(size: z(13)))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(app.git.map { "\($0.url.path(percentEncoded: false)) · \($0.version ?? "")" } ?? "")
@@ -1126,7 +1126,7 @@ private struct AdvancedPane: View {
                     Hint(choiceError).foregroundStyle(K.err)
                 }
                 if needsRelaunch {
-                    HStack(spacing: 8) {
+                    HStack(spacing: z(8)) {
                         Hint("Kaern switches to \(gitPath.isEmpty ? "the default git" : Formatters.abbreviatedPath(gitPath)) the next time it opens.")
                         Button("Relaunch Now") { Relauncher.relaunch() }
                             .controlSize(.small)

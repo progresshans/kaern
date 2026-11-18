@@ -17,7 +17,7 @@ struct OperationBar: View {
                 Text("\(Text("\(conflict.wasPop ? "Pop" : "Apply") stopped: \(fileList(conflict.conflicted)) \(conflict.conflicted.count == 1 ? "has a conflict" : "have conflicts").").fontWeight(.semibold)) The stash stays in the list until \(conflict.conflicted.count == 1 ? "the conflict is" : "the conflicts are") resolved.")
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 8)
+                Spacer(minLength: z(8))
                 BarButton(title: "Undo \(conflict.wasPop ? "Pop" : "Apply")") { repository.from("Operation bar") { repository.takeBackStashConflict() } }
                 if repository.screen != .conflicts {
                     BarButton(title: "Resolve Conflict", primary: true) { repository.openConflicts() }
@@ -30,7 +30,7 @@ struct OperationBar: View {
                 Text("\(Text(title(operation)).fontWeight(.semibold)) — \(progress(operation, left: left))")
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 8)
+                Spacer(minLength: z(8))
                 if left > 0, repository.screen != .conflicts {
                     BarButton(title: "Resolve…") { repository.openConflicts() }
                 }
@@ -44,15 +44,15 @@ struct OperationBar: View {
             .disabled(repository.activity != nil)
         } else if let finish = repository.operationFinish {
             bar(colors: .finished) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
+                Image(systemName: "checkmark.circle.fill").font(.system(size: z(14)))
                 Text("\(Text(finish.title).fontWeight(.semibold)) \(finish.detail)")
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 8)
+                Spacer(minLength: z(8))
                 Button { repository.operationFinish = nil } label: {
-                    Icon(Icons.close, size: 10).frame(width: 22, height: 22).contentShape(Rectangle())
+                    Icon(Icons.close, size: 10).frame(width: z(22), height: z(22)).contentShape(Rectangle())
                 }
-                .buttonStyle(HoverPlateStyle(radius: 6))
+                .buttonStyle(HoverPlateStyle(radius: z(6)))
                 .accessibilityLabel("Close")
             }
         }
@@ -65,12 +65,12 @@ struct OperationBar: View {
     }
 
     private func bar<Content: View>(colors: BarColors, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 9) { content() }
-            .font(.system(size: 12.5))
+        HStack(spacing: z(9)) { content() }
+            .font(.system(size: z(12.5)))
             .foregroundStyle(colors.text)
-            .padding(.leading, 16)
-            .padding(.trailing, 12)
-            .frame(height: 42)
+            .padding(.leading, z(16))
+            .padding(.trailing, z(12))
+            .frame(height: z(42))
             .frame(maxWidth: .infinity)
             .background(colors.fill)
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
@@ -120,15 +120,15 @@ private struct BarButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: z(12), weight: .semibold))
                 .foregroundStyle(primary ? Color.white : K.label)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
+                .padding(.horizontal, z(10))
+                .frame(height: z(24))
                 .background {
                     if primary {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(K.accent)
+                        RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(K.accent)
                     } else {
-                        Color.clear.controlSurface(radius: 6)
+                        Color.clear.controlSurface(radius: z(6))
                     }
                 }
                 .contentShape(Rectangle())
@@ -156,7 +156,7 @@ struct ConflictEditor: View {
                 GeometryReader { geometry in
                     VStack(spacing: 0) {
                         sides(original, names: names)
-                            .frame(height: min(max(geometry.size.height * 0.42, 140), geometry.size.height - 120))
+                            .frame(height: min(max(geometry.size.height * 0.42, z(140)), geometry.size.height - z(120)))
                         K.sep.frame(height: 1)
                         result(session, original: original, names: names)
                     }
@@ -165,7 +165,7 @@ struct ConflictEditor: View {
                 unreadable(path)
             } else {
                 Text("No conflicts left")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: z(13), weight: .semibold))
                     .foregroundStyle(K.label2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -181,16 +181,16 @@ struct ConflictEditor: View {
         let blocks = session?.original?.conflictCount ?? 0
         let open = session?.openBlocks ?? 0
         let resolvedAlready = !path.isEmpty && !repository.conflictedPaths.contains(path)
-        return HStack(spacing: 8) {
+        return HStack(spacing: z(8)) {
             Button { repository.closeConflicts() } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: z(3)) {
                     Icon(Icons.arrowLeft, size: 12)
-                    Text("Graph").font(.system(size: 13, weight: .semibold))
+                    Text("Graph").font(.system(size: z(13), weight: .semibold))
                 }
                 .foregroundStyle(K.accentText)
-                .padding(.leading, 5)
-                .padding(.trailing, 10)
-                .frame(height: 28)
+                .padding(.leading, z(5))
+                .padding(.trailing, z(10))
+                .frame(height: z(28))
                 .contentShape(Rectangle())
             }
             .buttonStyle(AccentPlateStyle())
@@ -198,7 +198,7 @@ struct ConflictEditor: View {
             FilePathText(path: path, nameWeight: .semibold, size: 13)
                 .layoutPriority(-1)
             Text(counter(blocks: blocks, open: open, resolved: resolvedAlready, editing: session?.editingText != nil))
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
                 .fixedSize()
@@ -213,9 +213,9 @@ struct ConflictEditor: View {
                     .disabled(!canMarkResolved(session) || repository.activity != nil)
             }
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
-        .frame(height: 44)
+        .padding(.leading, z(8))
+        .padding(.trailing, z(12))
+        .frame(height: z(44))
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
 
@@ -251,27 +251,27 @@ struct ConflictEditor: View {
     @ViewBuilder
     private func result(_ session: ConflictSession, original: ConflictDocument, names: ConflictSideNames) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Text("Result").fontWeight(.semibold).foregroundStyle(K.label)
                 Text(session.editingText == nil ? "what the file will contain — you can also edit it directly" : "type the file as it should be; leftover markers keep it unresolved")
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Button(session.editingText == nil ? "Edit Directly" : "Done Editing") { repository.toggleDirectEdit() }
                     .buttonStyle(.link)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: z(11.5), weight: .semibold))
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: z(11.5)))
             .foregroundStyle(K.label2)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
+            .padding(.horizontal, z(12))
+            .frame(height: z(30))
             .background(K.inspector)
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             if let text = session.editingText {
                 TextEditor(text: Binding(get: { text }, set: { repository.conflictSession?.editingText = $0 }))
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: z(12), design: .monospaced))
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, z(8))
+                    .padding(.vertical, z(6))
                     .background(K.content)
             } else {
                 let rows = ResultRow.rows(original, choices: session.choices)
@@ -283,7 +283,7 @@ struct ConflictEditor: View {
                                     .id(row.id)
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, z(4))
                     }
                     // The next block to pick comes into view (on opening a file and after each pick).
                     .onAppear { scrollToOpenBlock(rows, proxy) }
@@ -300,13 +300,13 @@ struct ConflictEditor: View {
     }
 
     private func unreadable(_ path: String) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: z(10)) {
             Text("Kaern can’t show this file side by side")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: z(13), weight: .semibold))
             Text("It’s binary, deleted on one side or too large. Take one side whole, or open it in FileMerge.")
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 GhostButton(title: "Take \(repository.conflictSides.oursShort)") { repository.resolveWholeFile(path, side: .ours) }
                 GhostButton(title: "Take \(repository.conflictSides.theirsShort)") { repository.resolveWholeFile(path, side: .theirs) }
                 GhostButton(title: "Open in FileMerge") { repository.openInFileMerge(path) }
@@ -325,11 +325,11 @@ private struct MarkResolvedButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 9)
-                .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.accent))
+                .padding(.horizontal, z(9))
+                .frame(height: z(24))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.accent))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -350,16 +350,16 @@ private struct SideColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 2).fill(marker).frame(width: 3, height: 14)
+            HStack(spacing: z(7)) {
+                RoundedRectangle(cornerRadius: z(2)).fill(marker).frame(width: z(3), height: z(14))
                 Text(title).fontWeight(.semibold).foregroundStyle(K.label).lineLimit(1).truncationMode(.tail)
                 Text(note).lineLimit(1).layoutPriority(-1)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: z(11.5)))
             .foregroundStyle(K.label2)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
+            .padding(.horizontal, z(12))
+            .frame(height: z(30))
             .background(K.inspector)
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             ScrollViewReader { proxy in
@@ -369,22 +369,22 @@ private struct SideColumn: View {
                         HStack(alignment: .top, spacing: 0) {
                             Text("\(index + 1)")
                                 .foregroundStyle(K.label2)
-                                .frame(width: 42, alignment: .trailing)
-                                .padding(.trailing, 10)
+                                .frame(width: z(42), alignment: .trailing)
+                                .padding(.trailing, z(10))
                             Text(displayText(line.text))
                                 .foregroundStyle(K.code)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.trailing, 10)
+                                .padding(.trailing, z(10))
                         }
-                        .frame(height: 20)
+                        .frame(height: z(20))
                         .background(line.conflict != nil ? tint : .clear)
                         .id(index)
                     }
                 }
                 .font(style.font)
-                .padding(.vertical, 4)
+                .padding(.vertical, z(4))
             }
             .onAppear { scrollToFirstConflict(proxy) }
             .onChange(of: lines) { scrollToFirstConflict(proxy) }
@@ -457,46 +457,46 @@ private struct ResultRowView: View {
             HStack(alignment: .top, spacing: 0) {
                 Text("\(number)")
                     .foregroundStyle(K.label2)
-                    .frame(width: 42, alignment: .trailing)
-                    .padding(.trailing, 10)
+                    .frame(width: z(42), alignment: .trailing)
+                    .padding(.trailing, z(10))
                 Text(displayText(text))
                     .foregroundStyle(K.code)
                     .lineLimit(style.wraps ? nil : 1)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, 10)
+                    .padding(.trailing, z(10))
             }
             .font(style.font)
-            .frame(minHeight: 20)
+            .frame(minHeight: z(20))
             .background(picked ? K.accentSoft.opacity(0.5) : .clear)
         case .block(let index, let lines):
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Icon(Icons.warn, size: 14)
                 Text("\(Formatters.count(lines, "line differs", "lines differ")) — pick a side for this block")
-                    .padding(.trailing, 6)
+                    .padding(.trailing, z(6))
                 BlockButton(title: "Use \(names.oursShort)") { repository.pickConflict(index, .ours) }
                 BlockButton(title: "Use \(names.theirsShort)") { repository.pickConflict(index, .theirs) }
                 BlockButton(title: "Use Both") { repository.pickConflict(index, .both) }
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: z(12), weight: .semibold))
             .foregroundStyle(K.cbText)
-            .padding(EdgeInsets(top: 7, leading: 52, bottom: 7, trailing: 12))
+            .padding(EdgeInsets(top: z(7), leading: z(52), bottom: z(7), trailing: z(12)))
             .background(K.cbBg)
-            .padding(.vertical, 2)
+            .padding(.vertical, z(2))
         case .picked(let index, let resolution):
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Text(pickedText(resolution))
                 Button("Change") { repository.unpickConflict(index) }
                     .buttonStyle(.plain)
                     .foregroundStyle(K.accentText)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(K.accentSoft.opacity(0.0001)))
+                    .padding(.horizontal, z(5))
+                    .padding(.vertical, z(2))
+                    .background(RoundedRectangle(cornerRadius: z(5)).fill(K.accentSoft.opacity(0.0001)))
             }
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: z(11.5), weight: .semibold))
             .foregroundStyle(K.accentText)
-            .padding(EdgeInsets(top: 3, leading: 52, bottom: 3, trailing: 12))
+            .padding(EdgeInsets(top: z(3), leading: z(52), bottom: z(3), trailing: z(12)))
         }
     }
 
@@ -517,11 +517,11 @@ private struct BlockButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: z(12), weight: .semibold))
                 .foregroundStyle(K.label)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
-                .controlSurface(radius: 6)
+                .padding(.horizontal, z(10))
+                .frame(height: z(24))
+                .controlSurface(radius: z(6))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -534,7 +534,7 @@ private struct BlockButton: View {
 /// The right panel while resolving (`.rcpanel`, 330 pt unless dragged): the conflicted files (✓ when
 /// resolved), FileMerge, what merged on its own, and the message for the commit that comes next.
 struct ResolveConflictsPanel: View {
-    static let width: CGFloat = 330
+    static var width: CGFloat { z(330) }
 
     @Bindable var repository: RepositoryModel
 
@@ -547,13 +547,13 @@ struct ResolveConflictsPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Resolve Conflicts")
-                        .font(.system(size: 15, weight: .bold))
-                        .padding(.horizontal, 4)
+                        .font(.system(size: z(15), weight: .bold))
+                        .padding(.horizontal, z(4))
                     Text(summary(files: files, open: open, merged: merged.count))
-                        .font(.system(size: 12))
+                        .font(.system(size: z(12)))
                         .foregroundStyle(K.label2)
-                        .padding(.horizontal, 4)
-                        .padding(.top, 3)
+                        .padding(.horizontal, z(4))
+                        .padding(.top, z(3))
                     sectionTitle("Conflicted")
                     ForEach(files, id: \.self) { path in
                         ConflictFileRow(path: path, isOpen: open.contains(path), isShown: session?.path == path) {
@@ -563,26 +563,26 @@ struct ResolveConflictsPanel: View {
                     if let path = session?.path, open.contains(path) {
                         Button("Open in FileMerge") { repository.openInFileMerge(path) }
                             .buttonStyle(.link)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.leading, 7)
-                            .padding(.top, 6)
+                            .font(.system(size: z(12), weight: .semibold))
+                            .padding(.leading, z(7))
+                            .padding(.top, z(6))
                     }
                     if !merged.isEmpty {
                         sectionTitle("Merged automatically")
                         ForEach(merged, id: \.path) { entry in
-                            HStack(spacing: 7) {
+                            HStack(spacing: z(7)) {
                                 StatusTile(letter: entry.kind.letter)
                                 FilePathText(path: entry.path)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 LineCounts(additions: repository.lineStats.staged[entry.path]?.additions,
                                            deletions: repository.lineStats.staged[entry.path]?.deletions)
                             }
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, z(6))
                             .frame(height: KMetric.fileRow)
                         }
                     }
                 }
-                .padding(EdgeInsets(top: 14, leading: 12, bottom: 10, trailing: 12))
+                .padding(EdgeInsets(top: z(14), leading: z(12), bottom: z(10), trailing: z(12)))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             messageBox
@@ -594,11 +594,11 @@ struct ResolveConflictsPanel: View {
 
     private func sectionTitle(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: z(11.5), weight: .semibold))
             .foregroundStyle(K.label2)
-            .padding(.horizontal, 4)
-            .padding(.top, 16)
-            .padding(.bottom, 4)
+            .padding(.horizontal, z(4))
+            .padding(.top, z(16))
+            .padding(.bottom, z(4))
     }
 
     private func summary(files: [String], open: Set<String>, merged: Int) -> String {
@@ -616,9 +616,9 @@ struct ResolveConflictsPanel: View {
     @ViewBuilder
     private var messageBox: some View {
         if let operation = repository.operation, operation.canEditMessage {
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: z(7)) {
                 Text(messageTitle(operation))
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: z(11.5), weight: .semibold))
                     .foregroundStyle(K.label2)
                 TextEditor(text: Binding(
                     get: { repository.conflictSession?.message ?? operation.message },
@@ -627,26 +627,26 @@ struct ResolveConflictsPanel: View {
                         repository.conflictSession?.messageEdited = true
                     }
                 ))
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .scrollContentBackground(.hidden)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 5)
-                .frame(height: 96)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+                .padding(.horizontal, z(5))
+                .padding(.vertical, z(5))
+                .frame(height: z(96))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.field)
+                    .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
                 Text("Resolve \(repository.conflictSession?.files.count == 1 ? "the file" : "the files"), then press Continue in the bar above. The message is kept.")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
+            .padding(z(12))
             .overlay(alignment: .top) { K.sep.frame(height: 1) }
         } else if repository.stashConflict != nil {
             Text("Mark each file resolved. The stash stays in Stashes until you drop it.")
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(K.label2)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(12)
+                .padding(z(12))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .top) { K.sep.frame(height: 1) }
         }
@@ -671,21 +671,21 @@ private struct ConflictFileRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 Text(isOpen ? "!" : "✓")
-                    .font(.system(size: 10, weight: .heavy))
+                    .font(.system(size: z(10), weight: .heavy))
                     .foregroundStyle(.white)
-                    .frame(width: 16, height: 16)
+                    .frame(width: z(16), height: z(16))
                     .background(Circle().fill(isOpen ? K.err : K.ok))
                 FilePathText(path: path, selected: isShown)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(isOpen ? "conflict" : "resolved")
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(isShown ? .white.opacity(0.85) : K.label2)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, z(6))
             .frame(height: KMetric.fileRow)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isShown ? K.sel : (hovering ? K.hover : .clear)))
+            .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(isShown ? K.sel : (hovering ? K.hover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

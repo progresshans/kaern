@@ -34,7 +34,7 @@ struct RepositorySheetHost: View {
                     }
                 }
                 .id(sheet.id)
-                .padding(.top, sheet.isAttached ? toolbarHeight : toolbarHeight + 14)
+                .padding(.top, sheet.isAttached ? toolbarHeight : toolbarHeight + z(14))
             }
             .transition(.opacity)
         }
@@ -59,13 +59,13 @@ struct SheetCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .foregroundStyle(K.label)
-            .padding(EdgeInsets(top: 18, leading: 20, bottom: 16, trailing: 20))
-            .frame(width: width, alignment: .leading)
+            .padding(EdgeInsets(top: z(18), leading: z(20), bottom: z(16), trailing: z(20)))
+            .frame(width: z(width), alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: z(12), style: .continuous)
                     .fill(K.pop)
-                    .shadow(color: .black.opacity(0.28), radius: 32, y: 24)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.28), radius: z(32), y: 24)
+                    .overlay(RoundedRectangle(cornerRadius: z(12), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
             )
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
@@ -88,10 +88,10 @@ struct SheetTitle: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            title.font(.system(size: 13.5, weight: .bold))
+        VStack(alignment: .leading, spacing: z(3)) {
+            title.font(.system(size: z(13.5), weight: .bold))
             if let subtitle {
-                Text(subtitle).font(.system(size: 12)).foregroundStyle(K.label2).lineLimit(2)
+                Text(subtitle).font(.system(size: z(12))).foregroundStyle(K.label2).lineLimit(2)
             }
         }
     }
@@ -110,16 +110,16 @@ struct SheetField: View {
         let focused = focus.wrappedValue
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
-            .font(monospaced ? .system(size: 12.5, design: .monospaced) : .system(size: 13))
+            .font(monospaced ? .system(size: z(12.5), design: .monospaced) : .system(size: z(13)))
             .focused(focus)
             .onSubmit(onSubmit)
-            .padding(.horizontal, 8)
-            .frame(height: 26)
+            .padding(.horizontal, z(8))
+            .frame(height: z(26))
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(K.field)
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(K.field)
+                    .overlay(RoundedRectangle(cornerRadius: z(6), style: .continuous)
                         .strokeBorder(isBad ? K.err : (focused ? K.accent : K.sepStrong), lineWidth: isBad || focused ? 1 : 0.5))
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .background(RoundedRectangle(cornerRadius: z(6), style: .continuous)
                         .stroke(isBad ? K.err.opacity(0.16) : (focused ? K.accentSoft : .clear), lineWidth: 6))
             )
     }
@@ -132,9 +132,9 @@ struct FieldMessage: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.system(size: z(11.5)))
             .foregroundStyle(tone == .error ? K.err : tone == .note ? K.mod : K.label2)
-            .frame(minHeight: 15, alignment: .topLeading)
+            .frame(minHeight: z(15), alignment: .topLeading)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -149,9 +149,9 @@ struct SheetButtons: View {
     let confirm: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             if let leading {
-                Text(leading).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                Text(leading).font(.system(size: z(11.5))).foregroundStyle(K.label2)
             }
             Spacer(minLength: 0)
             Button("Cancel", action: cancel)
@@ -163,7 +163,7 @@ struct SheetButtons: View {
                 .tint(destructive ? K.err : nil)
                 .disabled(!isEnabled)
         }
-        .padding(.top, 16)
+        .padding(.top, z(16))
     }
 }
 
@@ -176,9 +176,9 @@ struct SheetFormRow<Content: View>: View {
     var body: some View {
         GridRow(alignment: topAligned ? .top : .center) {
             Text(label)
-                .font(.system(size: 12.5))
-                .frame(width: 72, alignment: .trailing)
-                .padding(.top, topAligned ? 5 : 0)
+                .font(.system(size: z(12.5)))
+                .frame(width: z(72), alignment: .trailing)
+                .padding(.top, topAligned ? z(5) : 0)
             content.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -201,12 +201,12 @@ private struct BranchSheet: View {
         let unchanged = except != nil && check.name == except
         SheetCard {
             SheetTitle(title, subtitle: subtitle)
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+            Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(6)) {
                 SheetFormRow(label: "Name") {
                     SheetField(placeholder: "feature/name", text: $name, isBad: check.tone == .error, focus: $focused, onSubmit: submit)
                 }
                 GridRow {
-                    Color.clear.frame(width: 72, height: 1)
+                    Color.clear.frame(width: z(72), height: 1)
                     FieldMessage(text: unchanged ? "Type a new name for \(except ?? "")." : check.message, tone: unchanged ? .plain : check.tone)
                 }
                 if case .new = request.kind {
@@ -218,22 +218,22 @@ private struct BranchSheet: View {
                         .frame(maxWidth: .infinity)
                     }
                     GridRow {
-                        Color.clear.frame(width: 72, height: 1)
+                        Color.clear.frame(width: z(72), height: 1)
                         Toggle("Check out after creating", isOn: $checkout)
                             .toggleStyle(.checkbox)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: z(12.5)))
                     }
                 }
                 if case .rename(let old) = request.kind, let remote = renameRemote(old) {
                     GridRow {
-                        Color.clear.frame(width: 72, height: 1)
+                        Color.clear.frame(width: z(72), height: 1)
                         Toggle("Also rename \(remote)/\(old)", isOn: $alsoRemote)
                             .toggleStyle(.checkbox)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: z(12.5)))
                     }
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
             SheetButtons(confirmTitle: confirmTitle, isEnabled: check.isValid && !unchanged,
                          cancel: { repository.sheet = nil }, confirm: submit)
         }
@@ -322,43 +322,43 @@ private struct TagSheet: View {
         SheetCard {
             SheetTitle(text: Text("New Tag on \(Text(repository.short(request.commit)).font(.system(size: 13, weight: .bold, design: .monospaced)))"),
                        subtitle: subtitle)
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+            Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(6)) {
                 SheetFormRow(label: "Name") {
                     SheetField(placeholder: "v1.0.0", text: $name, isBad: !trimmed.isEmpty && !check.isValid, focus: $focused, onSubmit: submit)
                 }
                 GridRow {
-                    Color.clear.frame(width: 72, height: 1)
+                    Color.clear.frame(width: z(72), height: 1)
                     FieldMessage(text: nameMessage(check), tone: !trimmed.isEmpty && !check.isValid ? .error : .plain)
                 }
                 SheetFormRow(label: "Message", topAligned: true) {
                     TextEditor(text: $message)
-                        .font(.system(size: 13))
+                        .font(.system(size: z(13)))
                         .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 4)
-                        .frame(height: 62)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(K.field)
-                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+                        .padding(.horizontal, z(4))
+                        .padding(.vertical, z(4))
+                        .frame(height: z(62))
+                        .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(K.field)
+                            .overlay(RoundedRectangle(cornerRadius: z(6), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
                 }
                 GridRow {
-                    Color.clear.frame(width: 72, height: 1)
+                    Color.clear.frame(width: z(72), height: 1)
                     Text(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                          ? "Lightweight tag — it points at the commit with no message."
                          : "Annotated tag — it records you as the tagger. Leave the message empty for a lightweight tag.")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: z(11.5)))
                         .foregroundStyle(K.label2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let remote = repository.defaultRemote {
                     GridRow {
-                        Color.clear.frame(width: 72, height: 1)
+                        Color.clear.frame(width: z(72), height: 1)
                         Toggle("Push to \(remote)", isOn: $push)
                             .toggleStyle(.checkbox)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: z(12.5)))
                     }
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
             SheetButtons(confirmTitle: "Create Tag", isEnabled: check.isValid, cancel: { repository.sheet = nil }, confirm: submit)
         }
         .onAppear {
@@ -414,23 +414,23 @@ private struct PickSheet: View {
                     }
                     if candidates.isEmpty {
                         Text("No other branches")
-                            .font(.system(size: 12.5))
+                            .font(.system(size: z(12.5)))
                             .foregroundStyle(K.label2)
-                            .frame(maxWidth: .infinity, minHeight: 30)
+                            .frame(maxWidth: .infinity, minHeight: z(30))
                     }
                 }
-                .padding(4)
+                .padding(z(4))
             }
-            .frame(maxHeight: min(CGFloat(max(candidates.count, 1)) * 30 + 8, 300))
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field)
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
-            .padding(.top, 12)
+            .frame(maxHeight: min(CGFloat(max(candidates.count, 1)) * 30 + z(8), z(300)))
+            .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field)
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+            .padding(.top, z(12))
             if let label = optionLabel {
                 Toggle(label, isOn: $option)
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .disabled(!optionAvailable)
-                    .padding(.top, 10)
+                    .padding(.top, z(10))
             }
             SheetButtons(confirmTitle: confirmTitle, isEnabled: selection != nil, destructive: request.kind == .delete,
                          cancel: { repository.sheet = nil }) {
@@ -510,24 +510,24 @@ private struct PickRow: View {
 
     var body: some View {
         Button(action: pick) {
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Image(systemName: isOn ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                     .foregroundStyle(isOn ? K.accent : K.label3)
                 Text(name)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: z(13), weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(note ?? "…")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                     .fixedSize()
             }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isOn ? K.accentSoft : .clear))
+            .padding(.horizontal, z(8))
+            .frame(height: z(30))
+            .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(isOn ? K.accentSoft : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -547,12 +547,12 @@ private struct RenameStashSheet: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         SheetCard {
             SheetTitle("Rename \(stash.reference)", subtitle: "It keeps its place in the list. ⌘Z gives it the old name back.")
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+            Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(6)) {
                 SheetFormRow(label: "Name") {
                     SheetField(placeholder: "What the changes are", text: $name, focus: $focused, onSubmit: submit)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
             SheetButtons(confirmTitle: "Rename", isEnabled: !trimmed.isEmpty && trimmed != RepositoryModel.stashTitle(stash),
                          cancel: { repository.sheet = nil }, confirm: submit)
         }
@@ -588,7 +588,7 @@ private struct AddWorktreeSheet: View {
         let exists = !path.isEmpty && FileManager.default.fileExists(atPath: path)
         SheetCard {
             SheetTitle("Add Worktree", subtitle: "Another folder with a branch of \(repository.name) checked out. Both share commits, branches and tags.")
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+            Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(6)) {
                 SheetFormRow(label: "Branch") {
                     if branches.isEmpty {
                         FieldMessage(text: "Every branch is checked out in a worktree. Make a new branch first.", tone: .note)
@@ -607,12 +607,12 @@ private struct AddWorktreeSheet: View {
                     }), isBad: exists, monospaced: true, focus: $focused, onSubmit: submit)
                 }
                 GridRow {
-                    Color.clear.frame(width: 72, height: 1)
+                    Color.clear.frame(width: z(72), height: 1)
                     FieldMessage(text: exists ? "Something is already at this path." : "Kaern makes this folder and checks the branch out in it.",
                                  tone: exists ? .error : .plain)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
             SheetButtons(confirmTitle: "Add Worktree", isEnabled: !branch.isEmpty && !path.isEmpty && !exists,
                          cancel: { repository.sheet = nil }, confirm: submit)
         }

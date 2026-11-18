@@ -39,12 +39,12 @@ private struct AttachedCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .foregroundStyle(K.label)
-            .padding(EdgeInsets(top: 20, leading: 22, bottom: 16, trailing: 22))
-            .frame(width: width, alignment: .leading)
+            .padding(EdgeInsets(top: z(20), leading: z(22), bottom: z(16), trailing: z(22)))
+            .frame(width: z(width), alignment: .leading)
             .background(
                 UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
                     .fill(fill)
-                    .shadow(color: .black.opacity(0.28), radius: 25, y: 18)
+                    .shadow(color: .black.opacity(0.28), radius: z(25), y: 18)
                     .overlay(UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
                         .strokeBorder(K.sepStrong, lineWidth: 0.5))
             )
@@ -60,10 +60,10 @@ private struct FormLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12.5))
+            .font(.system(size: z(12.5)))
             .foregroundStyle(color)
-            .frame(width: 110, alignment: .trailing)
-            .padding(.top, 5)
+            .frame(width: z(110), alignment: .trailing)
+            .padding(.top, z(5))
     }
 }
 
@@ -74,7 +74,7 @@ private struct FormNote: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .font(.system(size: z(11.5)))
             .foregroundStyle(isError ? K.err : K.label2)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -90,17 +90,17 @@ struct SheetActionButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: z(12.5), weight: .semibold))
                 .foregroundStyle(primary ? Color.white : K.label)
                 .lineLimit(1)
-                .padding(.horizontal, 14)
-                .frame(height: 28)
+                .padding(.horizontal, z(14))
+                .frame(height: z(28))
                 .background {
                     if primary {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.accent)
+                        RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.accent)
                             .shadow(color: K.shadowCtl, radius: 0.75, y: 0.5)
                     } else {
-                        Color.clear.controlSurface(radius: 7)
+                        Color.clear.controlSurface(radius: z(7))
                     }
                 }
                 .contentShape(Rectangle())
@@ -126,17 +126,17 @@ struct PopupField<Value: Hashable>: View {
                 Toggle(title, isOn: Binding(get: { selection == value }, set: { _ in selection = value }))
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 Text(options.first { $0.0 == selection }?.1 ?? "")
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .foregroundStyle(K.label)
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                Spacer(minLength: z(4))
                 Icon(Icons.upDown, size: 9, height: 12).foregroundStyle(K.label2)
             }
-            .padding(.horizontal, 8)
-            .frame(width: width, height: 26)
-            .controlSurface(radius: 6)
+            .padding(.horizontal, z(8))
+            .frame(width: z(width), height: z(26))
+            .controlSurface(radius: z(6))
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -154,7 +154,7 @@ private struct PathText: View {
 
     var body: some View {
         Text(path)
-            .font(.system(size: 12, design: .monospaced))
+            .font(.system(size: z(12), design: .monospaced))
             .foregroundStyle(K.label)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -167,14 +167,14 @@ private struct AccountLine: View {
     let account: HostingAccount
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: z(7)) {
             Text(account.initials)
-                .font(.system(size: 8.5, weight: .bold))
+                .font(.system(size: z(8.5), weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 20, height: 20)
+                .frame(width: z(20), height: z(20))
                 .background(Circle().fill(AvatarPalette.color(for: account.login)))
             Text("\(account.login) · \(account.host)")
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
         }
     }
 }
@@ -184,23 +184,23 @@ private struct CloneProgressBox: View {
     let progress: GitProgress?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: z(6)) {
             HStack {
-                Text((progress?.phase ?? "Connecting") + "…").font(.system(size: 12.5, weight: .semibold))
+                Text((progress?.phase ?? "Connecting") + "…").font(.system(size: z(12.5), weight: .semibold))
                 Spacer()
                 if let percent = progress?.percent {
-                    Text("\(percent)%").font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                    Text("\(percent)%").font(.system(size: z(12.5), weight: .semibold)).monospacedDigit()
                 }
             }
             ProgressBar(fraction: progress?.percent.map { Double($0) / 100 })
             if let detail = progress?.detail {
-                Text(detail).font(.system(size: 11.5)).foregroundStyle(K.label2).monospacedDigit()
+                Text(detail).font(.system(size: z(11.5))).foregroundStyle(K.label2).monospacedDigit()
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.hover))
-        .padding(.top, 14)
+        .padding(.horizontal, z(12))
+        .padding(.vertical, z(10))
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.hover))
+        .padding(.top, z(14))
     }
 }
 
@@ -214,7 +214,7 @@ struct ProgressBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(K.chip2)
                 if let fraction {
-                    Capsule().fill(K.accent).frame(width: max(6, geometry.size.width * min(1, max(0, fraction))))
+                    Capsule().fill(K.accent).frame(width: max(z(6), geometry.size.width * min(1, max(0, fraction))))
                 } else {
                     Capsule().fill(K.accent).frame(width: geometry.size.width * 0.3)
                         .offset(x: (geometry.size.width * 0.7) * phase)
@@ -224,7 +224,7 @@ struct ProgressBar: View {
                 }
             }
         }
-        .frame(height: 5)
+        .frame(height: z(5))
         .clipShape(Capsule())
         .animation(.easeOut(duration: 0.2), value: fraction)
     }
@@ -243,34 +243,34 @@ struct CloneSheet: View {
 
     var body: some View {
         AttachedCard(width: 520, fill: K.inspector) {
-            Text("Clone a Repository").font(.system(size: 14, weight: .bold)).padding(.bottom, 12)
+            Text("Clone a Repository").font(.system(size: z(14), weight: .bold)).padding(.bottom, z(12))
             SegmentedChoice(options: [(CloneModel.Source.url, "URL"), (.github, "GitHub"), (.gitlab, "GitLab")],
                             selection: $model.source, label: "Source")
                 .disabled(model.isCloning)
-                .padding(.bottom, 14)
-            if model.source != .url { hostedList.padding(.bottom, 12) }
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    FormLabel(text: "Repository URL", color: K.label2).padding(.top, -5)
+                .padding(.bottom, z(14))
+            if model.source != .url { hostedList.padding(.bottom, z(12)) }
+            VStack(alignment: .leading, spacing: z(10)) {
+                HStack(spacing: z(10)) {
+                    FormLabel(text: "Repository URL", color: K.label2).padding(.top, -z(5))
                     SheetField(placeholder: "https://github.com/owner/name.git", text: $model.url, focus: $urlFocused, onSubmit: start)
                 }
-                HStack(spacing: 10) {
-                    FormLabel(text: "Clone into", color: K.label2).padding(.top, -5)
+                HStack(spacing: z(10)) {
+                    FormLabel(text: "Clone into", color: K.label2).padding(.top, -z(5))
                     SheetField(placeholder: "~/Developer/name", text: Binding(get: { model.destination }, set: {
                         model.destination = $0
                         model.destinationEdited = true
                     }), isBad: model.problem.map { !$0.isEmpty } ?? false, focus: $folderFocused, onSubmit: start)
                     SheetActionButton(title: "Choose…") { choose() }
                 }
-                HStack(spacing: 10) {
-                    FormLabel(text: "Account", color: K.label2).padding(.top, -5)
+                HStack(spacing: z(10)) {
+                    FormLabel(text: "Account", color: K.label2).padding(.top, -z(5))
                     accountRow
                 }
-                HStack(spacing: 10) {
-                    Color.clear.frame(width: 110, height: 1)
+                HStack(spacing: z(10)) {
+                    Color.clear.frame(width: z(110), height: 1)
                     Toggle("Open it in a new tab when the clone finishes", isOn: $model.opensTab)
                         .toggleStyle(.checkbox)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: z(12.5)))
                 }
             }
             .disabled(model.isCloning)
@@ -278,12 +278,12 @@ struct CloneSheet: View {
                 CloneProgressBox(progress: model.progress)
             }
             if let problem = model.problem, !problem.isEmpty, !model.isCloning {
-                FormNote(text: problem, isError: true).padding(.top, 10).padding(.leading, 120)
+                FormNote(text: problem, isError: true).padding(.top, z(10)).padding(.leading, z(120))
             }
             if let error = model.error {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: z(8)) {
                     Icon(Icons.error, size: 13).foregroundStyle(K.err).padding(.top, 1)
-                    Text(error).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                    Text(error).font(.system(size: z(12))).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     if case .signIn(let host) = model.failure {
                         SheetActionButton(title: "Sign In…") {
@@ -291,11 +291,11 @@ struct CloneSheet: View {
                         }
                     }
                 }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.cbBg))
-                .padding(.top, 12)
+                .padding(z(10))
+                .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.cbBg))
+                .padding(.top, z(12))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Spacer()
                 SheetActionButton(title: "Cancel") { app.closeSheet(in: window) }
                     .keyboardShortcut(.cancelAction)
@@ -303,7 +303,7 @@ struct CloneSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.isCloning || model.problem != nil)
             }
-            .padding(.top, 18)
+            .padding(.top, z(18))
         }
         .onAppear {
             DispatchQueue.main.async { urlFocused = model.source == .url }
@@ -320,13 +320,13 @@ struct CloneSheet: View {
             AccountLine(account: account)
         } else if model.host == nil {
             Text(model.url.isEmpty ? "—" : "None needed for a folder on this Mac")
-                .font(.system(size: 12.5)).foregroundStyle(K.label2)
+                .font(.system(size: z(12.5))).foregroundStyle(K.label2)
         } else {
-            HStack(spacing: 8) {
-                Text("Not signed in — public repositories only").font(.system(size: 12.5)).foregroundStyle(K.label2)
+            HStack(spacing: z(8)) {
+                Text("Not signed in — public repositories only").font(.system(size: z(12.5))).foregroundStyle(K.label2)
                 Button("Sign In…") { SettingsWindowController.shared.showSignIn(host: model.host ?? "github.com") }
                     .buttonStyle(.link)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
             }
         }
     }
@@ -337,48 +337,48 @@ struct CloneSheet: View {
         let service = model.source == .github ? "GitHub" : "GitLab"
         switch model.listState {
         case .needsAccount:
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Text("Sign in to \(service) to pick from your repositories, or paste a URL below.")
-                    .font(.system(size: 12.5)).foregroundStyle(K.label2)
+                    .font(.system(size: z(12.5))).foregroundStyle(K.label2)
                 Spacer()
                 SheetActionButton(title: "Sign In to \(service)…") {
                     SettingsWindowController.shared.showSignIn(host: model.source == .github ? "github.com" : "gitlab.com")
                 }
             }
         case .loading, .idle:
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 ProgressView().controlSize(.small)
-                Text("Loading your \(service) repositories…").font(.system(size: 12.5)).foregroundStyle(K.label2)
+                Text("Loading your \(service) repositories…").font(.system(size: z(12.5))).foregroundStyle(K.label2)
             }
-            .frame(maxWidth: .infinity, minHeight: 60)
+            .frame(maxWidth: .infinity, minHeight: z(60))
         case .failed(let message):
             FormNote(text: message, isError: true)
         case .loaded:
-            VStack(spacing: 6) {
-                HStack(spacing: 6) {
+            VStack(spacing: z(6)) {
+                HStack(spacing: z(6)) {
                     Icon(Icons.search(1.4), size: 12).foregroundStyle(K.label2)
                     TextField("Filter \(model.hosted.count) repositories", text: $model.filter)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: z(12.5)))
                         .focused($filterFocused)
                 }
-                .padding(.horizontal, 9)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field)
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+                .padding(.horizontal, z(9))
+                .frame(height: z(28))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.field)
+                    .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
                 ScrollView {
                     VStack(spacing: 1) {
                         ForEach(model.filteredHosted) { item in
                             HostedRow(item: item, isPicked: model.url == item.httpsURL || model.url == item.sshURL) { model.pick(item) }
                         }
                         if model.filteredHosted.isEmpty {
-                            Text("No repository matches “\(model.filter)”.").font(.system(size: 12)).foregroundStyle(K.label2).padding(12)
+                            Text("No repository matches “\(model.filter)”.").font(.system(size: z(12))).foregroundStyle(K.label2).padding(z(12))
                         }
                     }
                 }
-                .frame(height: 176)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                .frame(height: z(176))
+                .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field))
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
             }
         }
     }
@@ -411,33 +411,33 @@ private struct HostedRow: View {
 
     var body: some View {
         Button(action: pick) {
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.fullName).font(.system(size: 12.5, weight: .semibold))
+                    Text(item.fullName).font(.system(size: z(12.5), weight: .semibold))
                     if let summary = item.summary, !summary.isEmpty {
-                        Text(summary).font(.system(size: 11)).foregroundStyle(isPicked ? .white.opacity(0.8) : K.label2)
+                        Text(summary).font(.system(size: z(11))).foregroundStyle(isPicked ? .white.opacity(0.8) : K.label2)
                     }
                 }
                 .lineLimit(1)
-                Spacer(minLength: 6)
+                Spacer(minLength: z(6))
                 if item.isPrivate {
-                    Text("private").font(.system(size: 10.5, weight: .semibold))
+                    Text("private").font(.system(size: z(10.5), weight: .semibold))
                         .foregroundStyle(isPicked ? .white : K.label2)
-                        .padding(.horizontal, 6).frame(height: 16)
+                        .padding(.horizontal, z(6)).frame(height: z(16))
                         .background(Capsule().fill(isPicked ? Color.white.opacity(0.22) : K.chip2))
                 }
                 if let updated = item.updated {
-                    Text(Formatters.historyDate(updated)).font(.system(size: 11)).foregroundStyle(isPicked ? .white.opacity(0.8) : K.label2)
+                    Text(Formatters.historyDate(updated)).font(.system(size: z(11))).foregroundStyle(isPicked ? .white.opacity(0.8) : K.label2)
                 }
             }
             .foregroundStyle(isPicked ? .white : K.label)
-            .padding(.horizontal, 10)
-            .frame(height: item.summary?.isEmpty == false ? 38 : 28)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isPicked ? K.sel : (hovering ? K.hover : .clear)))
+            .padding(.horizontal, z(10))
+            .frame(height: item.summary?.isEmpty == false ? z(38) : z(28))
+            .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(isPicked ? K.sel : (hovering ? K.hover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 3)
+        .padding(.horizontal, z(3))
         .onHover { hovering = $0 }
     }
 }
@@ -457,16 +457,16 @@ struct CreateSheet: View {
         let nameCheck = model.nameCheck
         AttachedCard {
             Text(model.existingFolder == nil ? "Create a New Repository" : "Create a Repository in “\(model.name)”")
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: z(15), weight: .bold))
             Text(model.existingFolder == nil ? "Kaern makes the folder, sets up Git and can make the first commit for you."
                  : "Kaern adds Git to the folder. Your files stay where they are.")
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
-                .padding(.top, 4)
-            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 10) {
+                .padding(.top, z(4))
+            Grid(alignment: .topLeading, horizontalSpacing: z(12), verticalSpacing: z(10)) {
                 GridRow {
                     FormLabel(text: "Name")
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: z(4)) {
                         SheetField(placeholder: "my-project", text: $model.name, isBad: nameCheck.isError && !model.name.isEmpty,
                                    focus: $nameFocused, onSubmit: create)
                             .disabled(model.existingFolder != nil)
@@ -478,27 +478,27 @@ struct CreateSheet: View {
                 }
                 GridRow {
                     FormLabel(text: "Location")
-                    HStack(spacing: 8) {
+                    HStack(spacing: z(8)) {
                         PathText(path: Formatters.abbreviatedPath(model.folder.path(percentEncoded: false)).trimmingTrailingSlash
                                  + (model.existingFolder == nil && model.cleanName.isEmpty ? "/…" : ""))
                         if model.existingFolder == nil {
                             SheetActionButton(title: "Choose…") { choose() }
                         }
                     }
-                    .frame(minHeight: 26)
+                    .frame(minHeight: z(26))
                 }
                 GridRow {
                     FormLabel(text: "Default branch")
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: z(4)) {
                         SheetField(placeholder: "main", text: $model.branch, isBad: !model.branchIsValid, focus: $branchFocused, onSubmit: create)
-                            .frame(width: 160)
+                            .frame(width: z(160))
                         FormNote(text: model.branchIsValid ? "From init.defaultBranch in your Git config" : "Not a valid branch name",
                                  isError: !model.branchIsValid)
                     }
                 }
                 GridRow {
                     FormLabel(text: ".gitignore")
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: z(4)) {
                         PopupField(options: IgnoreTemplate.allCases.map { ($0, $0.rawValue) }, selection: $model.ignore, label: ".gitignore")
                         FormNote(text: model.ignoreNote)
                     }
@@ -508,25 +508,25 @@ struct CreateSheet: View {
                     PopupField(options: LicenseChoice.allCases.map { ($0, $0.rawValue) }, selection: $model.license, label: "License")
                 }
                 GridRow {
-                    Color.clear.frame(width: 110, height: 1)
-                    VStack(alignment: .leading, spacing: 6) {
+                    Color.clear.frame(width: z(110), height: 1)
+                    VStack(alignment: .leading, spacing: z(6)) {
                         Toggle("Add README.md", isOn: $model.readme).toggleStyle(.checkbox)
                         Toggle("Make the first commit", isOn: $model.firstCommit).toggleStyle(.checkbox)
                         FormNote(text: model.firstCommitNote)
                     }
-                    .font(.system(size: 12.5))
-                    .padding(.top, 2)
+                    .font(.system(size: z(12.5)))
+                    .padding(.top, z(2))
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, z(16))
             .disabled(model.isRunning)
             publishSection
                 .disabled(model.isRunning)
             if !model.steps.isEmpty { StepList(steps: model.steps) }
             if let error = model.error {
-                FormNote(text: error, isError: true).padding(.top, 10)
+                FormNote(text: error, isError: true).padding(.top, z(10))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Spacer()
                 SheetActionButton(title: "Cancel") { app.closeSheet(in: window) }
                     .keyboardShortcut(.cancelAction)
@@ -535,7 +535,7 @@ struct CreateSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canCreate)
             }
-            .padding(.top, 16)
+            .padding(.top, z(16))
         }
         .onAppear {
             DispatchQueue.main.async { if model.existingFolder == nil { nameFocused = true } }
@@ -544,32 +544,32 @@ struct CreateSheet: View {
 
     @ViewBuilder
     private var publishSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: z(8)) {
             if let account = model.githubAccount {
                 Toggle("Also publish to GitHub (\(account.name?.isEmpty == false ? account.name! : account.login))", isOn: $model.publish)
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                 if model.publish {
-                    HStack(spacing: 8) {
+                    HStack(spacing: z(8)) {
                         PathText(path: "Name on GitHub: \(GitHubClient.repositoryName(for: model.existingFolder?.lastPathComponent ?? model.cleanName))")
                         Spacer()
                         SegmentedChoice(options: [(true, "Private"), (false, "Public")], selection: $model.isPrivate, label: "Visibility")
                     }
-                    .padding(.leading, 22)
+                    .padding(.leading, z(22))
                 }
             } else {
                 Toggle("Also publish to GitHub", isOn: .constant(false))
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .disabled(true)
                 FormNote(text: "Sign in to GitHub in Settings › Accounts to publish from here.")
-                    .padding(.leading, 22)
+                    .padding(.leading, z(22))
             }
         }
-        .padding(.top, 12)
+        .padding(.top, z(12))
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .top) { K.sep.frame(height: 1) }
-        .padding(.top, 14)
+        .padding(.top, z(14))
     }
 
     private func create() {
@@ -598,9 +598,9 @@ private struct StepList: View {
     let steps: [CreateModel.Step]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: z(6)) {
             ForEach(steps) { step in
-                HStack(spacing: 8) {
+                HStack(spacing: z(8)) {
                     Group {
                         switch step.state {
                         case .running: Spinner(size: 11)
@@ -609,21 +609,21 @@ private struct StepList: View {
                         case .waiting: Color.clear
                         }
                     }
-                    .frame(width: 12, height: 12)
+                    .frame(width: z(12), height: z(12))
                     Text(step.text)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: z(11.5), design: .monospaced))
                 .foregroundStyle(step.state == .running ? K.label : step.state == .done ? K.label2 : step.state == .failed ? K.err : K.label3)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, z(12))
+        .padding(.vertical, z(10))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.field)
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
-        .padding(.top, 14)
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.field)
+            .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)))
+        .padding(.top, z(14))
     }
 }
 
@@ -639,14 +639,14 @@ struct PublishSheet: View {
 
     var body: some View {
         AttachedCard(width: 480) {
-            Text(model.asksToRetry ? "Couldn’t publish to GitHub" : "Publish to GitHub").font(.system(size: 15, weight: .bold))
+            Text(model.asksToRetry ? "Couldn’t publish to GitHub" : "Publish to GitHub").font(.system(size: z(15), weight: .bold))
             Text(explanation)
-                .font(.system(size: 12)).foregroundStyle(K.label2).padding(.top, 4)
+                .font(.system(size: z(12))).foregroundStyle(K.label2).padding(.top, z(4))
                 .fixedSize(horizontal: false, vertical: true)
-            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 10) {
+            Grid(alignment: .topLeading, horizontalSpacing: z(12), verticalSpacing: z(10)) {
                 GridRow {
                     FormLabel(text: "Name")
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: z(4)) {
                         SheetField(placeholder: "name", text: $model.name, isBad: !model.nameIsValid, focus: $focused, onSubmit: publish)
                         if !model.nameIsValid {
                             FormNote(text: "Letters, numbers, - _ and . only", isError: true)
@@ -663,30 +663,30 @@ struct PublishSheet: View {
                 GridRow {
                     FormLabel(text: "Account")
                     if let account = model.account {
-                        AccountLine(account: account).padding(.top, 3)
+                        AccountLine(account: account).padding(.top, z(3))
                     } else {
-                        HStack(spacing: 8) {
-                            Text("Not signed in to GitHub").font(.system(size: 12.5)).foregroundStyle(K.label2)
+                        HStack(spacing: z(8)) {
+                            Text("Not signed in to GitHub").font(.system(size: z(12.5))).foregroundStyle(K.label2)
                             Button("Sign In…") { SettingsWindowController.shared.showSignIn(host: "github.com") }
-                                .buttonStyle(.link).font(.system(size: 12.5))
+                                .buttonStyle(.link).font(.system(size: z(12.5)))
                         }
-                        .padding(.top, 3)
+                        .padding(.top, z(3))
                     }
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, z(16))
             .disabled(model.isRunning || model.madeOnGitHub != nil)
             if let progress = model.progress {
-                HStack(spacing: 8) {
+                HStack(spacing: z(8)) {
                     Spinner(size: 11)
-                    Text(progress).font(.system(size: 12))
+                    Text(progress).font(.system(size: z(12)))
                 }
-                .padding(.top, 12)
+                .padding(.top, z(12))
             }
             if let error = model.error {
-                FormNote(text: error, isError: true).padding(.top, 10)
+                FormNote(text: error, isError: true).padding(.top, z(10))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Spacer()
                 SheetActionButton(title: model.asksToRetry ? "Not Now" : "Cancel") { app.closeSheet(in: window) }
                     .keyboardShortcut(.cancelAction)
@@ -695,7 +695,7 @@ struct PublishSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.nameIsValid || model.account == nil || model.isRunning)
             }
-            .padding(.top, 16)
+            .padding(.top, z(16))
         }
         .onAppear { DispatchQueue.main.async { focused = true } }
     }

@@ -231,6 +231,9 @@ final class DebugDriver {
             if args.count == 4, let values = Optional(args.compactMap(Double.init)), values.count == 4 {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
+        case "zoom":
+            // zoom <factor> — View › Zoom In / Zoom Out: text, rows and spacing that much larger or smaller.
+            if let factor = args.first.flatMap(Double.init) { UIScale.keep(factor) }
         case "press":
             // press up|down|return|escape|space [shift] [option] [command] [hold <n> [every <ms>]] — a key
             // down through the window, to the focused view. hold: the key stays down for n repeats (33 ms

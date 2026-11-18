@@ -145,35 +145,35 @@ nonisolated extension NSAppearance {
 /// `.system(size:)`, the board's own SwiftUI mapping.
 nonisolated enum KFont {
     /// 13 regular: rows, menus, fields.
-    static let body = Font.system(size: 13)
+    static var body: Font { Font.system(size: z(13)) }
     /// The board's 650 weight (section titles, count pills, the current branch).
-    static let body650 = weighted(13, 0.35)
-    static let file = Font.system(size: 12.5)
-    static let note = Font.system(size: 12)
-    static let caption = Font.system(size: 11.5)
-    static let label = Font.system(size: 11, weight: .semibold)
-    static let mono = Font.system(size: 12, design: .monospaced)
-    static let hash = Font.system(size: 11.5, design: .monospaced)
+    static var body650: Font { weighted(13, 0.35) }
+    static var file: Font { Font.system(size: z(12.5)) }
+    static var note: Font { Font.system(size: z(12)) }
+    static var caption: Font { Font.system(size: z(11.5)) }
+    static var label: Font { Font.system(size: z(11), weight: .semibold) }
+    static var mono: Font { Font.system(size: z(12), design: .monospaced) }
+    static var hash: Font { Font.system(size: z(11.5), design: .monospaced) }
 
     /// A system font at a weight between the named ones (`NSFont.Weight` raw values:
-    /// semibold 0.3, bold 0.4).
+    /// semibold 0.3, bold 0.4). `size` is the design's: the zoom is applied here.
     static func weighted(_ size: CGFloat, _ weight: CGFloat) -> Font {
-        Font(NSFont.systemFont(ofSize: size, weight: NSFont.Weight(rawValue: weight)))
+        Font(NSFont.systemFont(ofSize: z(size), weight: NSFont.Weight(rawValue: weight)))
     }
 }
 
-/// Heights and radii from the Tokens board.
+/// Heights and radii from the Tokens board, at the zoom Kaern draws at.
 nonisolated enum KMetric {
-    static let tabRow: CGFloat = 36
-    static let toolbar: CGFloat = 44
-    static let statusBar: CGFloat = 26
-    static let graphRow: CGFloat = 28
-    static let wipRow: CGFloat = 34
-    static let sidebarRow: CGFloat = 28
-    static let fileRow: CGFloat = 26
+    static var tabRow: CGFloat { z(36) }
+    static var toolbar: CGFloat { z(44) }
+    static var statusBar: CGFloat { z(26) }
+    static var graphRow: CGFloat { z(28) }
+    static var wipRow: CGFloat { z(34) }
+    static var sidebarRow: CGFloat { z(28) }
+    static var fileRow: CGFloat { z(26) }
     /// The sidebar's and the right panel's widths until they're dragged (`PaneSizes`).
-    static let sidebarWidth: CGFloat = 230
-    static let panelWidth: CGFloat = 316
+    static var sidebarWidth: CGFloat { z(230) }
+    static var panelWidth: CGFloat { z(316) }
 }
 
 /// Folder-group colors for tab groups. The board's groups use green, gray and a warm brown;
