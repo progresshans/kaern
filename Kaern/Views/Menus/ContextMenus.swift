@@ -107,29 +107,34 @@ extension EnvironmentValues {
 
 private struct ContextClipModifier: ViewModifier {
     @State private var id = UUID()
+    @State private var place = FramePlace()
     @Environment(ContextMenuTracker.self) private var tracker: ContextMenuTracker?
 
     func body(content: Content) -> some View {
         content
             .environment(\.contextClip, id)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
                 tracker?.setClip(frame, id: id)
             }
+            // Back on screen where it was (its tab shows again): nothing moved, so nothing above ran.
+            .onAppear { if let frame = place.frame { tracker?.setClip(frame, id: id) } }
             .onDisappear { tracker?.setClip(nil, id: id) }
     }
+}
+
+/// Where a view is, as it last reported. In a box: it changes on every scrolled frame, and
+/// nothing is drawn from it.
+@MainActor
+final class FramePlace {
+    var frame: CGRect?
 }
 
 private struct ContextTargetModifier: ViewModifier {
     let target: ContextTarget
     let ring: ContextRing?
     @State private var id = UUID()
-    /// Where the view is, as last reported. In a box: it changes on every scrolled frame, and
-    /// nothing is drawn from it.
-    @State private var place = Place()
-
-    @MainActor private final class Place {
-        var frame: CGRect?
-    }
+    @State private var place = FramePlace()
     @Environment(ContextMenuTracker.self) private var tracker: ContextMenuTracker?
     @Environment(\.contextClip) private var clip
 
@@ -153,6 +158,8 @@ private struct ContextTargetModifier: ViewModifier {
             .onChange(of: target) {
                 if let frame = place.frame { tracker?.setFrame(frame, for: target, view: id, clip: clip) }
             }
+            // Its tab shows again: it's where it was, and its frame went when the tab left.
+            .onAppear { if let frame = place.frame { tracker?.setFrame(frame, for: target, view: id, clip: clip) } }
             .onDisappear { tracker?.setFrame(nil, for: target, view: id, clip: clip) }
     }
 }

@@ -934,11 +934,14 @@ final class DebugDriver {
             windows.append([
                 "id": model.id.uuidString,
                 "frame": controller.window.map { NSStringFromRect($0.frame) } ?? "",
+                // The folders whose screens are kept, the shown one last (`TabScreensView`).
+                "keptScreens": controller.keptScreens.map { ($0 as NSString).lastPathComponent },
                 "active": model.activeTab?.name ?? "",
                 "tabs": model.tabs.map { tab -> [String: Any] in
                     let repository = app.repository(for: tab.path)
                     return [
                         "name": tab.name,
+                        "path": tab.path,
                         "group": tab.group.flatMap { model.group($0)?.name } ?? "",
                         "phase": "\(repository.phase)",
                         "busy": repository.debugIsBusy,
@@ -971,6 +974,8 @@ final class DebugDriver {
                 "focused": window.isFocused,
                 "drawer": window.showsDrawer,
                 "drawerPath": repository.drawerPath ?? "",
+                // Review or the Focus drawer of this tab is on screen (a tab kept in the background doesn't count).
+                "diffViewers": repository.diffViewers,
                 "review": repository.review.map { ["all": $0.showsAllFiles, "path": $0.path ?? ""] as [String: Any] } ?? NSNull(),
                 "search": ["open": repository.search.isOpen, "query": repository.search.query, "scope": repository.search.scope.rawValue,
                            "matches": repository.search.matches.compactMap { id in repository.commits.firstIndex { $0.id == id } }],

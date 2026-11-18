@@ -49,6 +49,8 @@ final class WindowModel: Identifiable {
     var showsDetails = true { didSet { if showsDetails != oldValue { changed() } } }
     /// The + popover (recent repositories and Open Repository…). Not saved.
     var showsNewTab = false
+    /// A drag with folders is over the window: the ring around it. Not saved.
+    var isDropTarget = false
     /// Focus mode: both side panels hidden, the commit row inline, the drawer below the graph.
     /// Not saved.
     var isFocused = false

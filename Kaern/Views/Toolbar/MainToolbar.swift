@@ -147,7 +147,8 @@ struct MainToolbar: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .kaernNewBranch)) { note in
-            if (note.object as? UUID) == window.id { askNewBranch() }
+            // The window's other tabs keep their toolbars: the one of the tab that shows answers.
+            if (note.object as? UUID) == window.id, window.activeTab?.path == repository.path { askNewBranch() }
         }
     }
 
