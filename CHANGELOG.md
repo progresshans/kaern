@@ -37,6 +37,7 @@ What changed in each version of Kaern. A version's section is what its update wi
 - When Create New Repository can't publish to GitHub, the repository still opens, and a sheet says what was made
   and what is left, with Try Again and Not Now. Trying again after a failed push only pushes.
 - Publish to GitHub shows the name GitHub will give the repository, and asks for that one.
+- An error from git is easier to read: its advice about access rights is on one line, apart from what went wrong.
 - Sign Out asks first.
 - The branch you're on stays in its place in the sidebar, inside its folder, instead of moving to the top. A folded
   folder that holds it shows a check.
