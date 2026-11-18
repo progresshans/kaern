@@ -251,3 +251,54 @@ struct GitFailureTests {
         #expect(GitFailure.explain(arguments: ["log"], errorOutput: "fatal: something else", status: 128) == nil)
     }
 }
+
+@Suite("What a failed command says")
+struct GitErrorTextTests {
+    private func text(_ output: String) -> String? {
+        GitError(arguments: ["push"], status: 128, message: output).errorDescription
+    }
+
+    @Test func setsGitsAdviceApartOnOneLine() {
+        let ssh = """
+        git@github.com: Permission denied (publickey).
+        fatal: Could not read from remote repository.
+
+        Please make sure you have the correct access rights
+        and the repository exists.
+        """
+        #expect(text(ssh) == """
+        git@github.com: Permission denied (publickey).
+        Could not read from remote repository.
+
+        Please make sure you have the correct access rights and the repository exists.
+        """)
+        // Nothing above it: no empty line to open with.
+        #expect(text("Please make sure you have the correct access rights\nand the repository exists.")
+                == "Please make sure you have the correct access rights and the repository exists.")
+    }
+
+    @Test func keepsEveryOtherLineApart() {
+        let paths = """
+        error: pathspec 'a.txt' did not match any file(s) known to git
+        error: pathspec 'b.txt' did not match any file(s) known to git
+        """
+        #expect(text(paths) == """
+        pathspec 'a.txt' did not match any file(s) known to git
+        pathspec 'b.txt' did not match any file(s) known to git
+        """)
+        let local = """
+        error: Your local changes to the following files would be overwritten by checkout:
+        \tSources/App.swift
+        \treadme.md
+        Please commit your changes or stash them before you switch branches.
+        Aborting
+        """
+        #expect(text(local) == """
+        Your local changes to the following files would be overwritten by checkout:
+        Sources/App.swift
+        readme.md
+        Please commit your changes or stash them before you switch branches.
+        Aborting
+        """)
+    }
+}

@@ -27,6 +27,21 @@ struct RemoteTests {
         #expect(RemoteURL("../other") == nil)
     }
 
+    /// Publish to GitHub goes on from a push that failed when origin is the repository it made.
+    @Test func tellsWhichRepositoryARemoteIs() throws {
+        for text in ["https://github.com/progresshans/powerlens.git", "https://github.com/progresshans/powerlens",
+                     "git@github.com:progresshans/powerlens.git", "ssh://git@github.com/progresshans/powerlens.git",
+                     "https://GitHub.com/ProgressHans/PowerLens.git", "https://github.com/progresshans/powerlens/"] {
+            let url = try #require(RemoteURL(text))
+            #expect(url.names("progresshans/powerlens", on: "github.com"), "\(text)")
+        }
+        for text in ["https://github.com/progresshans/powerlens-site.git", "https://github.com/someone/powerlens.git",
+                     "https://gitlab.com/progresshans/powerlens.git", "git@github.com:progresshans/power.git"] {
+            let url = try #require(RemoteURL(text))
+            #expect(!url.names("progresshans/powerlens", on: "github.com"), "\(text)")
+        }
+    }
+
     @Test func classifiesRemoteFailures() {
         #expect(RemoteFailure.classify("remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/o/r.git/'") == .authentication(overSSH: false))
         #expect(RemoteFailure.classify("fatal: could not read Username for 'https://github.com': terminal prompts disabled") == .authentication(overSSH: false))

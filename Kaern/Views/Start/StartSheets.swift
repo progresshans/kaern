@@ -639,9 +639,10 @@ struct PublishSheet: View {
 
     var body: some View {
         AttachedCard(width: 480) {
-            Text("Publish to GitHub").font(.system(size: 15, weight: .bold))
-            Text("Kaern makes the repository on GitHub, adds it as origin and pushes your branch.")
+            Text(model.asksToRetry ? "Couldn’t publish to GitHub" : "Publish to GitHub").font(.system(size: 15, weight: .bold))
+            Text(explanation)
                 .font(.system(size: 12)).foregroundStyle(K.label2).padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 10) {
                 GridRow {
                     FormLabel(text: "Name")
@@ -674,7 +675,7 @@ struct PublishSheet: View {
                 }
             }
             .padding(.top, 16)
-            .disabled(model.isRunning)
+            .disabled(model.isRunning || model.madeOnGitHub != nil)
             if let progress = model.progress {
                 HStack(spacing: 8) {
                     Spinner(size: 11)
@@ -687,16 +688,32 @@ struct PublishSheet: View {
             }
             HStack(spacing: 8) {
                 Spacer()
-                SheetActionButton(title: "Cancel") { app.closeSheet(in: window) }
+                SheetActionButton(title: model.asksToRetry ? "Not Now" : "Cancel") { app.closeSheet(in: window) }
                     .keyboardShortcut(.cancelAction)
                     .disabled(model.isRunning)
-                SheetActionButton(title: model.isRunning ? "Publishing…" : "Publish", primary: true, action: publish)
+                SheetActionButton(title: actionTitle, primary: true, action: publish)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.nameIsValid || model.account == nil || model.isRunning)
             }
             .padding(.top, 16)
         }
         .onAppear { DispatchQueue.main.async { focused = true } }
+    }
+
+    /// What the sheet is for: publishing, or what is made already and what is left of it.
+    private var explanation: String {
+        if let made = model.madeOnGitHub {
+            "\(made) is on GitHub and is this repository’s origin, but the push failed. Try again now, or push later."
+        } else if model.followsCreate {
+            "The repository was created on this Mac, but publishing it failed. Try again now, or later with Publish to GitHub… above the history."
+        } else {
+            "Kaern makes the repository on GitHub, adds it as origin and pushes your branch."
+        }
+    }
+
+    private var actionTitle: String {
+        if model.isRunning { return model.madeOnGitHub == nil ? "Publishing…" : "Pushing…" }
+        return model.asksToRetry ? "Try Again" : "Publish"
     }
 
     private func publish() {
