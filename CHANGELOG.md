@@ -23,6 +23,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   Feature…) in a repository with a `develop` branch. Kaern merges it into develop with a merge commit whose message
   you write, can replay it on develop first and delete it afterwards, and keeps those choices for the repository.
   Each step can be taken back with ⌘Z.
+- View › Zoom In (⌘+), Zoom Out (⌘−) and Actual Size (⌘0) make Kaern's text, rows and spacing larger or smaller,
+  from 80% to 150%, in every window. Kaern keeps the zoom for next time.
 
 ### Improved
 

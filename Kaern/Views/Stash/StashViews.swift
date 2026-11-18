@@ -31,7 +31,7 @@ struct StashView: View {
                                     }
                                 }
                             }
-                            .padding(.bottom, 20)
+                            .padding(.bottom, z(20))
                         }
                         .diffSideScrolling(resetKey: (repository.shownStash?.id ?? "") + "\(layout)")
                         .onReceive(NotificationCenter.default.publisher(for: .kaernScrollStashFile)) { note in
@@ -51,36 +51,36 @@ struct StashView: View {
     }
 
     private func header(_ stash: Stash) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             Button { repository.screen = nil } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: z(3)) {
                     Icon(Icons.arrowLeft, size: 12)
-                    Text("Graph").font(.system(size: 13, weight: .semibold))
+                    Text("Graph").font(.system(size: z(13), weight: .semibold))
                 }
                 .foregroundStyle(K.accentText)
-                .padding(.leading, 5)
-                .padding(.trailing, 10)
-                .frame(height: 28)
+                .padding(.leading, z(5))
+                .padding(.trailing, z(10))
+                .frame(height: z(28))
                 .contentShape(Rectangle())
             }
             .buttonStyle(AccentPlateStyle())
             .keyboardShortcut(.cancelAction)
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 Icon(Icons.stash(1.3), size: 14).foregroundStyle(K.label2)
-                Text(stash.reference).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(K.label2)
-                Text(RepositoryModel.stashTitle(stash)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                Text(stash.reference).font(.system(size: z(12.5), design: .monospaced)).foregroundStyle(K.label2)
+                Text(RepositoryModel.stashTitle(stash)).font(.system(size: z(13), weight: .semibold)).lineLimit(1)
             }
             .layoutPriority(-1)
             Spacer(minLength: 0)
             Text("\(repository.stashDetails?.author.name ?? "") · \(stashedWhen(stash))")
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
             SegmentedChoice(options: [(DiffLayout.split, "Split"), (.unified, "Unified")], selection: $layout, label: "Diff layout")
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
-        .frame(height: 44)
+        .padding(.leading, z(8))
+        .padding(.trailing, z(12))
+        .frame(height: z(44))
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
 
@@ -89,14 +89,14 @@ struct StashView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: z(8)) {
             Icon(Icons.stash(1.3), size: 28).foregroundStyle(K.label3)
-            Text("No stashes").font(.system(size: 14, weight: .semibold))
+            Text("No stashes").font(.system(size: z(14), weight: .semibold))
             Text("Stash Changes (⌥⌘S) puts your uncommitted changes aside; they show up here.")
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
             GhostButton(title: "Back to the Graph") { repository.screen = nil }
-                .padding(.top, 4)
+                .padding(.top, z(4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -113,24 +113,24 @@ private struct StashFileHeader: View {
     let untracked: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             StatusTile(letter: file.letter)
             FilePathText(path: file.path, nameWeight: .semibold, size: 13)
             if untracked {
                 Text("untracked when stashed")
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(K.label2)
-                    .padding(.horizontal, 6)
-                    .frame(height: 18)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.chip2))
+                    .padding(.horizontal, z(6))
+                    .frame(height: z(18))
+                    .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.chip2))
                     .fixedSize()
             }
             Spacer(minLength: 0)
             LineCounts(additions: file.additions, deletions: file.deletions)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 14)
-        .frame(height: 36)
+        .padding(.leading, z(16))
+        .padding(.trailing, z(14))
+        .frame(height: z(36))
         .background(K.inspector)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
@@ -146,21 +146,21 @@ struct StashPanel: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         Text(RepositoryModel.stashTitle(stash))
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: z(14), weight: .semibold))
                             .textSelection(.enabled)
                         if let details = repository.stashDetails, details.stash.id == stash.id {
                             detailsBody(stash, details)
                         } else {
-                            ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
+                            ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: z(80))
                         }
                     }
-                    .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+                    .padding(EdgeInsets(top: z(14), leading: z(14), bottom: z(10), trailing: z(14)))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 actions(stash)
             } else {
                 Text("Nothing selected")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: z(13), weight: .semibold))
                     .foregroundStyle(K.label2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -173,33 +173,33 @@ struct StashPanel: View {
     @ViewBuilder
     private func detailsBody(_ stash: Stash, _ details: StashDetails) -> some View {
         let auto = RepositoryModel.isKaernCopy(stash)
-        HStack(spacing: 9) {
+        HStack(spacing: z(9)) {
             Text(auto ? "K" : details.author.initials)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: z(11), weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
+                .frame(width: z(28), height: z(28))
                 .background(Circle().fill(auto ? K.accent : AvatarPalette.color(for: details.author.email.isEmpty ? details.author.name : details.author.email)))
             VStack(alignment: .leading, spacing: 1) {
-                Text(details.author.name).font(.system(size: 13, weight: .semibold))
-                Text((auto ? "saved " : "stashed ") + Formatters.authoredAt(stash.date)).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                Text(details.author.name).font(.system(size: z(13), weight: .semibold))
+                Text((auto ? "saved " : "stashed ") + Formatters.authoredAt(stash.date)).font(.system(size: z(11.5))).foregroundStyle(K.label2)
             }
         }
-        .padding(.top, 12)
+        .padding(.top, z(12))
         Text(description(stash, details))
-            .font(.system(size: 13))
+            .font(.system(size: z(13)))
             .foregroundStyle(K.label2)
-            .lineSpacing(2)
-            .padding(.top, 10)
+            .lineSpacing(z(2))
+            .padding(.top, z(10))
             .fixedSize(horizontal: false, vertical: true)
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+        Grid(alignment: .leading, horizontalSpacing: z(12), verticalSpacing: z(8)) {
             GridRow {
                 Text("Stash").foregroundStyle(K.label2)
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Text(stash.reference).font(KFont.hash)
                     Button { repository.copyStashName(stash) } label: {
-                        Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: 18, height: 18).contentShape(Rectangle())
+                        Icon(Icons.copy, size: 12).foregroundStyle(K.label2).frame(width: z(18), height: z(18)).contentShape(Rectangle())
                     }
-                    .buttonStyle(HoverPlateStyle(radius: 5))
+                    .buttonStyle(HoverPlateStyle(radius: z(5)))
                     .help("Copy the stash name")
                 }
             }
@@ -221,26 +221,26 @@ struct StashPanel: View {
                 GridRow {
                     Text("On").foregroundStyle(K.label2)
                     Text(branch)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: z(12), weight: .semibold))
                         .foregroundStyle(K.accentText)
-                        .padding(.horizontal, 7)
-                        .frame(height: 20)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.accentSoft))
+                        .padding(.horizontal, z(7))
+                        .frame(height: z(20))
+                        .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.accentSoft))
                 }
             }
         }
-        .font(.system(size: 12.5))
-        .padding(.top, 14)
+        .font(.system(size: z(12.5)))
+        .padding(.top, z(14))
         let files = repository.stashReviewFiles ?? []
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             Text(Formatters.count(files.count, "file changed", "files changed"))
             LineCounts(additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11.5, weight: .semibold))
+        .font(.system(size: z(11.5), weight: .semibold))
         .foregroundStyle(K.label2)
-        .padding(.top, 16)
-        .padding(.bottom, 4)
+        .padding(.top, z(16))
+        .padding(.bottom, z(4))
         ForEach(files) { file in
             StashFileRow(file: file) {
                 NotificationCenter.default.post(name: .kaernScrollStashFile, object: file.path)
@@ -272,11 +272,11 @@ struct StashPanel: View {
                 Button("Drop Stash", role: .destructive) { repository.from("Stash view") { repository.dropStash(stash) } }
             } label: {
                 Text("⋯")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: z(11.5), weight: .semibold))
                     .foregroundStyle(K.label)
-                    .padding(.horizontal, 9)
-                    .frame(height: 24)
-                    .controlSurface(radius: 7)
+                    .padding(.horizontal, z(9))
+                    .frame(height: z(24))
+                    .controlSurface(radius: z(7))
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -296,15 +296,15 @@ private struct StashFileRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 StatusTile(letter: file.letter)
                 FilePathText(path: file.path)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 LineCounts(additions: file.additions, deletions: file.deletions)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, z(6))
             .frame(height: KMetric.fileRow)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -12,45 +12,45 @@ struct NotRepositoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             FolderQuestionArt()
-                .frame(width: 76, height: 64)
+                .frame(width: z(76), height: z(64))
             Text("\(repository.name) isn’t a Git repository yet")
-                .font(.system(size: 20, weight: .bold))
-                .padding(.top, 16)
+                .font(.system(size: z(20), weight: .bold))
+                .padding(.top, z(16))
             Text(Formatters.abbreviatedPath(repository.path))
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
                 .foregroundStyle(K.label2)
-                .padding(.top, 4)
+                .padding(.top, z(4))
             if let survey = repository.folderSurvey {
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     ForEach(Self.chips(survey), id: \.self) { chip in
                         Text(chip)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: z(11.5), weight: .semibold))
                             .foregroundStyle(K.label2)
-                            .padding(.horizontal, 9)
-                            .frame(height: 22)
+                            .padding(.horizontal, z(9))
+                            .frame(height: z(22))
                             .background(Capsule().fill(K.hover))
                     }
                 }
-                .padding(.top, 14)
+                .padding(.top, z(14))
             } else {
-                ProgressView().controlSize(.small).padding(.top, 14)
+                ProgressView().controlSize(.small).padding(.top, z(14))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 PrimaryButton(title: "Create Repository Here…", height: 30, fontSize: 13) {
                     app.showCreate(in: window, folder: URL(filePath: repository.path, directoryHint: .isDirectory))
                 }
                 SheetActionButton(title: "Open Another Folder…") { app.showOpenPanel(for: window) }
             }
-            .padding(.top, 22)
+            .padding(.top, z(22))
             Text("Kaern looked for a .git folder here and in every folder above it and found none. If this folder belongs to a repository somewhere else, open that one instead.")
-                .font(.system(size: 12))
-                .lineSpacing(2)
+                .font(.system(size: z(12)))
+                .lineSpacing(z(2))
                 .foregroundStyle(K.label2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
-                .padding(.top, 22)
+                .frame(maxWidth: z(460))
+                .padding(.top, z(22))
         }
-        .padding(EdgeInsets(top: 0, leading: 40, bottom: 60, trailing: 40))
+        .padding(EdgeInsets(top: 0, leading: z(40), bottom: z(60), trailing: z(40)))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.content)
     }
@@ -101,14 +101,14 @@ struct PublishBanner: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             Icon(Icons.cloud, size: 18)
                 .foregroundStyle(K.accentText)
             Text("\(Text("\(repository.name) is only on this Mac.").bold()) Publish it to keep a copy on GitHub and pick it up on other Macs.")
-                .font(.system(size: 12.5))
-                .lineSpacing(2)
+                .font(.system(size: z(12.5)))
+                .lineSpacing(z(2))
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
+            Spacer(minLength: z(8))
             PrimaryButton(title: "Publish to GitHub…") { app.showPublish(repository, in: window) }
             GhostButton(title: "Add Remote…") { repository.sheet = .repositorySettings }
             Button {
@@ -116,16 +116,16 @@ struct PublishBanner: View {
             } label: {
                 Icon(Icons.closeLarge, size: 11)
                     .foregroundStyle(K.label2)
-                    .frame(width: 22, height: 22)
+                    .frame(width: z(22), height: z(22))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(HoverPlateStyle(radius: 6))
+            .buttonStyle(HoverPlateStyle(radius: z(6)))
             .accessibilityLabel("Hide")
         }
-        .padding(EdgeInsets(top: 9, leading: 12, bottom: 9, trailing: 10))
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(K.accentSoft)
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
-        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+        .padding(EdgeInsets(top: z(9), leading: z(12), bottom: z(9), trailing: z(10)))
+        .background(RoundedRectangle(cornerRadius: z(10), style: .continuous).fill(K.accentSoft)
+            .overlay(RoundedRectangle(cornerRadius: z(10), style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
+        .padding(EdgeInsets(top: z(10), leading: z(12), bottom: z(10), trailing: z(12)))
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }

@@ -11,16 +11,16 @@ struct StatusBarView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 leading(now: context.date)
-                Spacer(minLength: 12)
+                Spacer(minLength: z(12))
                 Text(summary)
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
             }
         }
-        .font(.system(size: 11.5))
-        .padding(.horizontal, 14)
+        .font(.system(size: z(11.5)))
+        .padding(.horizontal, z(14))
         .frame(height: KMetric.statusBar)
         .frame(maxWidth: .infinity)
         .background {
@@ -37,18 +37,18 @@ struct StatusBarView: View {
     @ViewBuilder
     private func leading(now: Date) -> some View {
         let state = StatusState(repository: repository, now: now)
-        HStack(spacing: 7) {
+        HStack(spacing: z(7)) {
             Button { showsActivity.toggle() } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: z(7)) {
                     switch state.icon {
-                    case .ok: Circle().fill(K.ok).frame(width: 7, height: 7).frame(width: 14)
-                    case .idle: Circle().strokeBorder(K.label3, lineWidth: 1.6).frame(width: 8, height: 8).frame(width: 14)
-                    case .spinner: StatusSpinner().frame(width: 14)
-                    case .warning: Icon(Icons.warn, size: 13).foregroundStyle(K.warn).frame(width: 14)
-                    case .conflict: Icon(Icons.conflict, size: 13).foregroundStyle(K.err).frame(width: 14)
-                    case .rebase: Icon(Icons.rebase, size: 13).foregroundStyle(K.accentText).frame(width: 14)
-                    case .detached: Icon(Icons.detached, size: 13).foregroundStyle(K.accentText).frame(width: 14)
-                    case .info: Icon(Icons.info, size: 13).foregroundStyle(K.label3).frame(width: 14)
+                    case .ok: Circle().fill(K.ok).frame(width: z(7), height: z(7)).frame(width: z(14))
+                    case .idle: Circle().strokeBorder(K.label3, lineWidth: 1.6).frame(width: z(8), height: z(8)).frame(width: z(14))
+                    case .spinner: StatusSpinner().frame(width: z(14))
+                    case .warning: Icon(Icons.warn, size: 13).foregroundStyle(K.warn).frame(width: z(14))
+                    case .conflict: Icon(Icons.conflict, size: 13).foregroundStyle(K.err).frame(width: z(14))
+                    case .rebase: Icon(Icons.rebase, size: 13).foregroundStyle(K.accentText).frame(width: z(14))
+                    case .detached: Icon(Icons.detached, size: 13).foregroundStyle(K.accentText).frame(width: z(14))
+                    case .info: Icon(Icons.info, size: 13).foregroundStyle(K.label3).frame(width: z(14))
                     }
                     Text(state.text)
                         .foregroundStyle(state.icon == .ok || state.icon == .idle ? K.label2 : K.label)
@@ -58,9 +58,9 @@ struct StatusBarView: View {
                         Icon(Icons.chevronDown, size: 8).rotationEffect(.degrees(180)).foregroundStyle(K.label2)
                     }
                 }
-                .padding(.horizontal, state.isTaskCount ? 6 : 0)
-                .frame(height: 20)
-                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(state.isTaskCount ? K.hover : .clear))
+                .padding(.horizontal, state.isTaskCount ? z(6) : 0)
+                .frame(height: z(20))
+                .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(state.isTaskCount ? K.hover : .clear))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -157,11 +157,11 @@ private struct StatusButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(accent ? K.accentText : K.label)
-                .padding(.horizontal, 7)
-                .frame(height: 18)
-                .controlSurface(radius: 5)
+                .padding(.horizontal, z(7))
+                .frame(height: z(18))
+                .controlSurface(radius: z(5))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -334,7 +334,7 @@ private struct StatusSpinner: View {
             Circle().trim(from: 0, to: 0.25).stroke(K.accent, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
                 .rotationEffect(.degrees(spinning ? 360 : 0))
         }
-        .frame(width: 9.4, height: 9.4)
+        .frame(width: z(9.4), height: z(9.4))
         .onAppear {
             withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) { spinning = true }
         }
@@ -353,52 +353,52 @@ struct ActivityPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Activity").font(.system(size: 13, weight: .bold))
+                Text("Activity").font(.system(size: z(13), weight: .bold))
                 Spacer()
                 Button(action: close) {
-                    Icon(Icons.close, size: 10).foregroundStyle(K.label2).frame(width: 20, height: 20).contentShape(Rectangle())
+                    Icon(Icons.close, size: 10).foregroundStyle(K.label2).frame(width: z(20), height: z(20)).contentShape(Rectangle())
                 }
-                .buttonStyle(HoverPlateStyle(radius: 5))
+                .buttonStyle(HoverPlateStyle(radius: z(5)))
                 .accessibilityLabel("Close")
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, z(8))
             if center.running.isEmpty && center.recent.isEmpty {
                 Text("Nothing running. What Kaern does — fetches, pushes, merges — shows here.")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, z(8))
             }
             ForEach(center.running) { item in
                 RunningRow(item: item, title: title(item), canCancel: center.canCancel(item.id)) { center.cancel(item.id) }
             }
             if !center.recent.isEmpty {
-                if !center.running.isEmpty { K.sep.frame(height: 1).padding(.vertical, 8) }
+                if !center.running.isEmpty { K.sep.frame(height: 1).padding(.vertical, z(8)) }
                 Text("Recently")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: z(11.5), weight: .semibold))
                     .foregroundStyle(K.label2)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, z(6))
                 ForEach(center.recent) { item in
                     RecentRow(item: item, title: recentTitle(item), help: item.failure.map {
                         FailureHelp.make($0, repositoryPath: item.repositoryPath, repositoryName: item.repositoryName, auto: item.isAuto)
                     })
                 }
             }
-            K.sep.frame(height: 1).padding(.vertical, 8)
+            K.sep.frame(height: 1).padding(.vertical, z(8))
             HStack {
                 Button("Show Command Log") {
                     close()
                     CommandLogWindowController.shared.show(repository: repository.path)
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: z(12.5), weight: .semibold))
                 .foregroundStyle(K.accentText)
                 Spacer()
-                Text("⇧⌘L").font(.system(size: 11.5)).foregroundStyle(K.label2)
+                Text("⇧⌘L").font(.system(size: z(11.5))).foregroundStyle(K.label2)
             }
         }
-        .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
-        .frame(width: 380)
+        .padding(EdgeInsets(top: z(12), leading: z(14), bottom: z(12), trailing: z(14)))
+        .frame(width: z(380))
     }
 
     private func title(_ item: ActivityCenter.Item) -> String {
@@ -433,28 +433,28 @@ private struct RunningRow: View {
     let cancel: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: z(10)) {
             Spinner(size: 14)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: z(4)) {
                 HStack {
-                    Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                    Spacer(minLength: 6)
+                    Text(title).font(.system(size: z(12.5), weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: z(6))
                     // git's own percentage, once it gives one (Receiving objects: 62%).
                     if let fraction = item.fraction {
-                        Text("\(Int((fraction * 100).rounded()))%").font(.system(size: 11.5, weight: .semibold)).monospacedDigit()
+                        Text("\(Int((fraction * 100).rounded()))%").font(.system(size: z(11.5), weight: .semibold)).monospacedDigit()
                             .foregroundStyle(K.label2)
                     }
                 }
                 ProgressBar(fraction: item.fraction)
                 if let detail = item.detail {
-                    Text(detail).font(.system(size: 11.5)).foregroundStyle(K.label2).lineLimit(1)
+                    Text(detail).font(.system(size: z(11.5))).foregroundStyle(K.label2).lineLimit(1)
                 }
             }
             if canCancel {
                 GhostButton(title: "Cancel", action: cancel)
             }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, z(5))
     }
 }
 
@@ -464,21 +464,21 @@ private struct RecentRow: View {
     let help: FailureHelp?
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: z(9)) {
             if item.failed {
                 Icon(Icons.warn, size: 13).foregroundStyle(K.warn)
             } else {
-                Circle().fill(K.ok).frame(width: 9, height: 9).frame(width: 13)
+                Circle().fill(K.ok).frame(width: z(9), height: z(9)).frame(width: z(13))
             }
             Text(title)
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(item.failed ? (help?.message ?? item.result ?? "") : (item.result ?? ""))
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(Formatters.shortRelative(item.finished ?? item.started, now: context.date))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                     .fixedSize()
             }
@@ -486,6 +486,6 @@ private struct RecentRow: View {
                 GhostButton(title: fixTitle.hasPrefix("Sign In") ? "Sign In…" : fixTitle, action: fix)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, z(4))
     }
 }

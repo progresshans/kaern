@@ -633,7 +633,7 @@ enum ContextMenus {
         let font = NSFont.menuFont(ofSize: 0)
         let result = NSMutableAttributedString(string: title, attributes: [.font: font])
         let width = (title as NSString).size(withAttributes: [.font: font]).width
-        let hintFont = NSFont.systemFont(ofSize: 11)
+        let hintFont = NSFont.systemFont(ofSize: z(11))
         let hintWidth = (hint as NSString).size(withAttributes: [.font: hintFont]).width
         let style = NSMutableParagraphStyle()
         style.tabStops = [NSTextTab(textAlignment: .right, location: max(280, width + 28 + hintWidth))]

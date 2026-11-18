@@ -31,6 +31,8 @@ nonisolated enum SettingsKey {
     static let fsmonitorDismissed = "KaernFSMonitorDismissed"
     /// The Graph: choice per repository path (ScreenBigRepo): "all", "local" or "current".
     static let graphScopes = "KaernGraphScopes"
+    /// View › Zoom In / Zoom Out: how much larger or smaller Kaern draws (`UIScale`; 1 is actual size).
+    static let zoom = "KaernZoom"
     /// Finish Feature's choices per repository path: "merge,delete,rebase", each there when it's on.
     static let finishOptions = "KaernFinishOptions"
     /// "<repository path>\t<folder>" for each .gitignore suggestion put away with Not Now.
@@ -91,9 +93,9 @@ enum ToolbarStyle: String, CaseIterable {
     case iconOnly, iconAndText
 
     /// The toolbar's height (`--chromeH` 44 / `.tb-text` 54).
-    var height: CGFloat { self == .iconAndText ? 54 : 44 }
+    var height: CGFloat { z(self == .iconAndText ? 54 : 44) }
     /// The toolbar as the title bar (Sidebar and Toolbar switching: `.titlebar .tool` 52 / 58).
-    var titleBarHeight: CGFloat { self == .iconAndText ? 58 : 52 }
+    var titleBarHeight: CGFloat { z(self == .iconAndText ? 58 : 52) }
 }
 
 /// How history loads (Advanced › Large repositories).

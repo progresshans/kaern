@@ -33,30 +33,30 @@ struct TabItemView: View {
                         .fixedSize()
                 }
             }
-            .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+            .font(.system(size: z(12), weight: isActive ? .semibold : .regular))
             .foregroundStyle(mark == .missing ? K.label3 : (isActive ? K.label : K.label2))
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
+            .padding(.leading, z(12))
+            .padding(.trailing, z(4))
             .frame(maxWidth: .infinity, alignment: .leading)
             slot
-                .frame(width: 18, height: 18)
+                .frame(width: z(18), height: z(18))
         }
-        .padding(.trailing, 5)
-        .frame(width: width, height: 30)
+        .padding(.trailing, z(5))
+        .frame(width: width, height: z(30))
         .background { background }
         .overlay(alignment: .bottom) {
             if let groupColor {
                 Capsule()
                     .fill(groupColor)
-                    .frame(height: 2)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, isActive ? 3 : 2)
+                    .frame(height: z(2))
+                    .padding(.horizontal, z(10))
+                    .padding(.bottom, isActive ? z(3) : z(2))
                     .allowsHitTesting(false)
             }
         }
         .overlay(alignment: .leading) {
             if showsSeparator {
-                K.sep.frame(width: 1, height: 14).allowsHitTesting(false)
+                K.sep.frame(width: 1, height: z(14)).allowsHitTesting(false)
             }
         }
         .contentShape(Rectangle())
@@ -69,18 +69,18 @@ struct TabItemView: View {
     @ViewBuilder
     private var background: some View {
         if isDragged {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: z(8), style: .continuous)
                 .fill(K.win)
-                .shadow(color: .black.opacity(0.22), radius: 9, y: 6)
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.22), radius: z(9), y: 6)
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5))
         } else if isActive {
             UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8, style: .continuous)
                 .fill(K.win)
                 .overlay(TabOutline().stroke(K.sep, lineWidth: 1))
         } else if isHovered {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: z(7), style: .continuous)
                 .fill(K.hover)
-                .padding(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
+                .padding(EdgeInsets(top: z(2), leading: z(2), bottom: z(4), trailing: z(2)))
         }
     }
 
@@ -89,9 +89,9 @@ struct TabItemView: View {
         if showsClose {
             Button(action: onClose) {
                 Icon(Icons.close, size: 10)
-                    .frame(width: 18, height: 18)
+                    .frame(width: z(18), height: z(18))
                     .foregroundStyle(closeHovered ? K.label : K.label2)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(closeHovered ? K.press : .clear))
+                    .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(closeHovered ? K.press : .clear))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -102,7 +102,7 @@ struct TabItemView: View {
             case .none:
                 EmptyView()
             case .changes:
-                Circle().fill(K.label2).frame(width: 7, height: 7)
+                Circle().fill(K.label2).frame(width: z(7), height: z(7))
                     .accessibilityLabel("Uncommitted changes")
             case .busy:
                 RingSpinner(size: 12)
@@ -123,7 +123,7 @@ struct TabItemView: View {
 /// The selected tab's 1 pt outline: left, top (with the rounded corners) and right, open at
 /// the bottom where the tab joins the toolbar.
 nonisolated struct TabOutline: Shape {
-    var radius: CGFloat = 8
+    var radius: CGFloat = z(8)
 
     func path(in rect: CGRect) -> Path {
         let r = rect.insetBy(dx: 0.5, dy: 0.5)
@@ -150,39 +150,39 @@ struct GroupChipView: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(group.color.color).frame(width: 8, height: 8)
+        HStack(spacing: z(6)) {
+            Circle().fill(group.color.color).frame(width: z(8), height: z(8))
             Text(group.name)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: z(12), weight: .semibold))
                 .foregroundStyle(K.label)
             if group.collapsed {
                 if let activeLabel {
                     Text("› \(activeLabel)")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: z(12), weight: .semibold))
                         .foregroundStyle(K.label)
                 } else {
                     Text("\(count)")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: z(12), weight: .medium))
                         .foregroundStyle(K.label2)
                 }
                 if attention != .none {
-                    Circle().fill(attentionColor).frame(width: 7, height: 7)
+                    Circle().fill(attentionColor).frame(width: z(7), height: z(7))
                 }
             }
         }
         .lineLimit(1)
         .fixedSize()
-        .padding(.horizontal, 10)
-        .frame(height: 24)
+        .padding(.horizontal, z(10))
+        .frame(height: z(24))
         .background {
             Capsule()
                 .fill(group.color.chipFill(strong: group.collapsed && activeLabel != nil))
                 .brightness(hovering ? -0.03 : 0)
-                .shadow(color: .black.opacity(isDragged ? 0.22 : 0), radius: 9, y: 6)
+                .shadow(color: .black.opacity(isDragged ? 0.22 : 0), radius: z(9), y: 6)
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 4)
-        .padding(.bottom, 3)
+        .padding(.leading, z(6))
+        .padding(.trailing, z(4))
+        .padding(.bottom, z(3))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .help(group.collapsed ? "Show the \(count) tabs in \(group.name)" : "Fold \(group.name)")
@@ -212,9 +212,9 @@ struct ArrowButton: View {
     var body: some View {
         Button(action: action) {
             Icon(icon, size: 12)
-                .frame(width: 24, height: 28)
+                .frame(width: z(24), height: z(28))
                 .foregroundStyle(hovering && !disabled ? K.label : K.label2)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering && !disabled ? K.hover : .clear))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering && !disabled ? K.hover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -235,9 +235,9 @@ struct NewTabButton: View {
             window.showsNewTab.toggle()
         } label: {
             Icon(Icons.plus, size: 14)
-                .frame(width: 28, height: 28)
+                .frame(width: z(28), height: z(28))
                 .foregroundStyle(hovering ? K.label : K.label2)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -261,8 +261,8 @@ struct RingSpinner: View {
             Circle().trim(from: 0, to: 0.25).stroke(K.accent, style: StrokeStyle(lineWidth: 1.75, lineCap: .round))
                 .rotationEffect(.degrees(spinning ? 360 : 0))
         }
-        .frame(width: size - 1.75, height: size - 1.75)
-        .frame(width: size, height: size)
+        .frame(width: z(size) - z(1.75), height: z(size) - z(1.75))
+        .frame(width: z(size), height: z(size))
         .onAppear {
             withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) { spinning = true }
         }

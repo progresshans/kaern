@@ -133,7 +133,7 @@ struct ImageDiffView: View {
                     pictures(loaded)
                 }
             } else {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: z(120))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: inList ? nil : .infinity)
@@ -153,9 +153,9 @@ struct ImageDiffView: View {
     private func pictures(_ loaded: Loaded) -> some View {
         let both = loaded.oldImage != nil && loaded.newImage != nil
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Text(info(loaded))
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -164,8 +164,8 @@ struct ImageDiffView: View {
                                     selection: $mode, label: "Image comparison")
                 }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 36)
+            .padding(.horizontal, z(16))
+            .frame(height: z(36))
             .background(K.content)
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             Group {
@@ -177,19 +177,19 @@ struct ImageDiffView: View {
                     }
                 } else if let image = loaded.newImage ?? loaded.oldImage {
                     let added = loaded.newImage != nil
-                    VStack(spacing: 8) {
+                    VStack(spacing: z(8)) {
                         Shot(image: image, aspect: aspect(image, image))
                         Text("\(added ? "Added" : "Deleted") · \(byteCount((added ? loaded.new : loaded.old)?.size ?? 0))")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: z(11.5), weight: .semibold))
                             .foregroundStyle(K.label2)
                     }
                     .frame(maxWidth: Self.width(image, image))
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+            .padding(.horizontal, z(24))
+            .padding(.vertical, z(20))
             .frame(maxWidth: .infinity, maxHeight: inList ? nil : .infinity, alignment: .top)
-            .frame(height: inList ? 420 : nil)
+            .frame(height: inList ? z(420) : nil)
             .background(Checkerboard())
             .clipped()
         }
@@ -217,17 +217,17 @@ struct ImageDiffView: View {
     }
 
     private func twoUp(old: NSImage, new: NSImage, loaded: Loaded) -> some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .top, spacing: z(18)) {
             figure(old, caption: "Before · \(byteCount(loaded.old?.size ?? 0))", aspect: aspect(old, old))
             figure(new, caption: "After · \(byteCount(loaded.new?.size ?? 0))", aspect: aspect(new, new))
         }
     }
 
     private func figure(_ image: NSImage, caption: String, aspect: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: z(8)) {
             Shot(image: image, aspect: aspect)
             Text(caption)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(K.label2)
         }
         .frame(maxWidth: .infinity)
@@ -235,7 +235,7 @@ struct ImageDiffView: View {
 
     /// The old picture on the left of the divider, the new one on the right.
     private func swipe(old: NSImage, new: NSImage) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: z(8)) {
             Shot(image: new, aspect: aspect(old, new))
                 .overlay {
                     GeometryReader { proxy in
@@ -243,11 +243,11 @@ struct ImageDiffView: View {
                         ZStack(alignment: .topLeading) {
                             Shot(image: old, aspect: aspect(old, new), shadow: false)
                                 .mask(alignment: .leading) { Rectangle().frame(width: x) }
-                            Rectangle().fill(Color.white).frame(width: 1.5)
-                                .shadow(color: .black.opacity(0.35), radius: 1.5)
+                            Rectangle().fill(Color.white).frame(width: z(1.5))
+                                .shadow(color: .black.opacity(0.35), radius: z(1.5))
                                 .offset(x: x - 0.75)
                             SwipeKnob()
-                                .offset(x: x - 14, y: proxy.size.height / 2 - 14)
+                                .offset(x: x - z(14), y: proxy.size.height / 2 - z(14))
                         }
                         .contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
@@ -261,7 +261,7 @@ struct ImageDiffView: View {
                 Spacer()
                 Text("After")
             }
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: z(11.5), weight: .semibold))
             .foregroundStyle(K.label2)
         }
         .frame(maxWidth: Self.width(old, new))
@@ -274,23 +274,23 @@ struct ImageDiffView: View {
     }
 
     private func onion(old: NSImage, new: NSImage) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: z(12)) {
             ZStack {
                 Shot(image: old, aspect: aspect(old, new))
                 Shot(image: new, aspect: aspect(old, new), shadow: false).opacity(blend)
             }
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Text("Before")
                 Slider(value: $blend, in: 0...1)
                     .controlSize(.small)
                     .accessibilityLabel("Blend before and after")
                 Text("After")
             }
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: z(11.5), weight: .semibold))
             .foregroundStyle(K.label2)
-            .frame(maxWidth: 420)
+            .frame(maxWidth: z(420))
         }
-        .frame(maxWidth: max(Self.width(old, new), 240))
+        .frame(maxWidth: max(Self.width(old, new), z(240)))
     }
 
     /// The column a picture and its captions share: the picture's own width, up to 760 pt.
@@ -314,9 +314,9 @@ private struct Shot: View {
             .aspectRatio(aspect, contentMode: .fit)
             // Small pictures stay at their own size instead of blowing up.
             .frame(maxWidth: max(image.size.width, 1), maxHeight: max(image.size.height, 1))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.black.opacity(shadow ? 0.18 : 0), lineWidth: 0.5))
-            .shadow(color: .black.opacity(shadow ? 0.14 : 0), radius: 11, y: 6)
+            .clipShape(RoundedRectangle(cornerRadius: z(10), style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: z(10), style: .continuous).strokeBorder(Color.black.opacity(shadow ? 0.18 : 0), lineWidth: 0.5))
+            .shadow(color: .black.opacity(shadow ? 0.14 : 0), radius: z(11), y: 6)
     }
 }
 
@@ -325,14 +325,14 @@ private struct SwipeKnob: View {
     var body: some View {
         ZStack {
             Circle().fill(Color.white)
-                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
-            HStack(spacing: 3) {
+                .shadow(color: .black.opacity(0.3), radius: z(2), y: 1)
+            HStack(spacing: z(3)) {
                 Icon(Icons.arrowLeft, size: 8)
                 Icon(Icons.arrowRight, size: 8)
             }
             .foregroundStyle(Color(white: 0.23))
         }
-        .frame(width: 28, height: 28)
+        .frame(width: z(28), height: z(28))
         .allowsHitTesting(false)
     }
 }
@@ -341,7 +341,7 @@ private struct SwipeKnob: View {
 struct Checkerboard: View {
     var body: some View {
         Canvas { context, size in
-            let side: CGFloat = 9
+            let side: CGFloat = z(9)
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(K.content))
             var path = Path()
             var y: CGFloat = 0
@@ -381,7 +381,7 @@ struct LFSFileView: View {
                     BinaryFileCard(file: file, size: loaded.contents?.size, repository: repository, inLFS: true)
                 }
             } else {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: z(120))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: inList ? nil : .infinity, alignment: .top)
@@ -410,35 +410,35 @@ struct LFSPointerView: View {
         VStack(spacing: 0) {
             Icon(FileGlyph.forPath(file.path), size: 54)
                 .foregroundStyle(K.label3)
-                .frame(width: 54, height: 54)
+                .frame(width: z(54), height: z(54))
             Text("Stored in Git LFS · \(size)")
-                .font(.system(size: 17, weight: .bold))
-                .padding(.top, 14)
+                .font(.system(size: z(17), weight: .bold))
+                .padding(.top, z(14))
             Text(file.sides.newCommit == nil
                  ? "This checkout has only the pointer file. Kaern downloads LFS files when you open one, or all of them with Fetch LFS Files."
                  : "This Mac has only the pointer for this version. Download gets its content from the LFS server; the work tree stays as it is.")
-                .font(.system(size: 12.5))
-                .lineSpacing(3)
+                .font(.system(size: z(12.5)))
+                .lineSpacing(z(3))
                 .foregroundStyle(K.label2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
-                .padding(.top, 6)
+                .frame(maxWidth: z(460))
+                .padding(.top, z(6))
             Text(verbatim: "version https://git-lfs.github.com/spec/v1\noid \(pointer.oid)\nsize \(String(pointer.size))")
-                .font(.system(size: 11, design: .monospaced))
-                .lineSpacing(5)
+                .font(.system(size: z(11), design: .monospaced))
+                .lineSpacing(z(5))
                 .foregroundStyle(K.label2)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
-                .frame(maxWidth: 560)
-                .padding(.top, 18)
-            HStack(spacing: 8) {
+                .padding(.horizontal, z(14))
+                .padding(.vertical, z(10))
+                .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field))
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                .frame(maxWidth: z(560))
+                .padding(.top, z(18))
+            HStack(spacing: z(8)) {
                 if isDownloading {
                     ProgressView().controlSize(.small)
-                    Text("Downloading \(size)…").font(.system(size: 12)).foregroundStyle(K.label2)
+                    Text("Downloading \(size)…").font(.system(size: z(12))).foregroundStyle(K.label2)
                 } else {
                     PrimaryButton(title: "Download \(size)") { download() }
                         .disabled(repository.activity != nil)
@@ -448,11 +448,11 @@ struct LFSPointerView: View {
                     }
                 }
             }
-            .frame(height: 28)
-            .padding(.top, 18)
+            .frame(height: z(28))
+            .padding(.top, z(18))
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 56)
+        .padding(.horizontal, z(32))
+        .padding(.vertical, z(56))
         .frame(maxWidth: .infinity)
         .onAppear {
             // Always Download: opening the file downloads it.
@@ -480,19 +480,19 @@ struct BinaryFileCard: View {
         VStack(spacing: 0) {
             Icon(FileGlyph.forPath(file.path), size: 54)
                 .foregroundStyle(K.label3)
-                .frame(width: 54, height: 54)
+                .frame(width: z(54), height: z(54))
             Text(size.map { "\(file.name) · \(byteCount($0))" } ?? file.name)
-                .font(.system(size: 15, weight: .bold))
-                .padding(.top, 14)
+                .font(.system(size: z(15), weight: .bold))
+                .padding(.top, z(14))
             Text(inLFS ? "A binary file stored in Git LFS. Quick Look shows it: press Space." : "A binary file. Quick Look shows it: press Space.")
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
                 .foregroundStyle(K.label2)
-                .padding(.top, 6)
+                .padding(.top, z(6))
             GhostButton(title: "Quick Look") { repository.quickLook(file) }
-                .padding(.top, 16)
+                .padding(.top, z(16))
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 48)
+        .padding(.horizontal, z(32))
+        .padding(.vertical, z(48))
         .frame(maxWidth: .infinity)
     }
 }
@@ -546,11 +546,11 @@ struct SubmoduleChangeView: View {
             if let loaded, loaded.key == sides {
                 details(loaded.change)
             } else {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: z(80))
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 22)
+        .padding(.horizontal, z(28))
+        .padding(.vertical, z(22))
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: sides) {
             let sides = sides
@@ -564,7 +564,7 @@ struct SubmoduleChangeView: View {
 
     @ViewBuilder
     private func details(_ change: SubmoduleChange) -> some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: z(14)) {
             card(oldLabel, commit: change.old, tag: change.oldTag, isNow: false)
             Icon(Icons.arrowRightLong, size: 18)
                 .foregroundStyle(K.label2)
@@ -574,11 +574,11 @@ struct SubmoduleChangeView: View {
                 .disabled(!change.isInitialized)
         }
         Text(sentence(change))
-            .font(.system(size: 12.5))
-            .lineSpacing(3)
+            .font(.system(size: z(12.5)))
+            .lineSpacing(z(3))
             .foregroundStyle(K.label2)
-            .frame(maxWidth: 640, alignment: .leading)
-            .padding(.top, 14)
+            .frame(maxWidth: z(640), alignment: .leading)
+            .padding(.top, z(14))
         if !change.added.isEmpty {
             commitList(sides.stage == .unstaged ? "Commits in \(file.path)" : "New commits in \(file.path)",
                        commits: change.added, total: change.addedCount)
@@ -587,7 +587,7 @@ struct SubmoduleChangeView: View {
             commitList("Commits it goes back over", commits: change.removed, total: change.removedCount)
         }
         buttons(change)
-            .padding(.top, 18)
+            .padding(.top, z(18))
     }
 
     private var oldLabel: String {
@@ -608,25 +608,25 @@ struct SubmoduleChangeView: View {
 
     /// `.subc`: what a side records; the side it moves to is tinted.
     private func card(_ label: String, commit: String?, tag: String?, isNow: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: z(4)) {
             Text(label)
                 .font(KFont.weighted(11, 0.33))
                 .foregroundStyle(K.label2)
             Text(commit.map { String($0.prefix(7)) } ?? "—")
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .font(.system(size: z(15), weight: .semibold, design: .monospaced))
             if let tag {
                 Text(tag)
                     .font(KFont.weighted(11, 0.33))
-                    .padding(.horizontal, 7)
-                    .frame(height: 18)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.content))
-                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+                    .padding(.horizontal, z(7))
+                    .frame(height: z(18))
+                    .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.content))
+                    .overlay(RoundedRectangle(cornerRadius: z(5), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 280, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isNow ? K.accentSoft : K.hover))
+        .padding(.horizontal, z(14))
+        .padding(.vertical, z(12))
+        .frame(maxWidth: z(280), alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: z(10), style: .continuous).fill(isNow ? K.accentSoft : K.hover))
     }
 
     private func sentence(_ change: SubmoduleChange) -> String {
@@ -663,39 +663,39 @@ struct SubmoduleChangeView: View {
         Text(title)
             .font(KFont.weighted(11.5, 0.33))
             .foregroundStyle(K.label2)
-            .padding(.top, 16)
-            .padding(.bottom, 6)
+            .padding(.top, z(16))
+            .padding(.bottom, z(6))
         VStack(spacing: 0) {
             ForEach(commits) { commit in
-                HStack(spacing: 8) {
+                HStack(spacing: z(8)) {
                     Text(String(commit.id.prefix(7)))
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: z(12), design: .monospaced))
                         .foregroundStyle(K.label2)
                     Text(commit.subject)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: z(12.5)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(Formatters.shortDate(commit.author.date))
-                        .font(.system(size: 11.5))
+                        .font(.system(size: z(11.5)))
                         .foregroundStyle(K.label2)
                 }
-                .frame(minHeight: 30)
+                .frame(minHeight: z(30))
                 .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             }
             if total > commits.count {
                 Text("and \(total - commits.count) more")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
-                    .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: z(26), alignment: .leading)
             }
         }
-        .frame(maxWidth: 720)
+        .frame(maxWidth: z(720))
     }
 
     @ViewBuilder
     private func buttons(_ change: SubmoduleChange) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             if !change.isInitialized {
                 PrimaryButton(title: "Initialize") {
                     repository.from("Submodule") { repository.initializeSubmodule(file.path) }
@@ -731,12 +731,12 @@ struct LFSBadge: View {
 
     var body: some View {
         Text("LFS")
-            .font(.system(size: 9.5, weight: .heavy))
+            .font(.system(size: z(9.5), weight: .heavy))
             .tracking(0.3)
             .foregroundStyle(selected ? Color.white.opacity(0.9) : K.lfs)
-            .padding(.horizontal, 5)
-            .frame(height: 16)
-            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(selected ? Color.white.opacity(0.2) : K.lfsBg))
+            .padding(.horizontal, z(5))
+            .frame(height: z(16))
+            .background(RoundedRectangle(cornerRadius: z(4), style: .continuous).fill(selected ? Color.white.opacity(0.2) : K.lfsBg))
             .fixedSize()
     }
 }
@@ -747,10 +747,10 @@ struct PointerPill: View {
 
     var body: some View {
         Text("not downloaded")
-            .font(.system(size: 10.5, weight: .semibold))
+            .font(.system(size: z(10.5), weight: .semibold))
             .foregroundStyle(selected ? Color.white.opacity(0.9) : K.label2)
-            .padding(.horizontal, 6)
-            .frame(height: 16)
+            .padding(.horizontal, z(6))
+            .frame(height: z(16))
             .background(Capsule().fill(selected ? Color.white.opacity(0.2) : K.hover))
             .fixedSize()
     }
@@ -765,20 +765,20 @@ struct FileMarks: View {
     var selected = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             if lfs != nil || notDownloaded { LFSBadge(selected: selected) }
             if notDownloaded {
                 PointerPill(selected: selected)
             } else if let lfs {
                 Text(sizeChange(lfs.old, lfs.new))
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(selected ? .white.opacity(0.85) : K.label2)
                     .lineLimit(1)
                     .fixedSize()
             }
             if let submoduleNote {
                 Text(submoduleNote)
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(selected ? .white.opacity(0.85) : K.label2)
                     .fixedSize()
             }

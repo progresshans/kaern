@@ -26,15 +26,15 @@ final class RepositoriesWindowController: NSWindowController, NSWindowDelegate {
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 980, height: 420)
+        window.minSize = NSSize(width: z(980), height: z(420))
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x323232) : K.hex(0xececec) }
-        let hosting = KaernHostingView(rootView: RepositoriesView(state: state).environment(AppModel.shared))
+        let hosting = KaernHostingView(rootView: RepositoriesView(state: state).environment(AppModel.shared).zoomed())
         hosting.sizingOptions = []
         window.contentView = hosting
         super.init(window: window)
         window.delegate = self
         // The traffic lights sit in the 64 pt bar.
-        lights = TrafficLights(window: window, centerFromTop: 32)
+        lights = TrafficLights(window: window, centerFromTop: z(32))
         hosting.onLayout = { [weak self] in self?.lights?.apply() }
         window.center()
     }
@@ -398,28 +398,28 @@ struct RepositoriesView: View {
                     }
                     if shown.isEmpty {
                         Text(state.filter.isEmpty ? "Nothing needs attention." : "No repository matches “\(state.filter)”.")
-                            .font(.system(size: 13))
+                            .font(.system(size: z(13)))
                             .foregroundStyle(K.label2)
-                            .padding(EdgeInsets(top: 24, leading: 16, bottom: 0, trailing: 16))
+                            .padding(EdgeInsets(top: z(24), leading: z(16), bottom: 0, trailing: z(16)))
                     }
                 }
-                .padding(.bottom, 8)
+                .padding(.bottom, z(8))
             }
             .background(K.content)
             footer
         }
         .background(K.content)
         .ignoresSafeArea()
-        .frame(minWidth: 980, minHeight: 420)
+        .frame(minWidth: z(980), minHeight: z(420))
         .overlay(alignment: .bottom) {
             if let toast = state.toast {
                 Text(toast)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: z(12.5), weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.85)))
-                    .padding(.bottom, 44)
+                    .padding(.horizontal, z(14))
+                    .padding(.vertical, z(9))
+                    .background(RoundedRectangle(cornerRadius: z(10), style: .continuous).fill(Color.black.opacity(0.85)))
+                    .padding(.bottom, z(44))
                     .transition(.opacity)
             }
         }
@@ -443,18 +443,18 @@ struct RepositoriesView: View {
     // MARK: Bar
 
     private func bar(total: Int, attention: Int) -> some View {
-        HStack(spacing: 12) {
-            Color.clear.frame(width: 70, height: 1)
+        HStack(spacing: z(12)) {
+            Color.clear.frame(width: z(70), height: 1)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Repositories").font(.system(size: 13.5, weight: .bold))
+                Text("Repositories").font(.system(size: z(13.5), weight: .bold))
                 Text("\(Formatters.count(total, "repository", "repositories")) · " + (attention == 0 ? "all healthy" : "\(attention) need attention"))
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
             }
             AttentionSegment(onlyAttention: $state.onlyAttention, count: attention)
-                .padding(.leading, 14)
-            Spacer(minLength: 12)
+                .padding(.leading, z(14))
+            Spacer(minLength: z(12))
             HStack(spacing: 0) {
                 LabeledBarButton(title: fetcher.isFetchingAll ? "Fetching" : "Fetch All", icon: Icons.fetch, busy: fetcher.isFetchingAll) {
                     fetcher.fetchAll(auto: false)
@@ -462,22 +462,22 @@ struct RepositoriesView: View {
                 .disabled(fetcher.isFetchingAll)
                 AddMenuButton(state: state)
             }
-            .padding(.horizontal, 2)
-            .frame(height: 28)
-            .controlSurface(radius: 9)
-            HStack(spacing: 6) {
+            .padding(.horizontal, z(2))
+            .frame(height: z(28))
+            .controlSurface(radius: z(9))
+            HStack(spacing: z(6)) {
                 Icon(Icons.search(1.4), size: 12).foregroundStyle(K.label2)
                 TextField("Filter repositories", text: $state.filter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
             }
-            .padding(.horizontal, 9)
-            .frame(width: 220, height: 28)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field)
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
+            .padding(.horizontal, z(9))
+            .frame(width: z(220), height: z(28))
+            .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field)
+                .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.controlBorder, lineWidth: 0.5)))
         }
-        .padding(.trailing, 14)
-        .frame(height: 64)
+        .padding(.trailing, z(14))
+        .frame(height: z(64))
         .background {
             ZStack(alignment: .bottom) {
                 K.win
@@ -488,37 +488,37 @@ struct RepositoriesView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Repository").frame(width: 250, alignment: .leading)
-            Text("Branch").frame(width: 210, alignment: .leading)
-            Text("Changes").frame(width: 62, alignment: .leading)
-            Text("To Push").frame(width: 62, alignment: .leading)
-            Text("To Pull").frame(width: 62, alignment: .leading)
-            Text("Last Fetch").frame(width: 96, alignment: .leading)
+        HStack(spacing: z(10)) {
+            Text("Repository").frame(width: z(250), alignment: .leading)
+            Text("Branch").frame(width: z(210), alignment: .leading)
+            Text("Changes").frame(width: z(62), alignment: .leading)
+            Text("To Push").frame(width: z(62), alignment: .leading)
+            Text("To Pull").frame(width: z(62), alignment: .leading)
+            Text("Last Fetch").frame(width: z(96), alignment: .leading)
             Text("Status").frame(maxWidth: .infinity, alignment: .leading)
-            Color.clear.frame(width: 92, height: 1)
+            Color.clear.frame(width: z(92), height: 1)
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: z(11), weight: .semibold))
         .foregroundStyle(K.label2)
         .lineLimit(1)
-        .padding(.horizontal, 16)
-        .frame(height: 28)
+        .padding(.horizontal, z(16))
+        .frame(height: z(28))
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
 
     private var footer: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(footerText(now: context.date))
             }
             Spacer()
             Text("Double-click a row to open it in its tab")
         }
-        .font(.system(size: 11))
+        .font(.system(size: z(11)))
         .foregroundStyle(K.label2)
-        .padding(.horizontal, 16)
-        .frame(height: 28)
+        .padding(.horizontal, z(16))
+        .frame(height: z(28))
         .background {
             ZStack(alignment: .top) {
                 K.win
@@ -547,30 +547,30 @@ private struct AttentionSegment: View {
             segment("All", on: !onlyAttention) { onlyAttention = false }
             segment("Needs Attention", on: onlyAttention, count: count) { onlyAttention = true }
         }
-        .padding(2)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.hover))
+        .padding(z(2))
+        .frame(height: z(26))
+        .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.hover))
         .fixedSize()
     }
 
     private func segment(_ title: String, on: Bool, count: Int? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(on ? K.label : K.label2)
+            HStack(spacing: z(4)) {
+                Text(title).font(.system(size: z(12), weight: .semibold)).foregroundStyle(on ? K.label : K.label2)
                 if let count, count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: z(10), weight: .bold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 16, minHeight: 15)
+                        .padding(.horizontal, z(4))
+                        .frame(minWidth: z(16), minHeight: z(15))
                         .background(Capsule().fill(K.warn))
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, z(10))
             .frame(maxHeight: .infinity)
             .background {
                 if on {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.control).shadow(color: K.shadowCtl, radius: 0.75, y: 0.5)
+                    RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.control).shadow(color: K.shadowCtl, radius: 0.75, y: 0.5)
                 }
             }
             .contentShape(Rectangle())
@@ -591,14 +591,14 @@ private struct LabeledBarButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 if busy { Spinner(size: 15) } else { Icon(icon, size: 16) }
-                Text(title).font(.system(size: 12, weight: .medium))
+                Text(title).font(.system(size: z(12), weight: .medium))
             }
             .foregroundStyle(K.label)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, z(10))
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering && isEnabled ? K.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering && isEnabled ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -618,14 +618,14 @@ private struct AddMenuButton: View {
             Button("Clone Repository…") { inFrontWindow { app.showClone(in: $0) } }
             Button("Create New Repository…") { inFrontWindow { app.showCreate(in: $0) } }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 Icon(Icons.plus, size: 14)
-                Text("Add").font(.system(size: 12, weight: .medium))
+                Text("Add").font(.system(size: z(12), weight: .medium))
             }
             .foregroundStyle(K.label)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, z(10))
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -648,21 +648,21 @@ private struct SectionHeader: View {
     let section: RepositorySection
 
     var body: some View {
-        HStack(spacing: 7) {
-            Circle().fill(section.color).frame(width: 8, height: 8)
+        HStack(spacing: z(7)) {
+            Circle().fill(section.color).frame(width: z(8), height: z(8))
             Text(section.name).foregroundStyle(K.label)
             Text("\(section.rows.count)")
-                .font(.system(size: 10.5, weight: .semibold))
-                .padding(.horizontal, 5)
-                .frame(minWidth: 18, minHeight: 16)
+                .font(.system(size: z(10.5), weight: .semibold))
+                .padding(.horizontal, z(5))
+                .frame(minWidth: z(18), minHeight: z(16))
                 .background(Capsule().fill(K.hover))
             Text(section.note).fontWeight(.medium).foregroundStyle(K.label3)
         }
         .font(KFont.weighted(11.5, 0.35))
         .foregroundStyle(K.label2)
-        .padding(.horizontal, 16)
-        .frame(height: 28)
-        .padding(.top, 4)
+        .padding(.horizontal, z(16))
+        .frame(height: z(28))
+        .padding(.top, z(4))
     }
 }
 
@@ -677,25 +677,25 @@ private struct RepositoryRowView: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
+            HStack(spacing: z(10)) {
                 Icon(Icons.folderFilled, size: 17)
                     .foregroundStyle(isSelected ? .white : (row.isMissing ? K.label3 : K.accent))
                 VStack(alignment: .leading, spacing: 0) {
                     Text(row.name).font(KFont.weighted(13, 0.35))
                     Text(Formatters.abbreviatedPath(row.path))
-                        .font(.system(size: 11))
+                        .font(.system(size: z(11)))
                         .foregroundStyle(secondary)
                         .truncationMode(.middle)
                 }
                 .lineLimit(1)
             }
-            .frame(width: 250, alignment: .leading)
-            Text(row.branch).lineLimit(1).truncationMode(.tail).frame(width: 210, alignment: .leading)
+            .frame(width: z(250), alignment: .leading)
+            Text(row.branch).lineLimit(1).truncationMode(.tail).frame(width: z(210), alignment: .leading)
             number(row.changes)
             number(row.toPush)
             number(row.toPull)
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 if row.isFetching { Spinner(size: 11, lineWidth: 1.6) }
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text(fetchText(now: context.date))
@@ -704,9 +704,9 @@ private struct RepositoryRowView: View {
                 }
             }
             .lineLimit(1)
-            .frame(width: 96, alignment: .leading)
-            HStack(spacing: 7) {
-                Circle().fill(dotColor).frame(width: 8, height: 8)
+            .frame(width: z(96), alignment: .leading)
+            HStack(spacing: z(7)) {
+                Circle().fill(dotColor).frame(width: z(8), height: z(8))
                     .overlay(Circle().stroke(isSelected ? Color.white : .clear, lineWidth: 1.5))
                 Text(row.status).lineLimit(1).truncationMode(.tail)
             }
@@ -716,15 +716,15 @@ private struct RepositoryRowView: View {
                 if let title = row.fixTitle {
                     Button(action: fix) {
                         Text(title)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: z(11.5), weight: .semibold))
                             .foregroundStyle(isSelected ? Color(nsColor: K.hex(0x0b3d91)) : K.label)
-                            .padding(.horizontal, 9)
-                            .frame(height: 24)
+                            .padding(.horizontal, z(9))
+                            .frame(height: z(24))
                             .background {
                                 if isSelected {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.95))
+                                    RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(Color.white.opacity(0.95))
                                 } else {
-                                    Color.clear.controlSurface(radius: 7)
+                                    Color.clear.controlSurface(radius: z(7))
                                 }
                             }
                             .contentShape(Rectangle())
@@ -733,15 +733,15 @@ private struct RepositoryRowView: View {
                     .fixedSize()
                 }
             }
-            .frame(width: 92)
+            .frame(width: z(92))
         }
-        .font(.system(size: 13))
+        .font(.system(size: z(13)))
         .foregroundStyle(isSelected ? .white : K.label)
-        .padding(.horizontal, 8)
-        .frame(height: 38)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+        .padding(.horizontal, z(8))
+        .frame(height: z(38))
+        .background(RoundedRectangle(cornerRadius: z(8), style: .continuous)
             .fill(isSelected ? K.sel : (hovering ? K.hover : (isAlternate ? K.alt : .clear))))
-        .padding(.horizontal, 8)
+        .padding(.horizontal, z(8))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // The first click selects at once (it doesn't wait to see whether a second one follows).
@@ -767,7 +767,7 @@ private struct RepositoryRowView: View {
         Text(value.map(String.init) ?? "—")
             .monospacedDigit()
             .foregroundStyle((value ?? 0) > 0 ? (isSelected ? .white : K.label) : (isSelected ? .white.opacity(0.8) : K.label3))
-            .frame(width: 62, alignment: .leading)
+            .frame(width: z(62), alignment: .leading)
     }
 
     private func fetchText(now: Date) -> String {

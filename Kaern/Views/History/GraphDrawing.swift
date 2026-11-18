@@ -5,10 +5,10 @@ import SwiftUI
 /// rounded corners of 10 where a fork or merge line turns, and 1 pt lines from a ref label to its
 /// commit (canvas v60).
 nonisolated enum GraphMetrics {
-    static let firstLane: CGFloat = 16
-    static let laneSpacing: CGFloat = 22
-    static let corner: CGFloat = 10
-    static let lineWidth: CGFloat = 2.2
+    static var firstLane: CGFloat { z(16) }
+    static var laneSpacing: CGFloat { z(22) }
+    static var corner: CGFloat { z(10) }
+    static var lineWidth: CGFloat { z(2.2) }
     static let labelLineWidth: CGFloat = 1
 
     static func x(lane: Int) -> CGFloat { firstLane + laneSpacing * CGFloat(lane) }
@@ -16,7 +16,7 @@ nonisolated enum GraphMetrics {
     /// The graph column wide enough for the widest of the first rows (84…220, like the board).
     static func automaticWidth(for rows: ArraySlice<GraphRow>) -> CGFloat {
         let lanes = rows.map(\.width).max() ?? 1
-        return min(max(84, x(lane: lanes - 1) + 14), 220)
+        return min(max(z(84), x(lane: lanes - 1) + z(14)), z(220))
     }
 }
 
@@ -88,7 +88,7 @@ struct GraphLines: View {
     private static func stroke(_ path: Path, _ edge: GraphEdge, in context: inout GraphicsContext, dashColor: Color) {
         if edge.dashed {
             context.stroke(path, with: .color(dashColor),
-                           style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, dash: [2.4, 3]))
+                           style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, dash: [z(2.4), z(3)]))
         } else {
             context.stroke(path, with: .color(K.lane(edge.lane)),
                            style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, lineJoin: .round))
@@ -108,20 +108,20 @@ struct CommitNode: View {
     var body: some View {
         ZStack {
             if isMerge {
-                Circle().fill(gap).frame(width: 14, height: 14)
-                Circle().fill(K.lane(lane)).frame(width: 10, height: 10)
+                Circle().fill(gap).frame(width: z(14), height: z(14))
+                Circle().fill(K.lane(lane)).frame(width: z(10), height: z(10))
             } else {
-                Circle().fill(K.lane(lane)).frame(width: 25, height: 25)
-                Circle().fill(gap).frame(width: 21, height: 21)
+                Circle().fill(K.lane(lane)).frame(width: z(25), height: z(25))
+                Circle().fill(gap).frame(width: z(21), height: z(21))
                 Circle().fill(AvatarPalette.color(for: commit.author.email.isEmpty ? commit.author.name : commit.author.email))
-                    .frame(width: 18, height: 18)
+                    .frame(width: z(18), height: z(18))
                 Text(commit.author.initials)
-                    .font(.system(size: 7.5, weight: .bold))
+                    .font(.system(size: z(7.5), weight: .bold))
                     .tracking(0.2)
                     .foregroundStyle(.white)
             }
         }
-        .frame(width: 18, height: 18)
+        .frame(width: z(18), height: z(18))
         .accessibilityHidden(true)
     }
 }
@@ -132,9 +132,9 @@ struct WorkingCopyNode: View {
 
     var body: some View {
         Circle()
-            .strokeBorder(selected ? Color.white : K.wip, style: StrokeStyle(lineWidth: 1.8, dash: [2.6, 2.2]))
+            .strokeBorder(selected ? Color.white : K.wip, style: StrokeStyle(lineWidth: z(1.8), dash: [z(2.6), z(2.2)]))
             .background(Circle().fill(selected ? K.sel : K.content))
-            .frame(width: 18, height: 18)
+            .frame(width: z(18), height: z(18))
             .accessibilityHidden(true)
     }
 }
@@ -206,7 +206,7 @@ struct RefLabel: View {
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: z(4)) {
             if label.isHead {
                 Icon(Icons.labelHead, size: 10)
             }
@@ -229,18 +229,18 @@ struct RefLabel: View {
                 Icon(Icons.labelTag, size: 11).foregroundStyle(iconColor)
             }
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: z(11), weight: .semibold))
         .foregroundStyle(label.isHead || selected ? Color.white : K.label)
-        .padding(.horizontal, 6)
-        .frame(height: 20)
+        .padding(.horizontal, z(6))
+        .frame(height: z(20))
         .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: z(5), style: .continuous)
                 .fill(selected ? Color.white.opacity(0.22) : (label.isHead ? K.lane1 : K.laneTint(lane)))
         )
         .overlay {
             // `.lab.wtlab`: a thin accent ring around a branch another worktree has.
             if label.worktree != nil, !selected, !label.isHead {
-                RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(K.worktreeRing, lineWidth: 1)
+                RoundedRectangle(cornerRadius: z(5), style: .continuous).strokeBorder(K.worktreeRing, lineWidth: 1)
             }
         }
         .help((label.names + [label.worktree.map { "Checked out in the worktree \($0)" }, doubleClick].compactMap { $0 })

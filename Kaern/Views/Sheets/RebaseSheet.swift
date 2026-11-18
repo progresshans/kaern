@@ -14,35 +14,35 @@ struct InteractiveRebaseSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Interactive Rebase")
-                .font(.system(size: 14, weight: .bold))
-                .padding(.bottom, 12)
-            HStack(spacing: 10) {
-                Text("Onto:").font(.system(size: 13))
+                .font(.system(size: z(14), weight: .bold))
+                .padding(.bottom, z(12))
+            HStack(spacing: z(10)) {
+                Text("Onto:").font(.system(size: z(13)))
                 Picker("Rebase onto", selection: Binding(get: { draft.base }, set: { repository.changeRebaseBase($0) })) {
                     ForEach(repository.rebaseOntoChoices(draft), id: \.id) { choice in Text(choice.title).tag(choice.id) }
                 }
                 .labelsHidden()
                 .fixedSize()
                 Text("\(Formatters.count(draft.steps.count, "commit", "commits")) of \(repository.status.branch ?? "HEAD"), oldest first")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, z(12))
             table
             checkLine
-                .padding(.top, 10)
+                .padding(.top, z(10))
             if !repository.status.isClean {
                 Toggle("Stash my \(Formatters.count(repository.status.entries.count, "uncommitted change", "uncommitted changes")) and put them back afterwards",
                        isOn: Binding(get: { draft.stashChanges }, set: { value in repository.updateRebaseDraft { $0.stashChanges = value } }))
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 12.5))
-                    .padding(.top, 10)
-                    .padding(.leading, 2)
+                    .font(.system(size: z(12.5)))
+                    .padding(.top, z(10))
+                    .padding(.leading, z(2))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Text("Result: \(Formatters.count(draft.resultCount, "commit", "commits")) on top of \(draft.baseTitle)")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -54,15 +54,15 @@ struct InteractiveRebaseSheet: View {
                     .controlSize(.large)
                     .disabled(!draft.canStart)
             }
-            .padding(.top, 14)
+            .padding(.top, z(14))
         }
         .foregroundStyle(K.label)
-        .padding(EdgeInsets(top: 18, leading: 20, bottom: 16, trailing: 20))
-        .frame(width: 760, alignment: .leading)
+        .padding(EdgeInsets(top: z(18), leading: z(20), bottom: z(16), trailing: z(20)))
+        .frame(width: z(760), alignment: .leading)
         .background(
             UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
                 .fill(K.inspector)
-                .shadow(color: .black.opacity(0.3), radius: 30, y: 22)
+                .shadow(color: .black.opacity(0.3), radius: z(30), y: 22)
                 .overlay(UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14, style: .continuous)
                     .strokeBorder(K.sepStrong, lineWidth: 0.5))
         )
@@ -75,25 +75,25 @@ struct InteractiveRebaseSheet: View {
     private var table: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Color.clear.frame(width: 28)
-                Text("Action").frame(width: 112, alignment: .leading)
-                Text("Commit").frame(width: 78, alignment: .leading)
+                Color.clear.frame(width: z(28))
+                Text("Action").frame(width: z(112), alignment: .leading)
+                Text("Commit").frame(width: z(78), alignment: .leading)
                 Text("Message").frame(maxWidth: .infinity, alignment: .leading)
                 Text("Focus an action and type P · R · E · S · F · D").fontWeight(.medium)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: z(11), weight: .semibold))
             .foregroundStyle(K.label2)
-            .padding(.leading, 6)
-            .padding(.trailing, 10)
-            .frame(height: 28)
+            .padding(.leading, z(6))
+            .padding(.trailing, z(10))
+            .frame(height: z(28))
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             if draft.isLoading {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 60)
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: z(60))
             } else if draft.steps.isEmpty {
                 Text("No commits to rebase — \(repository.status.branch ?? "HEAD") is already on top of \(draft.baseTitle).")
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .foregroundStyle(K.label2)
-                    .frame(maxWidth: .infinity, minHeight: 60)
+                    .frame(maxWidth: .infinity, minHeight: z(60))
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -103,16 +103,16 @@ struct InteractiveRebaseSheet: View {
                                 focusedRow = step.id
                                 listFocused = true
                             }
-                            if index < draft.steps.count - 1 { K.sep.frame(height: 1).padding(.leading, 6) }
+                            if index < draft.steps.count - 1 { K.sep.frame(height: 1).padding(.leading, z(6)) }
                         }
                     }
                 }
-                .frame(maxHeight: min(CGFloat(draft.steps.count) * 41, 330))
+                .frame(maxHeight: min(CGFloat(draft.steps.count) * 41, z(330)))
             }
         }
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.content))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.content))
+        .clipShape(RoundedRectangle(cornerRadius: z(9), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
         .focusable()
         .focused($listFocused)
         .focusEffectDisabled()
@@ -174,16 +174,16 @@ private struct CheckLine: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: z(7)) {
             Image(systemName: kind == .ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .foregroundStyle(kind == .ok ? K.ok : kind == .warning ? K.warn : K.err)
             Text(text)
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
                 .foregroundStyle(kind == .error ? K.err : K.label)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, z(2))
     }
 }
 
@@ -200,40 +200,40 @@ private struct RebaseRow: View {
         let meta = draft.meta(at: index)
         HStack(spacing: 0) {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10))
+                .font(.system(size: z(10)))
                 .foregroundStyle(K.label3)
-                .frame(width: 28)
+                .frame(width: z(28))
             Picker("Action for \(step.commit.shortID)", selection: Binding(get: { step.action }, set: { set($0) })) {
                 ForEach(RebaseStep.Action.allCases, id: \.self) { action in Text(action.title).tag(action) }
             }
             .labelsHidden()
-            .frame(width: 100)
-            .padding(.trailing, 12)
+            .frame(width: z(100))
+            .padding(.trailing, z(12))
             Text(step.commit.shortID)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: z(11.5), design: .monospaced))
                 .foregroundStyle(K.label2)
-                .frame(width: 78, alignment: .leading)
+                .frame(width: z(78), alignment: .leading)
             message
                 .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 4) {
+            HStack(spacing: z(4)) {
                 if meta == "on origin" || draft.pushed.contains(step.commit.id) && step.action == .pick {
                     Icon(Icons.labelRemote, size: 13)
                 }
                 Text(meta == "on origin" ? "on \(repository.defaultRemote ?? "origin")" : meta)
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: z(11.5)))
             .foregroundStyle(meta == "nothing above to join" ? K.err : K.label2)
             .lineLimit(1)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, z(8))
             .fixedSize()
-            HStack(spacing: 2) {
+            HStack(spacing: z(2)) {
                 MoveButton(up: true, label: "Move \(step.commit.shortID) up") { move(-1) }.disabled(index == 0)
                 MoveButton(up: false, label: "Move \(step.commit.shortID) down") { move(1) }.disabled(index == draft.steps.count - 1)
             }
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 10)
-        .frame(height: 40)
+        .padding(.leading, z(6))
+        .padding(.trailing, z(10))
+        .frame(height: z(40))
         .background(step.action == .drop ? K.hover : (isFocused ? K.accentSoft : .clear))
         .contentShape(Rectangle())
         .onTapGesture(perform: focus)
@@ -247,21 +247,21 @@ private struct RebaseRow: View {
                 set: { value in repository.updateRebaseDraft { $0.steps[index].message = value } }
             ))
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.field)
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(K.accent, lineWidth: 2)))
-            .padding(.trailing, 8)
+            .font(.system(size: z(13)))
+            .padding(.horizontal, z(8))
+            .frame(height: z(28))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.field)
+                .overlay(RoundedRectangle(cornerRadius: z(7), style: .continuous).strokeBorder(K.accent, lineWidth: 2)))
+            .padding(.trailing, z(8))
         } else if step.action.joinsPrevious {
             Text((step.action == .fixup ? "↳ " : "↳ + message: ") + step.commit.subject)
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
                 .truncationMode(.tail)
         } else {
             Text(step.commit.subject)
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .strikethrough(step.action == .drop)
                 .foregroundStyle(step.action == .drop ? K.label2 : K.label)
                 .lineLimit(1)
@@ -298,10 +298,10 @@ private struct MoveButton: View {
             Icon(Icons.chevronDown, size: 10)
                 .rotationEffect(.degrees(up ? 180 : 0))
                 .foregroundStyle(K.label2)
-                .frame(width: 22, height: 22)
+                .frame(width: z(22), height: z(22))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(HoverPlateStyle(radius: 6))
+        .buttonStyle(HoverPlateStyle(radius: z(6)))
         .opacity(isEnabled ? 1 : 0.25)
         .accessibilityLabel(label)
     }

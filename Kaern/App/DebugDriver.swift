@@ -231,6 +231,9 @@ final class DebugDriver {
             if args.count == 4, let values = Optional(args.compactMap(Double.init)), values.count == 4 {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
+        case "zoom":
+            // zoom <factor> — View › Zoom In / Zoom Out: text, rows and spacing that much larger or smaller.
+            if let factor = args.first.flatMap(Double.init) { UIScale.keep(factor) }
         case "press":
             // press up|down|return|escape|space [shift] [option] [command] [hold <n> [every <ms>]] — a key
             // down through the window, to the focused view. hold: the key stays down for n repeats (33 ms
@@ -934,6 +937,10 @@ final class DebugDriver {
             windows.append([
                 "id": model.id.uuidString,
                 "frame": controller.window.map { NSStringFromRect($0.frame) } ?? "",
+                // Where the close button's middle is, from the window's top: the middle of the tab row, at any zoom.
+                "closeButtonFromTop": controller.window.flatMap { window in
+                    window.standardWindowButton(.closeButton).map { window.frame.height - $0.convert($0.bounds, to: nil).midY }
+                } ?? -1,
                 // The folders whose screens are kept, the shown one last (`TabScreensView`).
                 "keptScreens": controller.keptScreens.map { ($0 as NSString).lastPathComponent },
                 "active": model.activeTab?.name ?? "",

@@ -252,6 +252,21 @@ enum MainMenu {
         botsItem.submenu = bots
         menu.addItem(botsItem)
         menu.addItem(.separator())
+        // Text, rows and spacing, larger or smaller (`UIScale`). ⌘= zooms in too, as in a browser.
+        menu.addItem(MenuAction.item("Zoom In", key: "+", enabled: { UIScale.larger(than: UIScale.kept) != nil }) {
+            if let next = UIScale.larger(than: UIScale.kept) { UIScale.keep(next) }
+        })
+        let zoomInToo = MenuAction.item("Zoom In", key: "=", enabled: { UIScale.larger(than: UIScale.kept) != nil }) {
+            if let next = UIScale.larger(than: UIScale.kept) { UIScale.keep(next) }
+        }
+        zoomInToo.isHidden = true
+        zoomInToo.allowsKeyEquivalentWhenHidden = true
+        menu.addItem(zoomInToo)
+        menu.addItem(MenuAction.item("Zoom Out", key: "-", enabled: { UIScale.smaller(than: UIScale.kept) != nil }) {
+            if let next = UIScale.smaller(than: UIScale.kept) { UIScale.keep(next) }
+        })
+        menu.addItem(MenuAction.item("Actual Size", key: "0", enabled: { UIScale.kept != 1 }) { UIScale.keep(1) })
+        menu.addItem(.separator())
         menu.addItem(system("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.control, .command]))
         return menu
     }

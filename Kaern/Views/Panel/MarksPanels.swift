@@ -20,11 +20,11 @@ struct SignatureCard: View {
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { repository.signatureCardOpen.toggle() }
                 } label: {
-                    HStack(spacing: 9) {
+                    HStack(spacing: z(9)) {
                         Icon(mark.icon, size: 14).foregroundStyle(mark.color)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(title(mark)).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(K.label)
-                            Text("\(signature.format) · \(who(signature))").font(.system(size: 11.5)).foregroundStyle(K.label2)
+                            Text(title(mark)).font(.system(size: z(12.5), weight: .semibold)).foregroundStyle(K.label)
+                            Text("\(signature.format) · \(who(signature))").font(.system(size: z(11.5))).foregroundStyle(K.label2)
                                 .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -32,19 +32,19 @@ struct SignatureCard: View {
                             .foregroundStyle(K.label2)
                             .rotationEffect(.degrees(open ? 0 : -90))
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, z(10))
+                    .padding(.vertical, z(8))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityValue(open ? "expanded" : "collapsed")
                 if open {
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: z(5)) {
                         row("Key", signature.key.isEmpty ? "\(signature.format) key" : "\(signature.format) key \(signature.key)")
                         row("Signer", who(signature))
                         row("Status", status(signature))
                     }
-                    .padding(EdgeInsets(top: 0, leading: 33, bottom: mark == .verified ? 10 : 4, trailing: 10))
+                    .padding(EdgeInsets(top: 0, leading: z(33), bottom: mark == .verified ? z(10) : z(4), trailing: z(10)))
                     if mark != .verified {
                         GhostButton(title: mark == .unverified ? "Trust This Key…" : "Show Raw Signature") {
                             if mark == .unverified {
@@ -53,32 +53,32 @@ struct SignatureCard: View {
                                 repository.showRawSignature()
                             }
                         }
-                        .padding(EdgeInsets(top: 4, leading: 33, bottom: 10, trailing: 10))
+                        .padding(EdgeInsets(top: z(4), leading: z(33), bottom: z(10), trailing: z(10)))
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(background(mark)))
-            .padding(.top, 12)
+            .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(background(mark)))
+            .padding(.top, z(12))
         } else {
-            HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(K.label3, lineWidth: 1.5).frame(width: 10, height: 10)
+            HStack(spacing: z(7)) {
+                RoundedRectangle(cornerRadius: z(3), style: .continuous).strokeBorder(K.label3, lineWidth: 1.5).frame(width: z(10), height: z(10))
                 Text("Not signed")
             }
-            .font(.system(size: 12))
+            .font(.system(size: z(12)))
             .foregroundStyle(K.label2)
-            .padding(.top, 12)
+            .padding(.top, z(12))
         }
     }
 
     private func row(_ key: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(key).foregroundStyle(K.label2).frame(width: 46, alignment: .leading)
+        HStack(alignment: .firstTextBaseline, spacing: z(8)) {
+            Text(key).foregroundStyle(K.label2).frame(width: z(46), alignment: .leading)
             Text(value).foregroundStyle(K.label).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(.system(size: 11.5))
-        .lineSpacing(1.5)
+        .font(.system(size: z(11.5)))
+        .lineSpacing(z(1.5))
     }
 
     private func title(_ mark: SignatureMark) -> String {
@@ -135,24 +135,24 @@ struct WorktreePanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text("Worktree")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: z(11), weight: .semibold))
                         .textCase(.uppercase)
                         .tracking(0.3)
                         .foregroundStyle(K.label2)
-                    Text(worktree.name).font(.system(size: 16, weight: .bold)).padding(.top, 6)
+                    Text(worktree.name).font(.system(size: z(16), weight: .bold)).padding(.top, z(6))
                         .lineLimit(1).truncationMode(.middle)
-                    Text(Formatters.abbreviatedPath(worktree.path)).font(.system(size: 11.5)).foregroundStyle(K.label2)
-                        .lineLimit(1).truncationMode(.middle).padding(.top, 2)
+                    Text(Formatters.abbreviatedPath(worktree.path)).font(.system(size: z(11.5))).foregroundStyle(K.label2)
+                        .lineLimit(1).truncationMode(.middle).padding(.top, z(2))
                     fact("Branch") {
                         if let branch = worktree.branch {
                             Text(branch)
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .font(.system(size: z(11.5), weight: .semibold))
                                 .foregroundStyle(K.accentText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                                .padding(.horizontal, 7)
-                                .frame(height: 20)
-                                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.lt1))
+                                .padding(.horizontal, z(7))
+                                .frame(height: z(20))
+                                .background(RoundedRectangle(cornerRadius: z(5), style: .continuous).fill(K.lt1))
                         } else {
                             Text("None (HEAD is detached)").foregroundStyle(K.label2)
                         }
@@ -170,33 +170,33 @@ struct WorktreePanel: View {
                     }
                     if let branch = worktree.branch {
                         Text("\(branch) is checked out in this worktree, so Git won’t check it out in \(repository.name) too. Open the worktree to work on it.")
-                            .font(.system(size: 12))
-                            .lineSpacing(2)
+                            .font(.system(size: z(12)))
+                            .lineSpacing(z(2))
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 9)
+                            .padding(.horizontal, z(11))
+                            .padding(.vertical, z(9))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.accentSoft))
-                            .padding(.top, 14)
+                            .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.accentSoft))
+                            .padding(.top, z(14))
                     }
                     if let details {
                         Text(details.entries.isEmpty ? "No uncommitted changes" : Formatters.count(details.entries.count, "uncommitted change", "uncommitted changes"))
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(.system(size: z(11.5), weight: .semibold))
                             .foregroundStyle(K.label2)
-                            .padding(.top, 16)
-                            .padding(.bottom, 6)
+                            .padding(.top, z(16))
+                            .padding(.bottom, z(6))
                         ForEach(details.entries.prefix(200)) { entry in
                             WorktreeFileRow(entry: entry, stat: entry.hasUnstagedChanges ? details.lineStats.unstaged[entry.path] : details.lineStats.staged[entry.path])
                         }
                     } else {
-                        ProgressView().controlSize(.small).padding(.top, 16)
+                        ProgressView().controlSize(.small).padding(.top, z(16))
                     }
                 }
-                .padding(EdgeInsets(top: 14, leading: 14, bottom: 10, trailing: 14))
+                .padding(EdgeInsets(top: z(14), leading: z(14), bottom: z(10), trailing: z(14)))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .contextClip()
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 PrimaryButton(title: "Open in New Tab") { repository.openWorktree(worktree.path) }
                 GhostButton(title: "Show in Finder") { repository.revealWorktree(worktree.path) }
                 Spacer(minLength: 0)
@@ -205,20 +205,20 @@ struct WorktreePanel: View {
                 }
                 .disabled(repository.activity != nil || worktree.isLocked || worktree.isMain)
             }
-            .padding(EdgeInsets(top: 10, leading: 12, bottom: 12, trailing: 12))
+            .padding(EdgeInsets(top: z(10), leading: z(12), bottom: z(12), trailing: z(12)))
             .overlay(alignment: .top) { K.sep.frame(height: 1) }
         }
     }
 
     /// `.wtk`: "Branch  [hotfix/0.9.3.1]".
     private func fact<Content: View>(_ key: String, @ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 8) {
-            Text(key).foregroundStyle(K.label2).frame(width: 52, alignment: .leading)
+        HStack(spacing: z(8)) {
+            Text(key).foregroundStyle(K.label2).frame(width: z(52), alignment: .leading)
             content()
         }
-        .font(.system(size: 12))
+        .font(.system(size: z(12)))
         .foregroundStyle(K.label)
-        .padding(.top, 10)
+        .padding(.top, z(10))
     }
 }
 
@@ -228,13 +228,13 @@ private struct WorktreeFileRow: View {
     let stat: LineStat?
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: z(7)) {
             StatusTile(letter: letter)
             FilePathText(path: entry.path)
                 .frame(maxWidth: .infinity, alignment: .leading)
             LineCounts(additions: stat?.additions, deletions: stat?.deletions)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, z(6))
         .frame(height: KMetric.fileRow)
         .help(entry.path)
     }

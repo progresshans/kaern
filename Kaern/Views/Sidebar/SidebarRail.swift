@@ -4,13 +4,13 @@ import SwiftUI
 /// ScreenNarrow's folded sidebar (under 1,100 pt): the sections' tiles with their counts. Each
 /// opens the whole sidebar over the graph at that section (`.nwrail`).
 struct SidebarRail: View {
-    static let width: CGFloat = 52
+    static var width: CGFloat { z(52) }
 
     let repository: RepositoryModel
     let window: WindowModel
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: z(6)) {
             // Submodules only where there are some.
             ForEach(SidebarSection.allCases.filter { $0 != .submodules || !repository.submoduleItems.isEmpty }, id: \.self) { section in
                 RailSectionButton(section: section, count: count(section), isOn: window.sidebarFlyout == section) {
@@ -19,7 +19,7 @@ struct SidebarRail: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, z(12))
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
         .background(K.sidebar)
@@ -76,17 +76,17 @@ private struct RailSectionButton: View {
         Button(action: action) {
             Icon(tile.icon, size: tile.size)
                 .foregroundStyle(.white)
-                .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tile.color))
-                .frame(width: 38, height: 38)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isOn ? K.accentSoft : (hovering ? K.hover : .clear)))
+                .frame(width: z(24), height: z(24))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(tile.color))
+                .frame(width: z(38), height: z(38))
+                .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(isOn ? K.accentSoft : (hovering ? K.hover : .clear)))
                 .overlay(alignment: .bottomTrailing) {
                     Text("\(count)")
-                        .font(.system(size: 9.5, weight: .bold))
+                        .font(.system(size: z(9.5), weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(K.label2)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 15, minHeight: 15)
+                        .padding(.horizontal, z(4))
+                        .frame(minWidth: z(15), minHeight: z(15))
                         .background(Capsule().fill(K.content))
                         .overlay(Capsule().strokeBorder(K.sep, lineWidth: 1))
                         .offset(y: -1)
