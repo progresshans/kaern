@@ -347,7 +347,11 @@ private struct SwitchingThumbnail: View {
 
     var body: some View {
         Canvas { context, size in
-            func fill(_ rect: CGRect, _ color: Color, radius: CGFloat = z(2)) {
+            // Drawn in the board's sizes, in a canvas that's at the zoom.
+            var context = context
+            context.scaleBy(x: UIScale.value, y: UIScale.value)
+            let size = CGSize(width: size.width / UIScale.value, height: size.height / UIScale.value)
+            func fill(_ rect: CGRect, _ color: Color, radius: CGFloat = 2) {
                 context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color))
             }
             func lines(left: CGFloat, top: CGFloat, count: Int) {

@@ -261,8 +261,8 @@ struct RingSpinner: View {
             Circle().trim(from: 0, to: 0.25).stroke(K.accent, style: StrokeStyle(lineWidth: 1.75, lineCap: .round))
                 .rotationEffect(.degrees(spinning ? 360 : 0))
         }
-        .frame(width: size - z(1.75), height: size - z(1.75))
-        .frame(width: size, height: size)
+        .frame(width: z(size) - z(1.75), height: z(size) - z(1.75))
+        .frame(width: z(size), height: z(size))
         .onAppear {
             withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) { spinning = true }
         }

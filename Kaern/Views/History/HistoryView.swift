@@ -785,13 +785,15 @@ private struct CommitRowDrawing: View, Equatable {
             let nodeX = GraphMetrics.x(lane: lane)
             if hasLabels {
                 let line = CGRect(x: 0, y: height / 2 - GraphMetrics.labelLineWidth / 2,
-                                  width: max(0, nodeX - (isMerge ? 7 : 12.5)), height: GraphMetrics.labelLineWidth)
+                                  width: max(0, nodeX - z(isMerge ? 7 : 12.5)), height: GraphMetrics.labelLineWidth)
                 cell.fill(Path(line), with: .color(isSelected ? Color.white.opacity(0.75) : K.lane(lane)))
             }
             // The lanes are one picture (they were a Canvas of their own).
             if let graph { cell.drawLayer { lines in GraphLines.draw(graph, in: &lines, height: height) } }
             let center = CGPoint(x: nodeX, y: height / 2)
-            func disc(_ diameter: CGFloat, _ color: Color) {
+            // `diameter` is the design's.
+            func disc(_ design: CGFloat, _ color: Color) {
+                let diameter = z(design)
                 let rect = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
                 cell.fill(Path(ellipseIn: rect), with: .color(color))
             }

@@ -554,8 +554,8 @@ struct LineNumber: View {
         Text(number.map(String.init) ?? "")
             .fontWeight(picked ? .bold : .regular)
             .foregroundStyle(picked ? K.accentText : K.label2)
-            .frame(width: width, alignment: .trailing)
-            .padding(.trailing, trailing)
+            .frame(width: z(width), alignment: .trailing)
+            .padding(.trailing, z(trailing))
             .frame(maxHeight: .infinity, alignment: .top)
             .background(picked ? K.accentSoft : gutter)
     }

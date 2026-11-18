@@ -320,7 +320,7 @@ private struct TagSheet: View {
         let check = repository.checkTagName(name)
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         SheetCard {
-            SheetTitle(text: Text("New Tag on \(Text(repository.short(request.commit)).font(.system(size: 13, weight: .bold, design: .monospaced)))"),
+            SheetTitle(text: Text("New Tag on \(Text(repository.short(request.commit)).font(.system(size: z(13), weight: .bold, design: .monospaced)))"),
                        subtitle: subtitle)
             Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(6)) {
                 SheetFormRow(label: "Name") {

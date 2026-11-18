@@ -16,7 +16,7 @@ nonisolated enum GraphMetrics {
     /// The graph column wide enough for the widest of the first rows (84…220, like the board).
     static func automaticWidth(for rows: ArraySlice<GraphRow>) -> CGFloat {
         let lanes = rows.map(\.width).max() ?? 1
-        return min(max(84, x(lane: lanes - 1) + 14), 220)
+        return min(max(z(84), x(lane: lanes - 1) + z(14)), z(220))
     }
 }
 
@@ -88,7 +88,7 @@ struct GraphLines: View {
     private static func stroke(_ path: Path, _ edge: GraphEdge, in context: inout GraphicsContext, dashColor: Color) {
         if edge.dashed {
             context.stroke(path, with: .color(dashColor),
-                           style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, dash: [2.4, 3]))
+                           style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, dash: [z(2.4), z(3)]))
         } else {
             context.stroke(path, with: .color(K.lane(edge.lane)),
                            style: StrokeStyle(lineWidth: GraphMetrics.lineWidth, lineCap: .round, lineJoin: .round))
@@ -132,7 +132,7 @@ struct WorkingCopyNode: View {
 
     var body: some View {
         Circle()
-            .strokeBorder(selected ? Color.white : K.wip, style: StrokeStyle(lineWidth: 1.8, dash: [2.6, 2.2]))
+            .strokeBorder(selected ? Color.white : K.wip, style: StrokeStyle(lineWidth: z(1.8), dash: [z(2.6), z(2.2)]))
             .background(Circle().fill(selected ? K.sel : K.content))
             .frame(width: z(18), height: z(18))
             .accessibilityHidden(true)

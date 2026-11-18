@@ -937,6 +937,10 @@ final class DebugDriver {
             windows.append([
                 "id": model.id.uuidString,
                 "frame": controller.window.map { NSStringFromRect($0.frame) } ?? "",
+                // Where the close button's middle is, from the window's top: the middle of the tab row, at any zoom.
+                "closeButtonFromTop": controller.window.flatMap { window in
+                    window.standardWindowButton(.closeButton).map { window.frame.height - $0.convert($0.bounds, to: nil).midY }
+                } ?? -1,
                 // The folders whose screens are kept, the shown one last (`TabScreensView`).
                 "keptScreens": controller.keptScreens.map { ($0 as NSString).lastPathComponent },
                 "active": model.activeTab?.name ?? "",
