@@ -39,8 +39,7 @@ public struct GitError: Error, LocalizedError, Sendable, Equatable {
         return trimmed
     }
 
-    /// Removes progress noise and the `error:`/`fatal:` prefixes git puts on every line, and puts the one
-    /// sentence git sends on two lines back on one, so it wraps at the width it is shown in.
+    /// Removes progress noise, empty lines and the `error:`/`fatal:` prefixes git puts on every line.
     static func clean(_ message: String) -> String {
         let lines = message
             .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
@@ -60,9 +59,17 @@ public struct GitError: Error, LocalizedError, Sendable, Equatable {
                     && !line.hasPrefix("remote: Enumerating")
                     && !line.hasPrefix("remote: Total")
             }
-        return lines.joined(separator: "\n")
-            .replacingOccurrences(of: "the correct access rights\nand the repository exists.",
-                                  with: "the correct access rights and the repository exists.")
+        return settingAdviceApart(lines).joined(separator: "\n")
+    }
+
+    /// When a remote can't be read, git ends with advice it sends on two lines, after an empty one. The advice
+    /// goes on one line, so it wraps at the width it is shown in, and keeps the empty line above it.
+    private static func settingAdviceApart(_ lines: [String]) -> [String] {
+        guard let first = lines.firstIndex(of: "Please make sure you have the correct access rights"),
+              lines.indices.contains(first + 1), lines[first + 1] == "and the repository exists." else { return lines }
+        var result = lines
+        result.replaceSubrange(first...first + 1, with: (first > 0 ? [""] : []) + [lines[first] + " " + lines[first + 1]])
+        return result
     }
 }
 

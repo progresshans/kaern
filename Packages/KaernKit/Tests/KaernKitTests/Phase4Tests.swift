@@ -258,7 +258,7 @@ struct GitErrorTextTests {
         GitError(arguments: ["push"], status: 128, message: output).errorDescription
     }
 
-    @Test func putsGitsTwoLineSentenceOnOne() {
+    @Test func setsGitsAdviceApartOnOneLine() {
         let ssh = """
         git@github.com: Permission denied (publickey).
         fatal: Could not read from remote repository.
@@ -269,8 +269,12 @@ struct GitErrorTextTests {
         #expect(text(ssh) == """
         git@github.com: Permission denied (publickey).
         Could not read from remote repository.
+
         Please make sure you have the correct access rights and the repository exists.
         """)
+        // Nothing above it: no empty line to open with.
+        #expect(text("Please make sure you have the correct access rights\nand the repository exists.")
+                == "Please make sure you have the correct access rights and the repository exists.")
     }
 
     @Test func keepsEveryOtherLineApart() {
