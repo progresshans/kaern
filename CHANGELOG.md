@@ -4,13 +4,17 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-19
+
+Resizable panes, worktrees in tabs of their own, Finish Feature and zoom, with smoother scrolling and many fixes.
+
 ### New
 
 - Drag the edge of the sidebar, the panel on the right or Focus's drawer to resize it, and the list of repositories
   when they're in one. They grow as far as the window allows, leaving the middle at least 400 points. Double-click
   the edge to put it back. Kaern keeps the sizes for next time.
 - ↑ and ↓ move through the files of a commit or of your changes once you click one, in the panel and in Focus's
-  drawer. Held down, they keep going, in the history too, and back from Review the history takes them without a click.
+  drawer. Held down, they keep going, in the history too. Back from Review, the history takes them without a click.
 - When several branches or tags point at one commit, the history shows one label and "+2". Rest the pointer on it
   and every label unfolds in a list, with its whole name and its right-click menu.
 - Double-click a branch's label in the history, or in its "+2" list, to switch to it, as in the sidebar. A remote
@@ -55,8 +59,7 @@ What changed in each version of Kaern. A version's section is what its update wi
 - A tag called "v" no longer stops the suggestion for the next tag name.
 - Interactive Rebase warns that Push will need Force Push whenever commits already on the remote would change:
   when a Squash or Fixup folds into one, when they trade places, or when they go onto a branch that has moved on.
-- Choosing another branch in Interactive Rebase's Onto, such as the branch's upstream, no longer says Push will
-  need Force Push when the commits already on the remote stay as they are.
+  Choosing another branch in Onto, such as the upstream, no longer warns when they stay as they are.
 - A repository you've just cloned counts as fetched when it was cloned: the status bar no longer says "Not fetched
   from origin yet", and the Repositories window shows the time. Before a worktree's first fetch, its tab shows when
   the repository was last fetched.
