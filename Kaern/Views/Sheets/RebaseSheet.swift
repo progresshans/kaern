@@ -149,38 +149,25 @@ struct InteractiveRebaseSheet: View {
 
     @ViewBuilder
     private var checkLine: some View {
-        let pushed = draft.steps.filter { draft.pushed.contains($0.commit.id) }
-        if draft.firstJoinsNothing {
-            CheckLine(kind: .error, text: "The first commit can’t be squashed or fixed up — there is nothing above it to join.")
-        } else if draft.rewritesPushed {
-            let names = pushed.map(\.commit.shortID)
-            let list = names.count == 1 ? names[0] : "\(names.count) of these commits"
-            CheckLine(kind: .warning, text: "\(list) \(names.count == 1 ? "is" : "are") already on \(repository.defaultRemote ?? "the remote"). After this rebase, Push will need Force Push (with lease).")
-        } else if !pushed.isEmpty {
-            let names = pushed.map(\.commit.shortID)
-            CheckLine(kind: .ok, text: "\(names.count == 1 ? names[0] : names.joined(separator: ", ")) \(names.count == 1 ? "stays" : "stay") as \(names.count == 1 ? "it is" : "they are") — only unpushed commits change, so a normal Push works afterwards.")
-        } else if draft.hasUpstream {
-            CheckLine(kind: .ok, text: "None of these commits are on \(repository.defaultRemote ?? "the remote") yet, so a normal Push works afterwards.")
-        } else if !draft.steps.isEmpty {
-            CheckLine(kind: .ok, text: "This branch isn’t published yet, so nothing on a remote changes.")
+        if let check = draft.check(remote: repository.defaultRemote) {
+            CheckLine(check: check)
         }
     }
 }
 
-/// `.rcheck`: ✓ when only unpushed commits change, ⚠ when Push will need force, red when it can't run.
+/// `.rcheck`: ✓ when only unpushed commits change, ⚠ when Push will need force, red when it can't run
+/// (`RebaseDraft.check`).
 private struct CheckLine: View {
-    enum Kind { case ok, warning, error }
-    let kind: Kind
-    let text: String
+    let check: RebaseDraft.Check
 
     var body: some View {
         HStack(spacing: z(7)) {
-            Image(systemName: kind == .ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            Image(systemName: check.kind == .ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .font(.system(size: z(13)))
-                .foregroundStyle(kind == .ok ? K.ok : kind == .warning ? K.warn : K.err)
-            Text(text)
+                .foregroundStyle(check.kind == .ok ? K.ok : check.kind == .warning ? K.warn : K.err)
+            Text(check.text)
                 .font(.system(size: z(12.5)))
-                .foregroundStyle(kind == .error ? K.err : K.label)
+                .foregroundStyle(check.kind == .error ? K.err : K.label)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, z(2))
