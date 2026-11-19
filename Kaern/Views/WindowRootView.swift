@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 struct WindowRootView: View {
     let window: WindowModel
     @Environment(AppModel.self) private var app
-    @State private var isDropTarget = false
     @State private var width: CGFloat = 0
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var toolbarStyle = ToolbarStyle.iconOnly
     @AppStorage(SettingsKey.repositorySwitching, store: .kaern) private var switching = RepositorySwitching.tabs
@@ -23,30 +22,27 @@ struct WindowRootView: View {
                 titleBarLayout
             }
         }
-        .environment(\.windowWidth, width)
+        // What the screens fold at, not the width itself: a window being resized then redraws
+        // them when it crosses one of those widths, not at every step.
+        // The widths are the design's: at a larger zoom the window folds as a narrower one would.
+        .environment(\.windowTier, NarrowTier(width: width / UIScale.value))
+        .environment(\.toolbarFoldsMake, width > 0 && width / UIScale.value < 1000)
         .environment(\.repositorySwitching, switching)
-        .frame(minWidth: 760, minHeight: 520)
-        .background(K.win)
+        .frame(minWidth: MainWindowController.minimumSize.width, minHeight: MainWindowController.minimumSize.height)
+        // No background of its own: the window's is the same color, and the tab's screen is a view
+        // behind this one (`ScreenSlot`), which a background would cover.
         .ignoresSafeArea()
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .overlay {
-            if isDropTarget {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+            // Folders dragged over the window (`WindowContentView` takes the drop).
+            if window.isDropTarget {
+                RoundedRectangle(cornerRadius: z(10), style: .continuous)
                     .strokeBorder(K.accent, lineWidth: 3)
-                    .padding(4)
+                    .padding(z(4))
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            let folders = urls.filter { url in
-                var isDirectory: ObjCBool = false
-                return FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) && isDirectory.boolValue
-            }
-            guard !folders.isEmpty else { return false }
-            app.open(folders, in: window)
-            return true
-        } isTargeted: { isDropTarget = $0 }
     }
 
     /// The tab row, then the repository (its toolbar first). A window has no tab only while it
@@ -56,12 +52,7 @@ struct WindowRootView: View {
             TabBar(window: window)
                 .zIndex(3)
             ZStack(alignment: .top) {
-                if let tab = window.activeTab {
-                    RepositoryScreen(window: window, repository: app.repository(for: tab.path))
-                        .id(tab.path)
-                } else {
-                    K.win
-                }
+                ScreenSlot(window: window)
                 // Clone, Create New Repository, Publish: under the toolbar when a tab shows one.
                 WindowSheetHost(window: window, topInset: window.activeTab == nil ? 0 : toolbarStyle.height)
             }
@@ -73,7 +64,7 @@ struct WindowRootView: View {
     /// repository without a toolbar of its own.
     private var titleBarLayout: some View {
         let repository = window.activeTab.map { app.repository(for: $0.path) }
-        let railByWidth = listFoldsNarrow && width > 0 && width < 1100
+        let railByWidth = listFoldsNarrow && width > 0 && width / UIScale.value < 1100
         // The repository beside the list keeps room for its sidebar, panel and middle at their least.
         let listRange = PaneSizes.range(PaneSizes.listMin, width > 0 ? width - PaneSizes.screenLeast : .infinity)
         let listWidth = PaneSizes.size(storedList, board: RepositoryListView.width, in: listRange)
@@ -98,7 +89,7 @@ struct WindowRootView: View {
                                 .frame(width: listWidth)
                                 .overlay(alignment: .trailing) {
                                     PaneResizeHandle(side: .trailing, size: listWidth, range: listRange, label: "Repository list width") {
-                                        storedList = Double($0)
+                                        storedList = PaneSizes.kept($0)
                                     } reset: { storedList = 0 }
                                 }
                                 .debugPaneFrame("list", window: window.id)
@@ -106,15 +97,9 @@ struct WindowRootView: View {
                                 .transition(.move(edge: .leading))
                         }
                     }
-                    Group {
-                        if let tab = window.activeTab {
-                            RepositoryScreen(window: window, repository: app.repository(for: tab.path), showsToolbar: false, showsStatusBar: false)
-                                .id(tab.path)
-                        } else {
-                            K.win
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The list's resize handle is half over the screen's edge (9 pt wide, on the edge).
+                    ScreenSlot(window: window, showsToolbar: false, showsStatusBar: false,
+                               coveredLeading: switching == .sidebar && !(window.listFolded || railByWidth) ? 4.5 : 0)
                 }
                 .animation(.easeOut(duration: 0.18), value: window.listFolded || railByWidth)
                 WindowSheetHost(window: window, topInset: 0)
@@ -182,7 +167,10 @@ enum NarrowTier: Int, Comparable {
 
 extension EnvironmentValues {
     /// The window's width, for the narrow-window folding.
-    @Entry var windowWidth: CGFloat = 0
+    /// How far the window has folded (`NarrowTier`).
+    @Entry var windowTier = NarrowTier.wide
+    /// Under 1,000 pt: a toolbar with names puts New Branch, Stash and Pop into » (ScreenNarrow).
+    @Entry var toolbarFoldsMake = false
     @Entry var repositorySwitching: RepositorySwitching = .tabs
 }
 
@@ -200,14 +188,13 @@ struct RepositoryScreen: View {
     /// The row of sidebar, middle and panel, and the middle's height: what the panes may take.
     @State private var rowWidth: CGFloat = 0
     @State private var middleHeight: CGFloat = 0
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
     @Environment(\.repositorySwitching) private var switching
 
     /// Where cards and sheets start: under this screen's own toolbar, if it has one.
     private var chromeTop: CGFloat { showsToolbar ? toolbarStyle.height : 0 }
 
     var body: some View {
-        let tier = NarrowTier(width: windowWidth)
         // Focus hides both side panels without changing what Sidebar and Details are set to.
         let showsSidebar = window.showsSidebar && !window.isFocused && repository.hasContent
         let sidebarRail = showsSidebar && tier >= .sidebarRail
@@ -248,7 +235,7 @@ struct RepositoryScreen: View {
                         .overlay(alignment: .trailing) {
                             PaneResizeHandle(side: .trailing, size: columns.sidebar, range: columns.sidebarRange, label: "Sidebar width") {
                                 keepShownWidths(columns, sidebar: sidebarSize, panel: panelSize)
-                                storedSidebar = Double($0)
+                                storedSidebar = PaneSizes.kept($0)
                             } reset: { storedSidebar = 0 }
                         }
                         .debugPaneFrame("sidebar", window: window.id)
@@ -263,7 +250,7 @@ struct RepositoryScreen: View {
                         FocusDrawer(repository: repository, height: drawerHeight) { window.showsDrawer = false }
                             .overlay(alignment: .top) {
                                 PaneResizeHandle(side: .top, size: drawerHeight, range: drawerRange, label: "Drawer height") {
-                                    storedDrawer = Double($0)
+                                    storedDrawer = PaneSizes.kept($0)
                                 } reset: { storedDrawer = 0 }
                             }
                             .debugPaneFrame("drawer", window: window.id)
@@ -278,7 +265,7 @@ struct RepositoryScreen: View {
                         .overlay(alignment: .leading) {
                             PaneResizeHandle(side: .leading, size: columns.panel, range: columns.panelRange, label: "Panel width") {
                                 keepShownWidths(columns, sidebar: sidebarSize, panel: panelSize)
-                                storedPanel = Double($0)
+                                storedPanel = PaneSizes.kept($0)
                             } reset: { storedPanel = 0 }
                         }
                         .debugPaneFrame("panel", window: window.id)
@@ -300,10 +287,10 @@ struct RepositoryScreen: View {
                             .onTapGesture { window.sidebarFlyout = nil }
                         SidebarView(repository: repository, showsHeader: switching != .tabs, focus: section)
                             .frame(width: width)
-                            .shadow(color: .black.opacity(0.18), radius: 17, x: 14)
+                            .shadow(color: .black.opacity(0.18), radius: z(17), x: 14)
                             .overlay(alignment: .trailing) {
                                 PaneResizeHandle(side: .trailing, size: width, range: flyoutRange, label: "Sidebar width") {
-                                    storedSidebar = Double($0)
+                                    storedSidebar = PaneSizes.kept($0)
                                 } reset: { storedSidebar = 0 }
                             }
                             .debugPaneFrame("sidebar", window: window.id)
@@ -318,10 +305,10 @@ struct RepositoryScreen: View {
                     let width = min(panelSize, overlayPanelRange.upperBound)
                     detailsPanel
                         .frame(width: width)
-                        .shadow(color: .black.opacity(0.16), radius: 17, x: -14)
+                        .shadow(color: .black.opacity(0.16), radius: z(17), x: -14)
                         .overlay(alignment: .leading) {
                             PaneResizeHandle(side: .leading, size: width, range: overlayPanelRange, label: "Panel width") {
-                                storedPanel = Double($0)
+                                storedPanel = PaneSizes.kept($0)
                             } reset: { storedPanel = 0 }
                         }
                         .debugPaneFrame("panel", window: window.id)
@@ -329,12 +316,12 @@ struct RepositoryScreen: View {
                             Button { window.overlayPanelOpen = false } label: {
                                 Icon(Icons.closeLarge, size: 10)
                                     .foregroundStyle(K.label2)
-                                    .frame(width: 26, height: 26)
-                                    .popSurface(radius: 13)
+                                    .frame(width: z(26), height: z(26))
+                                    .popSurface(radius: z(13))
                                     .contentShape(Circle())
                             }
                             .buttonStyle(.plain)
-                            .offset(x: -13, y: 12)
+                            .offset(x: -z(13), y: z(12))
                             .accessibilityLabel("Hide the details panel")
                         }
                         .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -344,8 +331,8 @@ struct RepositoryScreen: View {
                 if let run = repository.hookRun {
                     // `.hookhud`: over the composer, 16 pt from the right edge.
                     HookHUD(repository: repository, run: run)
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 118)
+                        .padding(.trailing, z(16))
+                        .padding(.bottom, z(118))
                         .transition(.opacity)
                 }
             }
@@ -355,19 +342,21 @@ struct RepositoryScreen: View {
         }
         .overlay(alignment: .bottom) {
             ToastView(repository: repository)
-                .padding(.bottom, showsStatusBar ? 44 : 18)
+                .padding(.bottom, showsStatusBar ? z(44) : z(18))
                 .animation(.easeOut(duration: 0.2), value: repository.toast?.id)
         }
         // Space and File › Quick Look (ScreenMarks).
         .quickLookPreview($repository.quickLookURL)
         .overlay {
-            if window.showsQuickOpen, repository.isReady {
+            // In the tab that shows only: the screens of the window's other tabs are kept, and each
+            // would make a panel (and list its repository's files) for the same switch.
+            if window.showsQuickOpen, repository.isReady, window.activeTab?.path == repository.path {
                 ZStack(alignment: .top) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture { window.showsQuickOpen = false }
                     QuickOpenPanel(repository: repository, window: window)
-                        .padding(.top, chromeTop + 50)
+                        .padding(.top, chromeTop + z(50))
                 }
                 .transition(.opacity)
             }
@@ -383,10 +372,10 @@ struct RepositoryScreen: View {
                     AlertShade()
                     if let confirmation = repository.confirmation {
                         ConfirmationCard(confirmation: confirmation) { repository.confirmation = nil }
-                            .padding(.top, chromeTop + 14)
+                            .padding(.top, chromeTop + z(14))
                     } else if let failure = repository.hookFailure {
                         HookFailureCard(repository: repository, failure: failure)
-                            .padding(.top, chromeTop + 14)
+                            .padding(.top, chromeTop + z(14))
                     }
                 }
                 .transition(.opacity)
@@ -401,20 +390,15 @@ struct RepositoryScreen: View {
         .onChange(of: tier >= .sidebarRail) { _, folded in if !folded { window.sidebarFlyout = nil } }
         .onChange(of: panelOverlay) { _, overlay in if !overlay { window.overlayPanelOpen = false } }
         .alert(item: $repository.alert) { alert in
-            if let title = alert.actionTitle, let action = alert.action {
-                Alert(title: Text(alert.title), message: Text(alert.message),
-                      primaryButton: .default(Text("Resolve Later")), secondaryButton: .destructive(Text(title), action: action))
-            } else {
-                Alert(title: Text(alert.title), message: Text(alert.message))
-            }
+            Alert(title: Text(alert.title), message: Text(alert.message))
         }
     }
 
     /// A drag keeps what the columns show: one the window has narrowed stays that wide instead of
     /// growing back under the pointer while the other one moves.
     private func keepShownWidths(_ columns: SideColumns, sidebar: CGFloat, panel: CGFloat) {
-        if columns.sidebar > 0, columns.sidebar < sidebar { storedSidebar = Double(columns.sidebar) }
-        if columns.panel > 0, columns.panel < panel { storedPanel = Double(columns.panel) }
+        if columns.sidebar > 0, columns.sidebar < sidebar { storedSidebar = PaneSizes.kept(columns.sidebar) }
+        if columns.panel > 0, columns.panel < panel { storedPanel = PaneSizes.kept(columns.panel) }
     }
 
     @ViewBuilder
@@ -448,15 +432,15 @@ struct RepositoryScreen: View {
                     HistoryView(repository: repository, isFocused: window.isFocused) {
                         if window.isFocused { window.showsDrawer = true }
                         // A narrow window opens the panel over the graph when a row is picked.
-                        if NarrowTier(width: windowWidth) >= .panelOverlay, !window.isFocused { window.overlayPanelOpen = true }
+                        if tier >= .panelOverlay, !window.isFocused { window.overlayPanelOpen = true }
                     }
                 }
             }
         case .waiting, .opening, .light, .loading:
-            VStack(spacing: 10) {
+            VStack(spacing: z(10)) {
                 ProgressView().controlSize(.regular)
                 Text("Loading \(repository.name)…")
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                     .foregroundStyle(K.label2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -495,28 +479,28 @@ private struct MissingFolderView: View {
     let remove: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: z(8)) {
             Icon(Icons.folderQuestion, size: 30)
                 .foregroundStyle(K.label2)
-                .frame(width: 68, height: 68)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(K.chip2))
+                .frame(width: z(68), height: z(68))
+                .background(RoundedRectangle(cornerRadius: z(18), style: .continuous).fill(K.chip2))
             Text("\(repository.name) isn’t where it used to be")
-                .font(.system(size: 17, weight: .bold))
-                .padding(.top, 8)
+                .font(.system(size: z(17), weight: .bold))
+                .padding(.top, z(8))
             Text("Kaern can’t find \(Formatters.abbreviatedPath(repository.path)). It may have been moved, renamed or deleted. Your other repositories are fine.")
-                .font(.system(size: 13))
-                .lineSpacing(2)
+                .font(.system(size: z(13)))
+                .lineSpacing(z(2))
                 .foregroundStyle(K.label2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            HStack(spacing: 8) {
+                .frame(maxWidth: z(420))
+            HStack(spacing: z(8)) {
                 PrimaryButton(title: "Locate…", height: 26, fontSize: 12.5) { locate() }
                 SheetActionButton(title: removeTitle, action: remove)
                 SheetActionButton(title: "Try Again") { AppModel.shared.retry(repository) }
             }
-            .padding(.top, 8)
+            .padding(.top, z(8))
         }
-        .padding(40)
+        .padding(z(40))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.content)
     }
@@ -551,23 +535,23 @@ private struct MessageView: View {
     let secondary: (String, () -> Void)
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: z(10)) {
             Icon(icon, size: 34).foregroundStyle(K.label2)
-            Text(title).font(.system(size: 15, weight: .bold))
+            Text(title).font(.system(size: z(15), weight: .bold))
             Text(message)
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .foregroundStyle(K.label2)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            HStack(spacing: 8) {
+                .frame(maxWidth: z(420))
+            HStack(spacing: z(8)) {
                 Button(secondary.0, action: secondary.1)
                 Button(primary.0, action: primary.1)
                     .keyboardShortcut(.defaultAction)
             }
             .controlSize(.large)
-            .padding(.top, 6)
+            .padding(.top, z(6))
         }
-        .padding(30)
+        .padding(z(30))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(K.content)
     }

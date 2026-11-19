@@ -4,12 +4,13 @@ import SwiftUI
 /// Focus mode's bottom drawer (`.drawer`, 330 pt unless dragged): the selection's title and facts,
 /// its files on the left (working-copy files with a checkbox to stage them) and the picked file's diff.
 struct FocusDrawer: View {
-    static let height: CGFloat = 330
+    static var height: CGFloat { z(330) }
 
     @Bindable var repository: RepositoryModel
     let height: CGFloat
     let close: () -> Void
     @AppStorage(DiffPreferences.layoutKey, store: .kaern) private var layout = DiffLayout.split
+    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     @State private var expanded: Set<String> = []
     /// The file list has keyboard focus: ↑ ↓ show the file above or below.
     @FocusState private var filesFocused: Bool
@@ -31,12 +32,12 @@ struct FocusDrawer: View {
                                 .id(file.path)
                             }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, z(8))
+                        .padding(.vertical, z(4))
                     }
                     .arrowKeySteps($filesFocused) { step($0, files: files ?? [], current: current, proxy: proxy) }
                 }
-                .frame(width: 310)
+                .frame(width: z(310))
                 .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
                 Group {
                     if let current, let special = current.special {
@@ -45,7 +46,7 @@ struct FocusDrawer: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 let limit = expanded.contains(current.path) ? Int.max : 2_000
-                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit, words: AppSettings.diffWords)) { item in
+                                ForEach(DiffRowItem.rows(for: current, layout: layout, limit: limit, words: words)) { item in
                                     DiffRowView(item: item, repository: repository) { expanded.insert(current.path) }
                                 }
                             }
@@ -54,7 +55,7 @@ struct FocusDrawer: View {
                     } else if files == nil {
                         ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        Text("No changes").font(.system(size: 13)).foregroundStyle(K.label2)
+                        Text("No changes").font(.system(size: z(13))).foregroundStyle(K.label2)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
@@ -65,7 +66,7 @@ struct FocusDrawer: View {
         .frame(height: height)
         .background(K.inspector)
         .overlay(alignment: .top) { K.sepStrong.frame(height: 1) }
-        .shadow(color: .black.opacity(0.06), radius: 9, y: -6)
+        .shadow(color: .black.opacity(0.06), radius: z(9), y: -6)
         .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
@@ -84,14 +85,14 @@ struct FocusDrawer: View {
 
     /// `.dhead`: title, facts, Split / Unified, Review All, ×.
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: z(13), weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(-1)
             Text(meta)
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
                 .fixedSize()
@@ -101,15 +102,15 @@ struct FocusDrawer: View {
             Button(action: close) {
                 Icon(Icons.closeLarge, size: 12)
                     .foregroundStyle(K.label2)
-                    .frame(width: 26, height: 26)
+                    .frame(width: z(26), height: z(26))
                     .contentShape(Circle())
             }
-            .buttonStyle(HoverPlateStyle(radius: 13))
+            .buttonStyle(HoverPlateStyle(radius: z(13)))
             .accessibilityLabel("Close details")
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(height: 40)
+        .padding(.leading, z(16))
+        .padding(.trailing, z(10))
+        .frame(height: z(40))
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
 
@@ -139,7 +140,7 @@ private struct DrawerFileRow: View {
     let show: () -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: z(2)) {
             if file.isWorking {
                 let staged = file.hasStaged
                 StageCheckbox(isOn: staged, label: (staged ? "Unstage " : "Stage ") + file.path) {
@@ -148,15 +149,15 @@ private struct DrawerFileRow: View {
                 .disabled(!repository.canChangeIndex)
             }
             Button(action: show) {
-                HStack(spacing: 7) {
+                HStack(spacing: z(7)) {
                     StatusTile(letter: file.letter, selected: isCurrent)
                     FilePathText(path: file.path, selected: isCurrent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     LineCounts(additions: file.additions, deletions: file.deletions, selected: isCurrent)
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, z(6))
                 .frame(height: KMetric.fileRow)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isCurrent ? K.sel : .clear))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(isCurrent ? K.sel : .clear))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -176,7 +177,7 @@ struct StageCheckbox: View {
             .toggleStyle(.checkbox)
             .labelsHidden()
             .controlSize(.small)
-            .frame(width: 22, height: KMetric.fileRow)
+            .frame(width: z(22), height: KMetric.fileRow)
             .accessibilityLabel(label)
     }
 }

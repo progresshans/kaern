@@ -107,12 +107,6 @@ extension GitRepository {
         await resolve("\(commit)^{tree}")
     }
 
-    /// Untracked files that aren't ignored.
-    public func untrackedFiles() async -> [String] {
-        guard let output = try? await git(["ls-files", "--others", "--exclude-standard", "-z"]) else { return [] }
-        return Records.splitNUL(output.stdout)
-    }
-
     /// Applies a stash-like commit (from `git stash create`), restoring what was staged too.
     public func applyStash(object: String) async throws {
         try await git(["stash", "apply", "--index", object])

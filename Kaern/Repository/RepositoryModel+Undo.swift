@@ -156,6 +156,46 @@ nonisolated extension ReversibleStep {
         }
     }
 
+    /// Create Branch from Stash made `name` where `stash` was made, applied the stash and dropped
+    /// it. Undo puts what the working tree holds back into the stash list under the stash's name
+    /// (its changes, and anything edited since), goes back and deletes the branch: the list and
+    /// the folder are as they were, instead of the stash's changes lying loose on the branch
+    /// before. Redo makes the branch from that entry again.
+    static func createdBranchFromStash(label: String, name: String, at tip: String, previous: HeadPosition, stash: Stash) -> ReversibleStep {
+        ReversibleStep(label: label) { repository in
+            try await requireHead(repository, branch: name, at: tip, label)
+            let restored = try await putBack(stash, label: label, in: repository)
+            try await go(to: previous, in: repository)
+            try await repository.deleteBranch(name, force: true)
+            return ReversibleStep(label: label) { repository in
+                try await requirePosition(repository, previous, label)
+                guard let restored, let entry = await repository.stash(withObject: restored) else {
+                    throw UndoRefusal(message: "The stash isn’t in the list anymore, so Kaern can’t make \(name) from it again.")
+                }
+                try await repository.createBranch(name, from: entry)
+                guard let tip = await repository.resolve("HEAD") else {
+                    throw UndoRefusal(message: "Kaern couldn’t read where \(name) is.")
+                }
+                return createdBranchFromStash(label: label, name: name, at: tip, previous: previous, stash: entry)
+            }
+        }
+    }
+
+    /// The working tree's changes as a stash entry named like `stash`; when there are none (they
+    /// were discarded since), the dropped entry itself, if git still has it. Returns its commit.
+    private static func putBack(_ stash: Stash, label: String, in repository: GitRepository) async throws -> String? {
+        if let kept = try await repository.stashAll(message: label, includeUntracked: true) {
+            // `git stash push` names it after the branch it was made on now; it gets the name it had.
+            if let entry = await repository.stash(withObject: kept), entry.message != stash.message {
+                try? await repository.renameStash(entry, to: stash.message)
+            }
+            return kept
+        }
+        guard await repository.resolve(stash.id) != nil else { return nil }
+        try await repository.storeStash(stash.id, message: stash.message)
+        return stash.id
+    }
+
     /// A branch that wasn't checked out was deleted. Undo makes it again at the same commit,
     /// tracking what it tracked.
     static func deletedBranch(name: String, tip: String, upstream: String?) -> ReversibleStep {

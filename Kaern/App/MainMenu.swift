@@ -94,10 +94,12 @@ enum MainMenu {
         recentItem.submenu = recent
         menu.addItem(recentItem)
         menu.addItem(.separator())
-        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command]) {
+        // Off while that window's sheet works (a clone under way): it would take the sheet's place.
+        let sheetIsFree = { app.openingWindow?.sheet?.isBusy != true }
+        menu.addItem(MenuAction.item("Create New Repository…", key: "n", modifiers: [.option, .command], enabled: sheetIsFree) {
             app.showCreate(in: app.openingWindow ?? app.showWelcome())
         })
-        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command]) {
+        menu.addItem(MenuAction.item("Clone Repository…", key: "c", modifiers: [.shift, .command], enabled: sheetIsFree) {
             app.showClone(in: app.openingWindow ?? app.showWelcome())
         })
         menu.addItem(.separator())
@@ -250,6 +252,21 @@ enum MainMenu {
         botsItem.submenu = bots
         menu.addItem(botsItem)
         menu.addItem(.separator())
+        // Text, rows and spacing, larger or smaller (`UIScale`). ⌘= zooms in too, as in a browser.
+        menu.addItem(MenuAction.item("Zoom In", key: "+", enabled: { UIScale.larger(than: UIScale.kept) != nil }) {
+            if let next = UIScale.larger(than: UIScale.kept) { UIScale.keep(next) }
+        })
+        let zoomInToo = MenuAction.item("Zoom In", key: "=", enabled: { UIScale.larger(than: UIScale.kept) != nil }) {
+            if let next = UIScale.larger(than: UIScale.kept) { UIScale.keep(next) }
+        }
+        zoomInToo.isHidden = true
+        zoomInToo.allowsKeyEquivalentWhenHidden = true
+        menu.addItem(zoomInToo)
+        menu.addItem(MenuAction.item("Zoom Out", key: "-", enabled: { UIScale.smaller(than: UIScale.kept) != nil }) {
+            if let next = UIScale.smaller(than: UIScale.kept) { UIScale.keep(next) }
+        })
+        menu.addItem(MenuAction.item("Actual Size", key: "0", enabled: { UIScale.kept != 1 }) { UIScale.keep(1) })
+        menu.addItem(.separator())
         menu.addItem(system("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), key: "f", modifiers: [.control, .command]))
         return menu
     }
@@ -331,6 +348,10 @@ enum MainMenu {
         })
         menu.addItem(MenuAction.item("Interactive Rebase…", enabled: { canAct() && interactiveRebaseBase != nil }) {
             if let base = interactiveRebaseBase { repository?.from("Branch menu") { repository?.askInteractiveRebase(onto: base) } }
+        })
+        // The branch you're on, when it's a feature/… branch and the repository has develop.
+        menu.addItem(MenuAction.item("Finish Feature…", enabled: { canAct() && (repository?.status.branch).map { repository?.canFinish($0) == true } == true }) {
+            if let branch = repository?.status.branch { repository?.from("Branch menu") { repository?.askFinish(branch: branch) } }
         })
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Publish Branch…", enabled: {

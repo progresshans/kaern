@@ -16,7 +16,8 @@ struct MainToolbar: View {
     @AppStorage("KaernPullStrategy", store: .kaern) private var pullStrategy = PullChoice.fastForwardIfPossible
     /// Icon Only or Icon and Text (right-click the toolbar).
     @AppStorage(SettingsKey.toolbarStyle, store: .kaern) private var style = ToolbarStyle.iconOnly
-    @Environment(\.windowWidth) private var windowWidth
+    @Environment(\.windowTier) private var tier
+    @Environment(\.toolbarFoldsMake) private var narrowEnoughToFold
     @Environment(\.repositorySwitching) private var switching
 
     /// The traffic lights' room when the toolbar is the title bar (`.titlebar .lights`).
@@ -26,13 +27,12 @@ struct MainToolbar: View {
         let ready = repository.isReady
         // While a merge, rebase or stopped stash waits, Pull, Push, Stash and the like are locked.
         let busy = repository.activity != nil || repository.isMidOperation
-        let tier = NarrowTier(width: windowWidth)
         // ScreenNarrow: with names, New Branch · Stash · Pop go into » under 1,000 pt.
-        let foldsMake = style == .iconAndText && windowWidth > 0 && windowWidth < 1000
+        let foldsMake = style == .iconAndText && narrowEnoughToFold
         // Under 860 pt the groups sit closer (ScreenNarrow's 760 still fits every button).
         HStack(spacing: tier >= .compact ? 2 : 6) {
             if inTitleBar {
-                Color.clear.frame(width: Self.lightsInset - 10, height: 1)
+                Color.clear.frame(width: Self.lightsInset - z(10), height: 1)
             }
             ToolbarCap {
                 ToolbarButton(icon: Icons.sidebar, iconSize: 17, name: "Sidebar", shortcut: "⌃⌘S", tip: .leading,
@@ -45,7 +45,7 @@ struct MainToolbar: View {
                 if switching == .toolbar {
                     RepositoryButton(window: window, repository: repository)
                     if style != .iconAndText {
-                        K.sepStrong.frame(width: 1).padding(.vertical, 7).padding(.horizontal, 1)
+                        K.sepStrong.frame(width: 1).padding(.vertical, z(7)).padding(.horizontal, 1)
                     }
                 }
                 BranchButton(repository: repository, maxWidth: tier >= .compact ? 128 : tier >= .panelOverlay ? 160 : tier >= .sidebarRail ? 200 : 252,
@@ -96,7 +96,7 @@ struct MainToolbar: View {
                         .disabled(!ready || busy || repository.stashes.isEmpty)
                 }
             }
-            Spacer(minLength: 6)
+            Spacer(minLength: z(6))
             ToolbarCap {
                 ToolbarButton(icon: Icons.review, name: "Review", shortcut: "⌥⌘R", isOn: repository.review != nil) {
                     repository.toggleReview()
@@ -126,7 +126,7 @@ struct MainToolbar: View {
             }
         }
         .environment(\.toolbarShowsText, style == .iconAndText)
-        .padding(.horizontal, style == .iconAndText ? 8 : 10)
+        .padding(.horizontal, style == .iconAndText ? z(8) : z(10))
         .frame(height: inTitleBar ? style.titleBarHeight : style.height)
         .frame(maxWidth: .infinity)
         .background {
@@ -147,7 +147,8 @@ struct MainToolbar: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .kaernNewBranch)) { note in
-            if (note.object as? UUID) == window.id { askNewBranch() }
+            // The window's other tabs keep their toolbars: the one of the tab that shows answers.
+            if (note.object as? UUID) == window.id, window.activeTab?.path == repository.path { askNewBranch() }
         }
     }
 
@@ -204,9 +205,9 @@ private struct PullMenu: View {
         } label: {
             Icon(Icons.chevronDown, size: 9)
                 .foregroundStyle(K.label2)
-                .frame(width: 14)
+                .frame(width: z(14))
                 .frame(maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering && isEnabled ? K.hover : .clear))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering && isEnabled ? K.hover : .clear))
                 .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -236,22 +237,22 @@ private struct MoreMenu: View {
             Button("Pop Stash") { repository.from("Toolbar » menu") { repository.popStash() } }
                 .disabled(!ready || busy || repository.stashes.isEmpty)
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "chevron.right.2").font(.system(size: 14, weight: .medium))
-                Text("More").font(.system(size: 10)).lineLimit(1).fixedSize()
+            VStack(spacing: z(4)) {
+                Image(systemName: "chevron.right.2").font(.system(size: z(14), weight: .medium))
+                Text("More").font(.system(size: z(10))).lineLimit(1).fixedSize()
             }
             .foregroundStyle(K.label)
-            .padding(.horizontal, 6)
-            .frame(minWidth: 46)
+            .padding(.horizontal, z(6))
+            .frame(minWidth: z(46))
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+            .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear))
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .frame(height: 46)
+        .frame(height: z(46))
         .onHover { hovering = $0 }
         .toolbarTooltip(name: "More", shortcut: nil, placement: .trailing, hovering: $hovering)
         .accessibilityLabel("More: New Branch, Stash, Pop")
@@ -272,39 +273,39 @@ private struct RepositoryButton: View {
         @Bindable var window = window
         let attention = marksAttention ? otherAttention : 0
         Button { window.showsRepositoryPopover.toggle() } label: {
-            VStack(spacing: 3) {
-                HStack(spacing: 7) {
-                    RepoAvatar(name: repository.name, size: 18, radius: 5, fontSize: 8.5)
+            VStack(spacing: z(3)) {
+                HStack(spacing: z(7)) {
+                    RepoAvatar(name: repository.name, size: 18, radius: z(5), fontSize: 8.5)
                     Text(repository.name)
                         .font(KFont.weighted(12.5, 0.35))
                         .foregroundStyle(K.label)
                         .lineLimit(1)
-                        .frame(maxWidth: 180, alignment: .leading)
+                        .frame(maxWidth: z(180), alignment: .leading)
                     Icon(Icons.chevronDown, size: 9).foregroundStyle(K.label2)
                 }
                 if showsText {
-                    Text("Repository").font(.system(size: 10)).foregroundStyle(K.label2)
+                    Text("Repository").font(.system(size: z(10))).foregroundStyle(K.label2)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(maxHeight: showsText ? 40 : .infinity)
+            .padding(.horizontal, z(10))
+            .frame(maxHeight: showsText ? z(40) : .infinity)
             .background {
                 if showsText {
-                    Color.clear.controlSurface(radius: 9)
+                    Color.clear.controlSurface(radius: z(9))
                 } else {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering || window.showsRepositoryPopover ? K.hover : .clear)
+                    RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering || window.showsRepositoryPopover ? K.hover : .clear)
                 }
             }
             .overlay(alignment: .topLeading) {
                 if attention > 0 {
                     Text("\(attention)")
-                        .font(.system(size: 9.5, weight: .bold))
+                        .font(.system(size: z(9.5), weight: .bold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 14, minHeight: 14)
+                        .padding(.horizontal, z(4))
+                        .frame(minWidth: z(14), minHeight: z(14))
                         .background(Capsule().fill(K.badge))
                         .background(Capsule().stroke(K.control, lineWidth: 3))
-                        .offset(x: 16, y: showsText ? -2 : 1)
+                        .offset(x: z(16), y: showsText ? -z(2) : 1)
                         .allowsHitTesting(false)
                 }
             }
@@ -312,7 +313,7 @@ private struct RepositoryButton: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .padding(.trailing, showsText ? 6 : 0)
+        .padding(.trailing, showsText ? z(6) : 0)
         .toolbarTooltip(name: "Switch Repository", shortcut: "⌘T", placement: .leading, hovering: $hovering)
         .popover(isPresented: $window.showsRepositoryPopover, arrowEdge: .bottom) {
             RepositoryPopover(window: window) { window.showsRepositoryPopover = false }
@@ -344,31 +345,31 @@ private struct BranchButton: View {
             let menu = ContextMenus.toolbarBranchMenu(repository, onNewBranch: onNewBranch, onOtherBranches: onOtherBranches)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
         } label: {
-            VStack(spacing: 3) {
-                HStack(spacing: 6) {
+            VStack(spacing: z(3)) {
+                HStack(spacing: z(6)) {
                     Icon(Icons.branchToolbar, size: 15)
                         .foregroundStyle(K.accent)
                     Text(title)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: z(12.5), weight: .semibold))
                         .foregroundStyle(K.label)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: maxWidth, alignment: .leading)
+                        .frame(maxWidth: z(maxWidth), alignment: .leading)
                     Icon(Icons.upDown, size: 9, height: 12)
                         .foregroundStyle(K.label2)
                 }
                 if showsText {
-                    Text("Branch").font(.system(size: 10)).foregroundStyle(K.label2)
+                    Text("Branch").font(.system(size: z(10))).foregroundStyle(K.label2)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(maxHeight: showsText ? 40 : .infinity)
+            .padding(.horizontal, z(10))
+            .frame(maxHeight: showsText ? z(40) : .infinity)
             .background {
                 // `.tb-text .cb.wide`: the branch keeps its pill when names show.
                 if showsText {
-                    Color.clear.controlSurface(radius: 9)
+                    Color.clear.controlSurface(radius: z(9))
                 } else {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear)
+                    RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear)
                 }
             }
             .contentShape(Rectangle())

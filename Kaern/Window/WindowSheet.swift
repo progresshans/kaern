@@ -364,6 +364,11 @@ final class PublishModel {
     var isRunning = false
     var error: String?
     var progress: String?
+    /// The sheet came up by itself: Create made the repository and its publishing failed.
+    var followsCreate = false
+    /// "owner/name" once it is on GitHub and origin points at it: only the push is left, and the
+    /// name and who sees it are settled.
+    var madeOnGitHub: String?
 
     init(repositoryPath: String, name: String) {
         self.repositoryPath = repositoryPath
@@ -372,8 +377,17 @@ final class PublishModel {
 
     var account: HostingAccount? { HostingAccount.all.first { $0.kind == .github && $0.host == "github.com" } }
 
+    /// Something is made that closing the sheet won't take back (the repository on this Mac, or the
+    /// one on GitHub): the sheet asks whether to try again now or leave it for later.
+    var asksToRetry: Bool { followsCreate || madeOnGitHub != nil }
+
+    /// What GitHub will call it: a space or a letter GitHub doesn't take becomes a dash there, so
+    /// the sheet shows that name and Publish asks for it.
+    var githubName: String { GitHubClient.repositoryName(for: name) }
+
+    /// Something of the name is left on GitHub (a letter or a digit), within its 100 characters.
     var nameIsValid: Bool {
-        let value = name.trimmingCharacters(in: .whitespaces)
-        return !value.isEmpty && value.allSatisfy { $0.isLetter || $0.isNumber || "-_.".contains($0) } && value.count <= 100
+        let value = githubName
+        return value.count <= 100 && value.contains { $0.isLetter || $0.isNumber }
     }
 }

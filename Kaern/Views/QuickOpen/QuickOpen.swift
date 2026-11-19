@@ -168,84 +168,86 @@ struct QuickOpenPanel: View {
     let repository: RepositoryModel
     let window: WindowModel
     @State private var query = ""
-    @State private var index = 0
+    @State private var selection = QuickOpenSelection()
     @State private var files: [String] = []
 
     var body: some View {
+        // The search runs when what is searched changes (the text, the files, the repository),
+        // not when the picked row does: that is read by the rows, not here.
         let groups = QuickOpenSource.groups(query, repository: repository, window: window, files: files)
         let flat = groups.flatMap(\.items)
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Icon(Icons.search(1.6), size: 17).foregroundStyle(K.label2)
                 QuickOpenField(text: $query, placeholder: "Branches, commits, files, commands",
                                move: { step in
                                    guard !flat.isEmpty else { return }
-                                   index = (index + step + flat.count) % flat.count
+                                   selection.index = (selection.index + step + flat.count) % flat.count
                                },
                                submit: {
-                                   guard flat.indices.contains(index) else { return }
-                                   let item = flat[index]
+                                   guard flat.indices.contains(selection.index) else { return }
+                                   let item = flat[selection.index]
                                    window.showsQuickOpen = false
                                    item.run()
                                },
                                cancel: { window.showsQuickOpen = false })
-                Text("⇧⌘O").font(.system(size: 11.5)).foregroundStyle(K.label2)
+                Text("⇧⌘O").font(.system(size: z(11.5))).foregroundStyle(K.label2)
             }
-            .padding(.horizontal, 16)
-            .frame(height: 50)
+            .padding(.horizontal, z(16))
+            .frame(height: z(50))
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if flat.isEmpty {
                             Text(query.isEmpty ? "Type to find a branch, commit, file or command." : "Nothing matches “\(query)”.")
-                                .font(.system(size: 12.5))
+                                .font(.system(size: z(12.5)))
                                 .foregroundStyle(K.label2)
-                                .frame(maxWidth: .infinity, minHeight: 60)
+                                .frame(maxWidth: .infinity, minHeight: z(60))
                         }
                         ForEach(groups) { group in
                             Text(group.title)
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .font(.system(size: z(11.5), weight: .semibold))
                                 .foregroundStyle(K.label2)
-                                .padding(.horizontal, 14)
-                                .padding(.top, 10)
-                                .padding(.bottom, 4)
+                                .padding(.horizontal, z(14))
+                                .padding(.top, z(10))
+                                .padding(.bottom, z(4))
                             ForEach(group.items) { item in
                                 let position = flat.firstIndex { $0.id == item.id } ?? 0
-                                QuickOpenRow(item: item, isOn: position == index)
+                                QuickOpenPickedRow(item: item, position: position, selection: selection)
                                     .id(item.id)
                                     .onTapGesture {
                                         window.showsQuickOpen = false
                                         item.run()
                                     }
-                                    .onHover { if $0 { index = position } }
+                                    .onHover { if $0 { selection.index = position } }
                             }
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, z(6))
+                    .padding(.bottom, z(8))
                 }
-                .frame(maxHeight: 460)
-                .onChange(of: index) { if flat.indices.contains(index) { proxy.scrollTo(flat[index].id) } }
+                .frame(maxHeight: z(460))
+                .background(QuickOpenScroller(selection: selection, ids: flat.map(\.id), proxy: proxy))
             }
-            HStack(spacing: 14) {
+            HStack(spacing: z(14)) {
                 key("↑ ↓", "Move")
                 key("Return", "Open")
                 key("Esc", "Close")
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            .frame(height: 34)
+            .padding(.horizontal, z(16))
+            .frame(height: z(34))
             .background(K.alt)
             .overlay(alignment: .top) { K.sep.frame(height: 1) }
         }
-        .frame(width: 640)
+        .frame(width: z(640))
         .fixedSize(horizontal: false, vertical: true)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(K.pop))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.25), radius: 30, y: 18)
-        .onChange(of: query) { index = 0 }
+        .background(RoundedRectangle(cornerRadius: z(12), style: .continuous).fill(K.pop))
+        .clipShape(RoundedRectangle(cornerRadius: z(12), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: z(12), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.25), radius: z(30), y: 18)
+        .onChange(of: query) { selection.index = 0 }
         .task {
             guard let git = repository.repository else { return }
             files = await GitCommandTrigger.$current.withValue(.background("Quick Open")) { await git.trackedFiles() }
@@ -253,15 +255,47 @@ struct QuickOpenPanel: View {
     }
 
     private func key(_ caps: String, _ text: String) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: z(5)) {
             Text(caps)
-                .font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 5)
-                .frame(height: 18)
-                .background(RoundedRectangle(cornerRadius: 4).fill(K.chip2))
-            Text(text).font(.system(size: 12))
+                .font(.system(size: z(11), weight: .semibold))
+                .padding(.horizontal, z(5))
+                .frame(height: z(18))
+                .background(RoundedRectangle(cornerRadius: z(4)).fill(K.chip2))
+            Text(text).font(.system(size: z(12)))
         }
         .foregroundStyle(K.label2)
+    }
+}
+
+/// Which result is picked. Its own object: moving through the results (the arrow keys, the
+/// pointer) redraws the row left and the row reached, and the panel doesn't search again.
+@MainActor @Observable
+private final class QuickOpenSelection {
+    var index = 0
+}
+
+/// A result's row, drawn as picked when it is.
+private struct QuickOpenPickedRow: View {
+    let item: QuickOpenItem
+    let position: Int
+    let selection: QuickOpenSelection
+
+    var body: some View {
+        QuickOpenRow(item: item, isOn: selection.index == position)
+    }
+}
+
+/// Keeps the picked row in view.
+private struct QuickOpenScroller: View {
+    let selection: QuickOpenSelection
+    let ids: [QuickOpenItem.ID]
+    let proxy: ScrollViewProxy
+
+    var body: some View {
+        Color.clear
+            .onChange(of: selection.index) { _, index in
+                if ids.indices.contains(index) { proxy.scrollTo(ids[index]) }
+            }
     }
 }
 
@@ -271,25 +305,25 @@ private struct QuickOpenRow: View {
     let isOn: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             icon
                 .foregroundStyle(isOn ? .white : K.accentText)
-                .frame(width: 18)
+                .frame(width: z(18))
             highlighted
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(item.meta)
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(isOn ? .white.opacity(0.85) : K.label2)
                 .lineLimit(1)
                 .fixedSize()
         }
         .foregroundStyle(isOn ? .white : K.label)
-        .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isOn ? K.sel : .clear))
+        .padding(.horizontal, z(10))
+        .frame(height: z(32))
+        .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(isOn ? K.sel : .clear))
         .contentShape(Rectangle())
     }
 
@@ -298,9 +332,9 @@ private struct QuickOpenRow: View {
         switch item.kind {
         case .branch: Icon(Icons.branch(1.4), size: 14)
         case .remote: Icon(Icons.labelRemote, size: 14)
-        case .commit: Image(systemName: "smallcircle.filled.circle").font(.system(size: 12))
+        case .commit: Image(systemName: "smallcircle.filled.circle").font(.system(size: z(12)))
         case .file: Icon(Icons.file, size: 14)
-        case .command: Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+        case .command: Image(systemName: "chevron.right").font(.system(size: z(11), weight: .bold))
         case .repository: Icon(Icons.folder, size: 14)
         }
     }
@@ -311,7 +345,7 @@ private struct QuickOpenRow: View {
         for offset in item.offsets where offset < characters.count {
             let start = attributed.index(attributed.startIndex, offsetByCharacters: offset)
             let end = attributed.index(start, offsetByCharacters: 1)
-            attributed[start..<end].font = .system(size: 13, weight: .bold)
+            attributed[start..<end].font = .system(size: z(13), weight: .bold)
         }
         return Text(attributed)
     }
@@ -330,7 +364,7 @@ private struct QuickOpenField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 17)
+        field.font = .systemFont(ofSize: z(17))
         field.placeholderString = placeholder
         field.delegate = context.coordinator
         return field

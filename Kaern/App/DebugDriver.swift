@@ -117,8 +117,10 @@ final class DebugDriver {
                 window.removeFromGroup(tab.id)
             }
         case "close":
-            if let name = args.first, let window, let tab = window.tabs.first(where: { $0.name == name }) {
-                app.close([tab.id], in: window)
+            // close <tab name> [<tab name>…] — several close together, as Close Tabs to the Right does.
+            if let window {
+                let ids = args.compactMap { name in window.tabs.first { $0.name == name }?.id }
+                if !ids.isEmpty { app.close(ids, in: window) }
             }
         case "open":
             // Into the start window while it's open: the repository then opens a main window.
@@ -154,6 +156,8 @@ final class DebugDriver {
             phase6(command, args)
         case _ where DebugDriver.holdCommands.contains(command):
             holds(command, args)
+        case _ where DebugDriver.frameCommands.contains(command):
+            frames(command, args)
         case "sidebar":
             window?.showsSidebar = args.first != "off"
         case "details":
@@ -227,9 +231,13 @@ final class DebugDriver {
             if args.count == 4, let values = Optional(args.compactMap(Double.init)), values.count == 4 {
                 drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
             }
+        case "zoom":
+            // zoom <factor> — View › Zoom In / Zoom Out: text, rows and spacing that much larger or smaller.
+            if let factor = args.first.flatMap(Double.init) { UIScale.keep(factor) }
         case "press":
-            // press up|down|return|escape|space [shift] [option] [command] — a key down through the
-            // window, to the focused view.
+            // press up|down|return|escape|space [shift] [option] [command] [hold <n> [every <ms>]] — a key
+            // down through the window, to the focused view. hold: the key stays down for n repeats (33 ms
+            // apart unless `every` says otherwise) before it comes up, as a held key does.
             press(args.first ?? "", modifiers: Array(args.dropFirst()))
         case "front":
             // Makes the window key, so snapshots show the active-window look (traffic lights, checkboxes).
@@ -806,13 +814,31 @@ final class DebugDriver {
         if names.contains("command") { flags.insert(.command) }
         // Arrow keys carry the function-key flag, as real ones do.
         if [126, 125].contains(code) { flags.insert([.function, .numericPad]) }
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
+        func number(after word: String) -> Int? {
+            names.firstIndex(of: word).flatMap { names.indices.contains($0 + 1) ? Int(names[$0 + 1]) : nil }
+        }
+        let repeats = max(number(after: "hold") ?? 0, 0)
+        let interval = number(after: "every") ?? 33
+        func send(_ type: NSEvent.EventType, isRepeat: Bool = false) {
             guard let event = NSEvent.keyEvent(
                 with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: nsWindow.windowNumber, context: nil, characters: characters,
-                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
-            ) else { continue }
+                charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
+            ) else { return }
             nsWindow.sendEvent(event)
+        }
+        // A plain press stays in this turn; a held key's repeats come one after the other, as a keyboard sends them.
+        guard repeats > 0 else { send(.keyDown); send(.keyUp); return }
+        pointerTasks += 1
+        Task {
+            defer { pointerTasks -= 1 }
+            send(.keyDown)
+            for _ in 0..<repeats {
+                try? await Task.sleep(for: .milliseconds(interval))
+                send(.keyDown, isRepeat: true)
+            }
+            try? await Task.sleep(for: .milliseconds(interval))
+            send(.keyUp)
         }
     }
 
@@ -829,7 +855,7 @@ final class DebugDriver {
         nsWindow.sendEvent(event)
     }
 
-    /// Clicks and drags still being sent (each takes a moment): a script waits for none
+    /// Clicks, drags and held keys still being sent (each takes a moment): a script waits for none
     /// (`driver.pointerBusy`) before the next one, or a press could land inside another's drag.
     private var pointerTasks = 0
 
@@ -911,11 +937,18 @@ final class DebugDriver {
             windows.append([
                 "id": model.id.uuidString,
                 "frame": controller.window.map { NSStringFromRect($0.frame) } ?? "",
+                // Where the close button's middle is, from the window's top: the middle of the tab row, at any zoom.
+                "closeButtonFromTop": controller.window.flatMap { window in
+                    window.standardWindowButton(.closeButton).map { window.frame.height - $0.convert($0.bounds, to: nil).midY }
+                } ?? -1,
+                // The folders whose screens are kept, the shown one last (`TabScreensView`).
+                "keptScreens": controller.keptScreens.map { ($0 as NSString).lastPathComponent },
                 "active": model.activeTab?.name ?? "",
                 "tabs": model.tabs.map { tab -> [String: Any] in
                     let repository = app.repository(for: tab.path)
                     return [
                         "name": tab.name,
+                        "path": tab.path,
                         "group": tab.group.flatMap { model.group($0)?.name } ?? "",
                         "phase": "\(repository.phase)",
                         "busy": repository.debugIsBusy,
@@ -947,6 +980,9 @@ final class DebugDriver {
                 "selection": selection,
                 "focused": window.isFocused,
                 "drawer": window.showsDrawer,
+                "drawerPath": repository.drawerPath ?? "",
+                // Review or the Focus drawer of this tab is on screen (a tab kept in the background doesn't count).
+                "diffViewers": repository.diffViewers,
                 "review": repository.review.map { ["all": $0.showsAllFiles, "path": $0.path ?? ""] as [String: Any] } ?? NSNull(),
                 "search": ["open": repository.search.isOpen, "query": repository.search.query, "scope": repository.search.scope.rawValue,
                            "matches": repository.search.matches.compactMap { id in repository.commits.firstIndex { $0.id == id } }],

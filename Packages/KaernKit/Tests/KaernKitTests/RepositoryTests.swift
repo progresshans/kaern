@@ -105,6 +105,53 @@ struct RepositoryTests {
         #expect(count == 2)
     }
 
+    /// A file whose name is also a pattern (`notes[1].txt` matches `notes1.txt`, `*.md` matches every Markdown file)
+    /// is that one file to every command that takes paths.
+    @Test func takesPathsLiterally() async throws {
+        let repository = try await makeRepository()
+        defer { cleanUp(repository) }
+        let names = ["notes[1].txt", "notes1.txt", "*.md", "a.md"]
+        for name in names { try write("one\n", to: name, in: repository) }
+        try await repository.stageAll()
+        try await repository.commit(message: "Files", amend: false)
+        for name in names { try write("one\ntwo\n", to: name, in: repository) }
+
+        func staged() async throws -> [String] {
+            try await repository.status().entries.filter(\.hasStagedChanges).map(\.path).sorted()
+        }
+        func changed() async throws -> [String] {
+            try await repository.status().entries.map(\.path).sorted()
+        }
+
+        try await repository.stage(["notes[1].txt"])
+        #expect(try await staged() == ["notes[1].txt"])
+        try await repository.stage(["*.md"])
+        #expect(try await staged() == ["*.md", "notes[1].txt"])
+        try await repository.unstage(["*.md"], hasHead: true)
+        #expect(try await staged() == ["notes[1].txt"])
+        try await repository.unstage(["notes[1].txt"], hasHead: true)
+        #expect(try await staged().isEmpty)
+
+        let patch = String(decoding: try await repository.patch(paths: ["*.md"], staged: false), as: UTF8.self)
+        #expect(patch.contains("a/*.md"))
+        #expect(!patch.contains("a/a.md"))
+
+        let one = try await repository.workingDiff(paths: ["notes[1].txt"], staged: false)
+        #expect(one?.path == "notes[1].txt")
+
+        // A folder still stands for what is in it.
+        try write("x\n", to: "new [1]/one.txt", in: repository)
+        try await repository.stage(["new [1]/"])
+        #expect(try await staged() == ["new [1]/one.txt"])
+        try await repository.unstage(["new [1]/"], hasHead: true)
+        try FileManager.default.removeItem(at: repository.root.appending(path: "new [1]"))
+
+        try await repository.discardUnstaged(["notes[1].txt"])
+        #expect(try await changed() == ["*.md", "a.md", "notes1.txt"])
+        try await repository.discardAll(["*.md"])
+        #expect(try await changed() == ["a.md", "notes1.txt"])
+    }
+
     @Test func stagesAndUnstagesSingleLines() async throws {
         let repository = try await makeRepository()
         defer { cleanUp(repository) }
@@ -199,6 +246,29 @@ struct RepositoryTests {
         #expect(repository.classify([git("index")]) == .index)
         #expect(repository.classify([git("refs/heads/main"), git("objects/ab/cdef")]) == .refs)
         #expect(repository.classify([git("index.lock"), git("logs/HEAD")]) == [])
+        #expect(repository.workTreePaths([work("Sources/App.swift"), git("index"), git("objects/ab/cdef")]) == [work("Sources/App.swift")])
+    }
+
+    /// A linked working tree has its HEAD and index in a git directory of its own and its branches
+    /// in the one it shares: a branch moved there (a commit made in Terminal) is a change of refs,
+    /// and nothing else in the shared directory is this working tree's.
+    @Test func classifiesALinkedWorktreesSharedFiles() async throws {
+        let (repository, folder) = try await Phase6ReviewTests.repositoryWithWorktree()
+        defer {
+            TestRepositories.remove(repository)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        let worktree = try await repository.linkedWorktree(at: folder.path(percentEncoded: false))
+        func shared(_ path: String) -> String { repository.gitDirectory.appending(path: path).path(percentEncoded: false) }
+        func own(_ path: String) -> String { worktree.gitDirectory.appending(path: path).path(percentEncoded: false) }
+        let file = worktree.root.appending(path: "a.txt").path(percentEncoded: false)
+        #expect(worktree.classify([shared("refs/heads/hotfix")]) == .refs)
+        #expect(worktree.classify([shared("packed-refs")]) == .refs)
+        #expect(worktree.classify([shared("index"), shared("HEAD"), shared("objects/ab/cdef"), shared("refs/heads/hotfix.lock")]) == [])
+        #expect(worktree.classify([own("index")]) == .index)
+        #expect(worktree.classify([own("HEAD")]) == .refs)
+        #expect(worktree.classify([file]) == .workTree)
+        #expect(worktree.workTreePaths([shared("refs/heads/hotfix"), own("index"), file]) == [file])
     }
 
     @Test func rejectsFoldersThatArentRepositories() async throws {

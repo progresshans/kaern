@@ -8,6 +8,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let model: WindowModel
     private weak var app: AppModel?
     private var lights: TrafficLights?
+    private let content: WindowContentView
     /// Where this window's rows with context menus are.
     let contextTracker = ContextMenuTracker()
 
@@ -28,19 +29,44 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isRestorable = false
         window.tabbingMode = .disallowed
         window.collectionBehavior.insert(.fullScreenPrimary)
-        // ScreenNarrow's narrowest window.
-        window.minSize = NSSize(width: 760, height: 520)
+        window.minSize = Self.minimumSize
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x323232) : K.hex(0xececec) }
         window.isReleasedWhenClosed = false
 
         let tracker = contextTracker
+        let screens = TabScreensHandle()
         let root = WindowRootView(window: model)
             .environment(app)
             .environment(tracker)
+            .environment(screens)
             .takesDriverClicksInBackground()
+            .zoomed()
         let hosting = KaernHostingView(rootView: root)
         hosting.sizingOptions = []
-        window.contentView = hosting
+        // The tabs' screens are views of their own behind this one (`TabScreensView`).
+        let content = WindowContentView(chrome: hosting)
+        self.content = content
+        screens.view = content.screens
+        content.screens.make = { [weak app] path, inputs in
+            guard let app else { return AnyView(EmptyView()) }
+            return AnyView(
+                RepositoryScreen(window: model, repository: app.repository(for: path),
+                                 showsToolbar: inputs.showsToolbar, showsStatusBar: inputs.showsStatusBar)
+                    .environment(\.windowTier, inputs.tier)
+                    .environment(\.toolbarFoldsMake, inputs.toolbarFoldsMake)
+                    .environment(\.repositorySwitching, inputs.switching)
+                    .background(K.win)
+                    .environment(app)
+                    .environment(tracker)
+                    .takesDriverClicksInBackground()
+                    .zoomed()
+            )
+        }
+        // A press on the screen's place is the screen's, unless a sheet of the window's covers it.
+        hosting.leaves = { [weak screens] point in model.sheet == nil && screens?.takes(point) == true }
+        content.open = { [weak app] folders in app?.open(folders, in: model) }
+        content.targeted = { model.isDropTarget = $0 }
+        window.contentView = content
 
         super.init(window: window)
         window.delegate = self
@@ -71,7 +97,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// Tabs: the lights sit in the 36 pt tab row. Sidebar and Toolbar: in the toolbar, which is
     /// the title bar (52 pt, 58 with names).
+    /// ScreenNarrow's narrowest window, at the zoom.
+    static var minimumSize: NSSize { NSSize(width: z(760), height: z(520)) }
+
+    /// The zoom changed (or any setting): the narrowest window follows it, and a window narrower
+    /// than that grows to it from its top left.
+    private func applyZoom() {
+        UIScale.load()
+        guard let window, window.minSize != Self.minimumSize else { return }
+        let minimum = Self.minimumSize
+        window.minSize = minimum
+        guard !window.styleMask.contains(.fullScreen),
+              window.frame.width < minimum.width || window.frame.height < minimum.height else { return }
+        var frame = window.frame
+        let top = frame.maxY
+        frame.size = NSSize(width: max(frame.width, minimum.width), height: max(frame.height, minimum.height))
+        frame.origin.y = top - frame.height
+        window.setFrame(frame, display: true)
+    }
+
     private func applyChrome() {
+        applyZoom()
         let style = ToolbarStyle(rawValue: UserDefaults.kaern.string(forKey: SettingsKey.toolbarStyle) ?? "") ?? .iconOnly
         let tabs = AppSettings.repositorySwitching == .tabs
         let center = tabs ? KMetric.tabRow / 2 : style.titleBarHeight / 2
@@ -172,8 +218,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        content.screens.removeAll()
         app?.windowWillClose(self)
     }
+
+    /// The folders whose screens are kept, the shown one last (the debug dump).
+    var keptScreens: [String] { content.screens.keptPaths }
 
     func windowDidMove(_ notification: Notification) { rememberFrame() }
     func windowDidResize(_ notification: Notification) { rememberFrame() }
@@ -253,6 +303,13 @@ final class KaernWindow: NSWindow {
 /// `WindowDragGesture`.
 final class KaernHostingView<Content: View>: NSHostingView<Content> {
     var onLayout: (() -> Void)?
+    /// Says where a press isn't this view's (in its own points): there the view behind gets it.
+    var leaves: ((CGPoint) -> Bool)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let leaves, leaves(convert(point, from: superview)) { return nil }
+        return super.hitTest(point)
+    }
 
     override func layout() {
         super.layout()
@@ -327,11 +384,5 @@ final class TrafficLights {
                 : titlebar.bounds.height - centerFromTop - button.frame.height / 2
             if button.frame.origin.y != y { button.setFrameOrigin(NSPoint(x: button.frame.origin.x, y: y)) }
         }
-    }
-
-    /// Where the tab strip may start: right of the zoom button.
-    static func leadingInset(for window: NSWindow?) -> CGFloat {
-        guard let zoom = window?.standardWindowButton(.zoomButton) else { return 78 }
-        return zoom.convert(zoom.bounds, to: nil).maxX + 9
     }
 }

@@ -13,11 +13,30 @@ struct WorktreeDetails: Equatable {
 extension RepositoryModel {
     /// The working tree this tab shows (its own folder).
     var currentWorktreePath: String {
-        canonicalPath(repository?.root.path(percentEncoded: false).trimmingTrailingSlash ?? path).trimmingTrailingSlash
+        canonical(repository?.root.path(percentEncoded: false).trimmingTrailingSlash ?? path)
     }
 
     func isCurrent(_ worktree: Worktree) -> Bool {
-        canonicalPath(worktree.path).trimmingTrailingSlash == currentWorktreePath
+        canonical(worktree.path) == currentWorktreePath
+    }
+
+    /// `path` with its symbolic links resolved and no slash at the end, kept once resolved.
+    private func canonical(_ path: String) -> String {
+        if let known = canonicalPaths[path] { return known }
+        let resolved = canonicalPath(path).trimmingTrailingSlash
+        canonicalPaths[path] = resolved
+        return resolved
+    }
+
+    /// The other working trees' folders inside this one's (a worktree kept in a folder of the
+    /// repository), each with a slash at the end: the file watcher sees their files too, and they
+    /// aren't this working tree's.
+    func nestedWorktreeRoots() -> [String] {
+        if let known = nestedRootsCache { return known }
+        let own = currentWorktreePath + "/"
+        let roots = otherWorktrees.map { canonical($0.path) + "/" }.filter { $0.hasPrefix(own) }
+        nestedRootsCache = roots
+        return roots
     }
 
     /// The other working trees (not bare, not this one).
@@ -41,6 +60,8 @@ extension RepositoryModel {
         guard let runner = repository?.runner else { return }
         worktreeChangeReads += 1
         let read = worktreeChangeReads
+        worktreeCountsAreStale = false
+        worktreeCountsReadFor = otherWorktrees.map(\.path)
         var counts: [String: Int] = [:]
         for tree in otherWorktrees where FileManager.default.fileExists(atPath: tree.path) {
             guard let other = try? await GitRepository.open(URL(filePath: tree.path, directoryHint: .isDirectory), runner: runner),
@@ -52,6 +73,26 @@ extension RepositoryModel {
         if counts != worktreeChanges { worktreeChanges = counts }
         if let selected = selectedWorktree {
             if otherWorktrees.contains(where: { $0.path == selected }) { await loadWorktreeDetails(selected) } else { selectedWorktree = nil }
+        }
+    }
+
+    /// A file changed in a working tree inside this one (this tab's own watcher sees those, and
+    /// they change nothing of this tab's status): that tree's count is read after a second of
+    /// quiet, as the watcher of the trees outside waits, so a build there doesn't run git status
+    /// over and over.
+    func worktreeFilesChanged() {
+        guard isVisible else {
+            worktreeCountsAreStale = true
+            return
+        }
+        worktreeReadTask?.cancel()
+        worktreeReadTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            await GitCommandTrigger.$current.withValue(.background("File watcher (another worktree)")) {
+                await self.refreshWorktreeChanges()
+            }
+            if !Task.isCancelled { self.worktreeReadTask = nil }
         }
     }
 

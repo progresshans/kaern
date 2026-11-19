@@ -121,8 +121,21 @@ final class RepositoryModel: Identifiable {
     var showsPublishBanner = false
     private(set) var repository: GitRepository?
     private(set) var status: WorkingTreeStatus = .empty {
-        didSet { updateBigChanges() }
+        didSet {
+            updateBigChanges()
+            reviewInputs += 1
+            // What the history and the sidebar read of the status, kept apart: they redraw when the
+            // branch or its distance from the upstream changes, not for every file edited.
+            if currentBranch != status.branch { currentBranch = status.branch }
+            if upstreamDistance != CommitDistance(ahead: status.ahead, behind: status.behind) {
+                upstreamDistance = CommitDistance(ahead: status.ahead, behind: status.behind)
+            }
+        }
     }
+    /// The branch HEAD is on (`nil` when detached), from the last status.
+    private(set) var currentBranch: String?
+    /// How far the checked-out branch is from its upstream, from the last status.
+    private(set) var upstreamDistance = CommitDistance(ahead: 0, behind: 0)
     /// Thousands of changed files: the panel lists folders and may suggest ignoring one (ScreenBigRepo).
     private(set) var bigChanges: BigChanges?
     /// Folders whose .gitignore suggestion was put away with Not Now.
@@ -134,7 +147,16 @@ final class RepositoryModel: Identifiable {
     private(set) var statusIsFull = false
     private(set) var refs: RefSnapshot = .empty
     private(set) var tags: [TagInfo] = []
-    private(set) var commits: [Commit] = []
+    private(set) var commits: [Commit] = [] {
+        didSet {
+            historyVersion += 1
+            reviewInputs += 1
+        }
+    }
+    /// Counts changes of `commits` (``rebuildGraph()`` builds nothing while it stands still).
+    @ObservationIgnored private var historyVersion = 0
+    /// Where each loaded commit is in `commits`.
+    @ObservationIgnored private var commitPositions: [String: Int] = [:]
     /// What the graph shows: `commits` with runs of bot commits folded or left out (View › Bot
     /// Commits). `graph` lines up with it.
     private(set) var displayCommits: [Commit] = []
@@ -187,20 +209,38 @@ final class RepositoryModel: Identifiable {
     var worktreeChanges: [String: Int] = [:]
     var worktreeDetails: WorktreeDetails?
     private(set) var stashes: [Stash] = []
-    private(set) var worktrees: [Worktree] = []
+    private(set) var worktrees: [Worktree] = [] {
+        didSet { if worktrees != oldValue { nestedRootsCache = nil } }
+    }
+    /// Folders by the path FSEvents and git name them with (symbolic links resolved): asked for on
+    /// every pass of the sidebar and the history, so each is resolved once.
+    @ObservationIgnored var canonicalPaths: [String: String] = [:]
+    /// The other working trees' folders that are inside this one's (``nestedWorktreeRoots()``).
+    @ObservationIgnored var nestedRootsCache: [String]?
     /// Watches the other worktrees' folders while this tab shows, so their change counts follow edits made
     /// there (``updateWorktreeWatching()``); the repository's own watcher doesn't see those folders.
     @ObservationIgnored var worktreeWatcher: FileSystemWatcher?
     @ObservationIgnored var watchedWorktreePaths: [String] = []
     /// Counts reads of the other worktrees' changes, so an older one that ends last doesn't land.
     @ObservationIgnored var worktreeChangeReads = 0
+    /// The read that waits for a second of quiet in the other worktrees (``worktreeFilesChanged()``).
+    @ObservationIgnored var worktreeReadTask: Task<Void, Never>?
+    /// The worktrees whose counts were read last, and whether something since may have changed
+    /// them without a file changing in their folders (a commit there moves a ref and empties
+    /// the count): then the next refresh reads them again.
+    @ObservationIgnored var worktreeCountsReadFor: [String]?
+    @ObservationIgnored var worktreeCountsAreStale = true
     private(set) var remotes: [RemoteInfo] = []
     private(set) var operation: OperationState?
     private(set) var lastFetch: Date?
     /// Line counts of the working copy's changes, staged and unstaged apart.
-    private(set) var lineStats = WorkingLineStats.empty
+    private(set) var lineStats = WorkingLineStats.empty {
+        didSet { reviewInputs += 1 }
+    }
     /// Git LFS sizes and pointers, and how far moved submodules are (ScreenMarks).
-    var workingMarks = WorkingMarks.empty
+    var workingMarks = WorkingMarks.empty {
+        didSet { reviewInputs += 1 }
+    }
     /// The same for the selected commit's files.
     var commitMarks: CommitMarks?
     /// The file Quick Look shows (Space, ⌘Y).
@@ -212,13 +252,16 @@ final class RepositoryModel: Identifiable {
     private(set) var activity: RepositoryActivity?
     /// The selected commit's details (the panel).
     private(set) var selectedDetails: CommitDetails?
-    private(set) var selectedFiles: [FileChange] = []
+    private(set) var selectedFiles: [FileChange] = [] {
+        didSet { reviewInputs += 1 }
+    }
     var alert: RepositoryAlert?
 
     // UI state that survives tab switches.
     var selection: HistorySelection = .workingCopy {
         didSet {
             guard selection != oldValue else { return }
+            reviewInputs += 1
             selectedWorktree = nil
             signatureCardOpen = true
             // A commit inside a folded run of bot commits: the run opens.
@@ -236,21 +279,29 @@ final class RepositoryModel: Identifiable {
         if !linePicks.isEmpty || linePicks.path != nil { linePicks = LinePicks() }
     }
     var sidebar = SidebarState()
-    /// The first visible history row when the tab was last shown (scroll restore).
-    var historyScrollAnchor: String?
+    /// The first visible history row when the tab was last shown (scroll restore), and its number
+    /// in the list then. Not observed: it changes with every scrolled row, and nothing draws it.
+    @ObservationIgnored var historyScrollAnchor: String?
+    @ObservationIgnored var historyScrollAnchorIndex: Int?
     /// Review mode: the center shows the selection's diff instead of the graph (`nil`: graph).
     var review: ReviewState? {
         didSet {
+            reviewInputs += 1
             if review != nil, screen != nil { screen = nil }
             if review?.compare != oldValue?.compare {
                 diffsAreStale = true
                 refreshDiffsIfNeeded()
             }
             if review == nil || review?.compare != nil { clearLinePicksIfNeeded() }
+            // One file at a time, and another file now: the picked lines aren't on screen
+            // anymore, and their Stage and Discard would act on a file that isn't shown.
+            if let review, !review.showsAllFiles, let picked = linePicks.path, review.path != picked { clearLinePicksIfNeeded() }
         }
     }
     /// Diffs Review shows for a compare (`key`: base, target, white space).
-    var compareDiffs: (key: String, diffs: [FileDiff])?
+    var compareDiffs: (key: String, diffs: [FileDiff])? {
+        didSet { reviewInputs += 1 }
+    }
     /// The Search find bar over the graph.
     var search = HistorySearch()
     /// The commit composer's text and Amend switch (kept per repository).
@@ -337,8 +388,13 @@ final class RepositoryModel: Identifiable {
     /// Repository Settings › Pull, when this repository sets its own (pull.rebase / pull.ff).
     var pullOverride: PullChoice?
     @ObservationIgnored var stashTask: Task<Void, Never>?
-    /// Commits reachable from HEAD among the loaded ones ("on this branch").
-    @ObservationIgnored private(set) var headAncestors: Set<String> = []
+    /// What `stashTask` and `compareTask` are reading, so a refresh that comes in meanwhile doesn't
+    /// start the same read over.
+    @ObservationIgnored var loadingStash: Stash?
+    @ObservationIgnored var loadingComparison: String?
+    /// Commits reachable from HEAD among the loaded ones ("on this branch"). Observed: Revert in
+    /// the commit panel is on or off by it, and it changes after the switch that the panel saw.
+    private(set) var headAncestors: Set<String> = []
     /// Where the action that's about to run was started from ("Commit menu"), for the Command Log.
     @ObservationIgnored var uiSource: String?
     @ObservationIgnored var toastTask: Task<Void, Never>?
@@ -353,10 +409,19 @@ final class RepositoryModel: Identifiable {
 
     // Diffs for Review and the Focus drawer, loaded while one of them is on screen.
     /// The working copy's diffs by path, staged and unstaged apart.
-    var workingDiffs: [String: WorkingFileDiff] = [:]
-    var workingDiffsLoaded = false
+    var workingDiffs: [String: WorkingFileDiff] = [:] {
+        didSet { reviewInputs += 1 }
+    }
+    var workingDiffsLoaded = false {
+        didSet { reviewInputs += 1 }
+    }
     /// The selected commit's diffs (`id` is the commit).
-    var commitDiffs: (id: String, diffs: [FileDiff])?
+    var commitDiffs: (id: String, diffs: [FileDiff])? {
+        didSet { reviewInputs += 1 }
+    }
+    /// Counts changes of what ``reviewFiles`` is made from, and the files made from them last.
+    @ObservationIgnored var reviewInputs = 0
+    @ObservationIgnored var reviewFilesCache: (inputs: String, files: [ReviewFile]?)?
     @ObservationIgnored var commitDiffsIgnoreWhitespace = false
     @ObservationIgnored var workingDiffsIgnoreWhitespace = false
     /// Counts views that show diffs, so diffs are only kept current while someone looks.
@@ -392,8 +457,13 @@ final class RepositoryModel: Identifiable {
     @ObservationIgnored private var isReloadingHistory = false
     /// Scrolling asked for more while history was reloading.
     @ObservationIgnored private var wantsMoreHistory = false
-    /// How long the last full `git status` took (the fsmonitor suggestion, the status bar).
-    var statusDuration: Duration?
+    /// How long the last full `git status` took, as the panel and the status bar print it ("2.8 s"):
+    /// to a tenth of a second, so one that took about as long as the last redraws nothing.
+    private(set) var statusDuration: Duration?
+    /// The time itself (the debug dump).
+    @ObservationIgnored private(set) var exactStatusDuration: Duration?
+    /// `git status` took longer than it should (ScreenBigRepo's 2.8 s).
+    private(set) var isStatusSlow = false
     /// `core.fsmonitor` is on here (read once a slow status makes it matter).
     var fsmonitorOn: Bool?
     /// Not Now on the fsmonitor suggestion (kept in the settings by folder).
@@ -436,7 +506,10 @@ final class RepositoryModel: Identifiable {
     /// wait for this to clear instead of sleeping).
     var debugIsBusy: Bool {
         activity != nil || phase == .opening || phase == .loading || refreshTask != nil || isReloadingHistory || isLoadingMoreHistory
+            || ignoreChecks > 0 || worktreeReadTask != nil
     }
+    /// File events being checked against .gitignore before they start a refresh (``filesChanged(_:)``).
+    @ObservationIgnored private var ignoreChecks = 0
     /// How long loading steps took, in seconds (the debug dump's measurements).
     @ObservationIgnored var debugTimings: [String: Double] = [:]
 
@@ -488,10 +561,6 @@ final class RepositoryModel: Identifiable {
 
     // MARK: Derived state
 
-    /// Staging or unstaging waiting or running (they run one after another).
-    var pendingIndexChanges = 0
-    var isChangingIndex: Bool { pendingIndexChanges > 0 }
-
     var tabMark: TabMark {
         switch phase {
         case .missing: return .missing
@@ -505,7 +574,6 @@ final class RepositoryModel: Identifiable {
         return .none
     }
 
-    var currentBranch: String? { status.branch }
     /// Whether there's a repository to show (not a missing folder or an unreadable one).
     var hasContent: Bool { !isFailedOrMissing }
     var isReady: Bool { phase == .ready }
@@ -516,10 +584,18 @@ final class RepositoryModel: Identifiable {
 
     /// Opens the repository: a light status when in the background, everything when visible.
     func start(runner: GitRunner) {
-        guard phase == .waiting || isFailedOrMissing else { return }
+        // `isOpening`: the phase changes when the task runs, and a second call before that would
+        // open the repository (and watch its folder) twice.
+        guard phase == .waiting || isFailedOrMissing, !isOpening else { return }
         self.runner = runner
-        Task { await open() }
+        isOpening = true
+        Task {
+            await open()
+            isOpening = false
+        }
     }
+
+    @ObservationIgnored private var isOpening = false
 
     private var isFailedOrMissing: Bool {
         if case .failed = phase { return true }
@@ -545,6 +621,9 @@ final class RepositoryModel: Identifiable {
             } else {
                 await lightRefresh()
                 if phase == .opening { phase = .light }
+                // Shown while the light status was read: the switch found a tab that was still
+                // opening and started nothing, so the full load starts here.
+                if isVisible, phase == .light { await loadEverything() }
             }
         } catch is NotARepositoryError {
             phase = .notRepository
@@ -568,6 +647,10 @@ final class RepositoryModel: Identifiable {
         debugFullLoads += 1
         let loadStart = ContinuousClock.now
         let made = ownChanges
+        // What changed up to here is in what this reads. A file that changes while it reads may
+        // not be (git may be past it already): that stays for a refresh after the load.
+        pendingScope = []
+        worktreeCountsAreStale = true
         if phase != .ready { phase = .loading }
         // The graph's scope depends on how many remote branches there are, so on the first load
         // the refs come before history.
@@ -602,7 +685,7 @@ final class RepositoryModel: Identifiable {
         runsHooks = (await repository.localConfig("kaern.runHooks"))?.lowercased() != "false"
         switch loadedHistory {
         case .commits(let loaded):
-            commits = loaded
+            showHistory(loaded)
             hasMoreHistory = !stream.isFinished
             historyIsStale = false
             historyError = nil
@@ -617,12 +700,10 @@ final class RepositoryModel: Identifiable {
         selectPendingCommit(readWith: readScope)
         noteTiming("firstLoad", since: loadStart)
         loadAllHistoryIfAsked()
-        if made == ownChanges {
-            // What changed while this read is in what it read.
-            pendingScope = []
-        } else if isVisible {
-            // Not what Kaern did itself meanwhile (a fetch that ended while this tab loaded): the
-            // refresh that action asked for is still to come.
+        if isVisible, made != ownChanges || !pendingScope.isEmpty {
+            // What Kaern did itself meanwhile (a fetch that ended while this tab loaded) and
+            // files that changed while git read aren't in what was read: the refresh for them
+            // is still to come.
             runPendingRefresh(trigger: "After loading the repository")
         }
         historyReloaded()
@@ -637,8 +718,13 @@ final class RepositoryModel: Identifiable {
 
     private func startWatching(_ repository: GitRepository) {
         var paths = [repository.root.path(percentEncoded: false)]
-        let gitDir = repository.gitDirectory.path(percentEncoded: false)
-        if !gitDir.hasPrefix(paths[0]) { paths.append(gitDir) }
+        // A linked working tree: its own git directory (HEAD, index) is inside the one it shares
+        // with the others, where the branches and tags are. A commit made in Terminal moves a
+        // branch there and touches nothing else that says so.
+        for folder in [repository.commonGitDirectory, repository.gitDirectory] {
+            let path = folder.path(percentEncoded: false)
+            if !paths.contains(where: { path.hasPrefix($0) }) { paths.append(path) }
+        }
         let watcher = FileSystemWatcher(paths: paths, latency: 0.3) { [weak self] changed in
             Task { @MainActor in self?.filesChanged(changed) }
         }
@@ -679,6 +765,31 @@ final class RepositoryModel: Identifiable {
         guard let repository, !noticeMissingFolder() else { return }
         let scope = repository.classify(paths)
         guard !scope.isEmpty else { return }
+        guard scope == .workTree else {
+            filesChanged(scope)
+            return
+        }
+        // Only files of the working tree. What git ignores (build output, caches) and what's in
+        // another working tree's folder inside this one changes nothing this tab shows: a build
+        // writing thousands of files there starts no refresh.
+        let nested = nestedWorktreeRoots()
+        let files = repository.workTreePaths(paths)
+        let own = files.filter { path in !nested.contains { path.hasPrefix($0) } }
+        // A file saved in a working tree inside this one: that tree's count in the sidebar.
+        if own.count != files.count { worktreeFilesChanged() }
+        guard !own.isEmpty else { return }
+        ignoreChecks += 1
+        Task { [weak self] in
+            let kept = await GitCommandTrigger.$current.withValue(.background("File watcher")) {
+                await repository.notIgnored(own)
+            }
+            guard let self else { return }
+            ignoreChecks -= 1
+            if !kept.isEmpty { filesChanged(.workTree) }
+        }
+    }
+
+    private func filesChanged(_ scope: ChangeScope) {
         pendingScope.formUnion(scope)
         if isVisible, phase == .ready {
             runPendingRefresh()
@@ -707,6 +818,8 @@ final class RepositoryModel: Identifiable {
             return
         }
         if noticeMissingFolder() { return }
+        // The other worktrees weren't watched while this tab was hidden.
+        worktreeCountsAreStale = true
         switch phase {
         case .light:
             Task { await loadEverything() }
@@ -782,6 +895,7 @@ final class RepositoryModel: Identifiable {
     private func refresh(_ scope: ChangeScope) async {
         guard let repository else { return }
         debugRefreshes += 1
+        if scope.contains(.refs) { worktreeCountsAreStale = true }
         let start = ContinuousClock.now
         // File events start refreshes while actions run too: one may end while git reads.
         let made = ownChanges
@@ -790,8 +904,11 @@ final class RepositoryModel: Identifiable {
         if scope.contains(.refs) {
             async let refs = try? repository.refs()
             async let tags = try? repository.tags()
-            // As much history as was loaded (a refresh shouldn't shrink what you scrolled to).
-            let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : 20_000))
+            // As much history as was loaded (a refresh shouldn't shrink what you scrolled to): up
+            // to 20,000 commits, and past that as far down as the selected commit and the rows on
+            // screen are, so a refresh doesn't take the selection away or move the list.
+            let inUse = [selectedCommitID, historyScrollAnchor].compactMap { $0.flatMap { commitPositions[$0] } }.max() ?? 0
+            let limit = max(Self.pageSize, min(commits.count, AppSettings.historyLoading == .all ? Int.max : max(20_000, inUse + Self.pageSize)))
             readScope = historyScope
             let stream = restartHistoryStream(repository)
             isReloadingHistory = true
@@ -805,7 +922,7 @@ final class RepositoryModel: Identifiable {
             self.tags = await tags ?? self.tags
             switch await history {
             case .commits(let loaded):
-                commits = loaded
+                showHistory(loaded)
                 hasMoreHistory = !stream.isFinished
                 totalCommitCount = nil
                 historyIsStale = false
@@ -880,7 +997,11 @@ final class RepositoryModel: Identifiable {
         guard !(isVisible && phase == .ready) else { return }
         debugLightRefreshes += 1
         let made = ownChanges
-        show(try? await repository.status(untrackedFiles: .normal), isFull: false, readAt: made)
+        let light = try? await repository.status(untrackedFiles: .normal)
+        // Shown while git read: the tab has the full status by now (its load or refresh read it),
+        // and this one, with untracked folders folded, would take its place.
+        guard !(isVisible && statusIsFull) else { return }
+        show(light, isFull: false, readAt: made)
         operation = repository.operationState()
     }
 
@@ -945,7 +1066,13 @@ final class RepositoryModel: Identifiable {
         lineStats = stats
         await refreshWorkingMarks()
         await refreshSubmodules()
-        await refreshWorktreeChanges()
+        // The other worktrees' counts: while their folders are watched they're read when a file
+        // changes there, so not after every change here. Only when the worktrees aren't the ones
+        // read last, or refs moved (a commit made there shows in no file of its folder).
+        let watched = isVisible && AppSettings.watchesFiles
+        if !watched || worktreeCountsAreStale || worktreeCountsReadFor != otherWorktrees.map(\.path) {
+            await refreshWorktreeChanges()
+        }
     }
 
     /// Remotes again (Repository Settings added, edited or removed one).
@@ -1010,10 +1137,24 @@ final class RepositoryModel: Identifiable {
     }
 
     private func appendHistory(_ page: [Commit], finished: Bool) {
-        let known = Set(commits.map(\.id))
-        commits.append(contentsOf: page.filter { !known.contains($0.id) })
+        let new = page.filter { commitPositions[$0.id] == nil }
+        if !new.isEmpty {
+            for (offset, commit) in new.enumerated() { commitPositions[commit.id] = commits.count + offset }
+            commits.append(contentsOf: new)
+        }
         hasMoreHistory = !finished
         rebuildGraph()
+    }
+
+    /// The history a first load or a refresh read. The same commits as before change nothing: a
+    /// fetch that brought none, or a ref that moved outside what's loaded.
+    private func showHistory(_ loaded: [Commit]) {
+        guard loaded != commits else { return }
+        commits = loaded
+        var positions: [String: Int] = [:]
+        positions.reserveCapacity(loaded.count)
+        for (index, commit) in loaded.enumerated() { positions[commit.id] = index }
+        commitPositions = positions
     }
 
     /// Reads older history until one of `targets` is loaded (Search stepping past the loaded
@@ -1150,7 +1291,12 @@ final class RepositoryModel: Identifiable {
     private func timedStatus(_ repository: GitRepository) async -> WorkingTreeStatus? {
         let start = ContinuousClock.now
         guard let status = try? await repository.status() else { return nil }
-        statusDuration = ContinuousClock.now - start
+        let elapsed = ContinuousClock.now - start
+        exactStatusDuration = elapsed
+        let shown = Duration.milliseconds(Int((elapsed / .milliseconds(100)).rounded()) * 100)
+        if statusDuration != shown { statusDuration = shown }
+        let slow = elapsed >= AppSettings.slowStatus
+        if isStatusSlow != slow { isStatusSlow = slow }
         if fsmonitorOn == nil, isStatusSlow {
             let value = await repository.config("core.fsmonitor")?.lowercased()
             fsmonitorOn = value != nil && value != "false"
@@ -1161,9 +1307,6 @@ final class RepositoryModel: Identifiable {
         #endif
         return status
     }
-
-    /// `git status` took longer than it should (ScreenBigRepo's 2.8 s).
-    var isStatusSlow: Bool { (statusDuration ?? .zero) >= AppSettings.slowStatus }
 
     /// The card that suggests Git's file system monitor: slow status, monitor off, not put away.
     var suggestsFSMonitor: Bool { isStatusSlow && fsmonitorOn == false && !fsmonitorDismissed }
@@ -1186,11 +1329,36 @@ final class RepositoryModel: Identifiable {
         fsmonitorDismissed = true
     }
 
+    /// What the graph was last built from.
+    private struct GraphInputs: Equatable {
+        var history: Int
+        var refs: RefSnapshot
+        var head: String?
+        var showsWorkingCopy: Bool
+        var selection: HistorySelection
+        var bots: BotCommits
+        var expanded: Set<String>
+    }
+
+    @ObservationIgnored private var graphInputs: GraphInputs?
+    @ObservationIgnored private var countRound = 0
+
+    /// Builds what the history draws from the loaded commits, the refs, HEAD and the selection. It
+    /// runs after every refresh, page and staged file, and most of those read the same things
+    /// again: then nothing is built, and nothing that reads the graph redraws.
     func rebuildGraph() {
         let rebuildStart = ContinuousClock.now
         defer { noteTiming("rebuild", since: rebuildStart) }
+        let inputs = GraphInputs(history: historyVersion, refs: refs, head: status.headID, showsWorkingCopy: !status.isClean,
+                                 selection: selection, bots: AppSettings.botCommits, expanded: expandedRuns)
+        guard inputs != graphInputs else {
+            if hasBotCommits || showsGraphScope, totalCommitCount == nil { countAllCommits() }
+            refreshComparisonIfNeeded()
+            return
+        }
+        graphInputs = inputs
         var builder = CommitGraphBuilder()
-        showsWorkingCopy = !status.isClean
+        if showsWorkingCopy != inputs.showsWorkingCopy { showsWorkingCopy = inputs.showsWorkingCopy }
         if showsWorkingCopy {
             builder.appendWorkingCopy(head: status.headID)
         }
@@ -1198,7 +1366,7 @@ final class RepositoryModel: Identifiable {
         var keep = Set(refs.refs.map(\.target))
         if let head = status.headID { keep.insert(head) }
         if case .commit(let id) = selection { keep.insert(id) }
-        let folded = BotFolding.fold(commits, mode: AppSettings.botCommits, keep: keep, expanded: expandedRuns)
+        let folded = BotFolding.fold(commits, mode: AppSettings.botCommits, keep: keep, expanded: expandedRuns, reusing: botRuns)
         displayCommits = folded.commits
         botRuns = folded.runs
         insideRun = folded.insideRun
@@ -1208,30 +1376,31 @@ final class RepositoryModel: Identifiable {
         if hasBotCommits || showsGraphScope, totalCommitCount == nil { countAllCommits() }
         builder.append(displayCommits)
         graph = builder.rows
-        if case .commit(let id) = selection, !commits.contains(where: { $0.id == id }) {
+        if case .commit(let id) = selection, commitPositions[id] == nil {
             selection = .workingCopy
         }
-        // Hide leaves bot commits out of the search too.
-        search.refreshLocalMatches(in: hiddenBotCount > 0 ? displayCommits : commits)
-        headAncestors = Self.ancestors(of: status.headID, in: commits)
-        let known = Set(commits.map(\.id))
-        if picked.contains(where: { !known.contains($0) }) {
-            picked.removeAll { !known.contains($0) }
+        // Hide leaves bot commits out of the search too. Assigned, not changed in place: a search
+        // that finds the same commits redraws nothing (the toolbar and every row read it).
+        var found = search
+        found.refreshLocalMatches(in: hiddenBotCount > 0 ? displayCommits : commits)
+        search = found
+        headAncestors = ancestors(of: status.headID)
+        if picked.contains(where: { commitPositions[$0] == nil }) {
+            picked.removeAll { commitPositions[$0] == nil }
         }
         refreshComparisonIfNeeded()
     }
 
     /// The loaded commits reachable from `head` (through loaded parents).
-    private static func ancestors(of head: String?, in commits: [Commit]) -> Set<String> {
+    private func ancestors(of head: String?) -> Set<String> {
         guard let head else { return [] }
-        let byID = Dictionary(commits.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seen = Set<String>()
         var stack = [head]
         while let id = stack.popLast() {
-            guard seen.insert(id).inserted, let commit = byID[id] else { continue }
-            stack.append(contentsOf: commit.parents)
+            guard let position = commitPositions[id], seen.insert(id).inserted else { continue }
+            stack.append(contentsOf: commits[position].parents)
         }
-        return seen.intersection(byID.keys)
+        return seen
     }
 
     /// The bar's "212,408 commits" (what the graph's scope holds): once per load, in the background.
@@ -1239,17 +1408,22 @@ final class RepositoryModel: Identifiable {
         guard let repository else { return }
         let scope = historyScope
         totalCommitCount = -1   // counting
+        // A count started before this one (the history was read again meanwhile, or the scope
+        // changed) may end after it: only the latest one's number is shown.
+        countRound += 1
+        let round = countRound
         Task {
             let count = try? await GitCommandTrigger.$current.withValue(.background("Counting commits")) {
                 try await repository.commitCount(in: scope)
             }
+            guard round == countRound else { return }
             totalCommitCount = count
         }
     }
 
     /// The loaded commit with `id`.
     func commit(_ id: String) -> Commit? {
-        commits.first { $0.id == id }
+        commitPositions[id].map { commits[$0] }
     }
 
     /// Whether `id` is on the branch HEAD is on (reachable from HEAD).
@@ -1280,8 +1454,15 @@ final class RepositoryModel: Identifiable {
                 guard let details = try? await repository.commitDetails(id) else { return nil }
                 return (details, (try? await repository.changedFiles(in: details.commit)) ?? [])
             }
-            guard let (details, files) = loaded else { return }
             guard !Task.isCancelled else { return }
+            guard let (details, files) = loaded else {
+                // git couldn't read it. Not the commit selected before, which is what stayed in
+                // the panel (with its Revert and its files): what the history has of this one,
+                // and nothing kept, so selecting it again reads again.
+                selectedDetails = commit(id).map { CommitDetails(commit: $0, committer: $0.author, message: $0.subject) }
+                selectedFiles = []
+                return
+            }
             detailsCache[id] = (details, files)
             if detailsCache.count > 200 { detailsCache.removeAll() }
             selectedDetails = details
@@ -1493,7 +1674,4 @@ struct RepositoryAlert: Identifiable {
     let id = UUID()
     var title: String
     var message: String
-    /// A second button besides OK ("Abort Cherry-pick").
-    var actionTitle: String?
-    var action: (() -> Void)?
 }

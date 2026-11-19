@@ -53,10 +53,6 @@ struct ReviewFile: Identifiable, Equatable {
             return hunk.hunk.lines.filter(\.isChange).map { LinePick(stage: hunk.stage, hunk: hunk.hunk.id, line: $0.id) }
         }
     }
-    var directory: String {
-        let directory = (path as NSString).deletingLastPathComponent
-        return directory.isEmpty ? "" : directory + "/"
-    }
     var name: String { (path as NSString).lastPathComponent }
 
     /// "1 of 3 hunks staged" for a partially staged file.
@@ -74,7 +70,25 @@ extension RepositoryModel {
 
     /// The files Review and the Focus drawer show for the selection, in order. `nil` while the
     /// diffs are loading.
+    ///
+    /// Made once for what they're made from, not at every read: Review reads them on every pass,
+    /// and each time they were new arrays SwiftUI compared file by file, hunk by hunk, with the last
+    /// ones (a working copy of 800 files stopped the window for 1.7 s; one of 12,000 for good).
+    /// Files that come out the same as before are the same arrays as before.
     var reviewFiles: [ReviewFile]? {
+        // Read, so whoever asks hears when one of them changes (each change counts in `reviewInputs`).
+        _ = (status, lineStats, workingMarks, workingDiffs, workingDiffsLoaded, commitDiffs?.id, compareDiffs?.key, selectedFiles,
+             selection, review, commits.count)
+        // The two settings a compare's diffs are loaded with: changed, the diffs on hand aren't the ones to show.
+        let inputs = "\(reviewInputs):\(DiffPreferences.ignoresWhitespace):\(AppSettings.diffContext)"
+        if let cached = reviewFilesCache, cached.inputs == inputs { return cached.files }
+        var files = makeReviewFiles()
+        if let cached = reviewFilesCache, cached.files == files { files = cached.files }
+        reviewFilesCache = (inputs, files)
+        return files
+    }
+
+    private func makeReviewFiles() -> [ReviewFile]? {
         if let compare = review?.compare {
             guard let loaded = compareDiffs, loaded.key == compareKey(compare) else { return nil }
             return loaded.diffs.map { diff in
@@ -291,18 +305,18 @@ struct DiffRowView: View {
             SplitLineRow(left: left, right: right, hunk: hunk, picking: picking, leftMarks: leftMarks, rightMarks: rightMarks)
         case .note(_, let text):
             Text(text)
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                .padding(.horizontal, z(16))
+                .padding(.vertical, z(14))
         case .more(_, let hidden):
             Button(action: onShowMore) {
                 Text("Show \(hidden.formatted()) More Lines")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: z(12), weight: .semibold))
                     .foregroundStyle(K.accentText)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 32)
+                    .frame(height: z(32))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -316,9 +330,9 @@ private struct HunkHeaderRow: View {
     let repository: RepositoryModel
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             Text(hunk.header)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: z(11.5), design: .monospaced))
                 .foregroundStyle(K.hunkText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -338,9 +352,9 @@ private struct HunkHeaderRow: View {
                 .disabled(!repository.canChangeIndex)
             }
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 12)
-        .frame(height: 28)
+        .padding(.leading, z(16))
+        .padding(.trailing, z(12))
+        .frame(height: z(28))
         .background(K.hunk)
     }
 }
@@ -355,14 +369,14 @@ private struct HunkButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(.system(size: z(11.5), weight: .semibold))
                 .foregroundStyle(isOn ? Color.white : K.accentText)
-                .padding(.horizontal, 9)
-                .frame(height: 22)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isOn ? K.accent : K.content))
+                .padding(.horizontal, z(9))
+                .frame(height: z(22))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(isOn ? K.accent : K.content))
                 .overlay {
                     if !isOn {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)
+                        RoundedRectangle(cornerRadius: z(6), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5)
                     }
                 }
                 .contentShape(Rectangle())
@@ -402,16 +416,16 @@ private struct UnifiedLineRow: View {
             }
             Text(line.kind == .addition ? "+" : line.kind == .deletion ? "−" : "")
                 .foregroundStyle(line.kind == .addition ? K.add : K.del)
-                .frame(width: 18)
+                .frame(width: z(18))
             DiffLineText(text: line.kind == .noNewline ? "No newline at end of file" : line.text, kind: line.kind,
                          marks: marks, color: line.kind == .noNewline ? K.label2 : K.code)
-                .padding(.trailing, 16)
+                .padding(.trailing, z(16))
         }
         .font(style.font)
         .lineSpacing(style.lineSpacing)
-        .frame(minHeight: 20)
+        .frame(minHeight: z(20))
         .background(picked ? K.accentSoft : colors.line)
-        .overlay(alignment: .leading) { if picked { K.accent.frame(width: 3) } }
+        .overlay(alignment: .leading) { if picked { K.accent.frame(width: z(3)) } }
         .pickable(pick, picking: picking)
     }
 }
@@ -514,16 +528,16 @@ private struct SplitLineRow: View {
                     StagedMark(shows: changed && hunk.stage == .staged)
                 }
                 DiffLineText(text: line.text, kind: changed ? line.kind : .context, marks: changed ? marks : nil)
-                    .padding(.leading, picking == nil ? 8 : 2)
-                    .padding(.trailing, 12)
+                    .padding(.leading, picking == nil ? z(8) : z(2))
+                    .padding(.trailing, z(12))
             }
-            .frame(maxWidth: .infinity, minHeight: 20, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: z(20), maxHeight: .infinity, alignment: .topLeading)
             .background(picked ? K.accentSoft : colors.line)
-            .overlay(alignment: .leading) { if picked { K.accent.frame(width: 3) } }
+            .overlay(alignment: .leading) { if picked { K.accent.frame(width: z(3)) } }
             .pickable(pick, picking: picking)
         } else {
             StripeFill()
-                .frame(maxWidth: .infinity, minHeight: 20, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: z(20), maxHeight: .infinity)
         }
     }
 }
@@ -540,8 +554,8 @@ struct LineNumber: View {
         Text(number.map(String.init) ?? "")
             .fontWeight(picked ? .bold : .regular)
             .foregroundStyle(picked ? K.accentText : K.label2)
-            .frame(width: width, alignment: .trailing)
-            .padding(.trailing, trailing)
+            .frame(width: z(width), alignment: .trailing)
+            .padding(.trailing, z(trailing))
             .frame(maxHeight: .infinity, alignment: .top)
             .background(picked ? K.accentSoft : gutter)
     }
@@ -553,9 +567,9 @@ private struct StagedMark: View {
 
     var body: some View {
         Text(shows ? "✓" : "")
-            .font(.system(size: 10, weight: .heavy))
+            .font(.system(size: z(10), weight: .heavy))
             .foregroundStyle(K.add)
-            .frame(width: 14)
+            .frame(width: z(14))
     }
 }
 
@@ -597,7 +611,7 @@ struct DiffColors {
 struct StripeFill: View {
     var body: some View {
         Canvas { context, size in
-            let step: CGFloat = 10 * 2.0.squareRoot()
+            let step: CGFloat = z(10) * 2.0.squareRoot()
             var offset: CGFloat = -size.height
             var path = Path()
             while offset < size.width + size.height {
@@ -620,10 +634,10 @@ struct StatusTile: View {
 
     var body: some View {
         Text(letter)
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: z(10), weight: .bold))
             .foregroundStyle(selected ? .white : foreground)
-            .frame(width: 16, height: 16)
-            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(selected ? Color.white.opacity(0.22) : fill))
+            .frame(width: z(16), height: z(16))
+            .background(RoundedRectangle(cornerRadius: z(4), style: .continuous).fill(selected ? Color.white.opacity(0.22) : fill))
     }
 
     private var foreground: Color {
@@ -654,11 +668,11 @@ struct LineCounts: View {
     var selected = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: z(5)) {
             if let additions, additions > 0 { Text("+\(additions)").foregroundStyle(selected ? .white.opacity(0.85) : K.add) }
             if let deletions, deletions > 0 { Text("−\(deletions)").foregroundStyle(selected ? .white.opacity(0.85) : K.del) }
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.system(size: z(11), design: .monospaced))
         .fixedSize()
     }
 }
@@ -675,7 +689,7 @@ struct FilePathText: View {
         let directory = (path as NSString).deletingLastPathComponent
         let name = (path as NSString).lastPathComponent
         // About the width of a letter and "…".
-        FolderThenName(leastFolder: size * 1.7) {
+        FolderThenName(leastFolder: z(size) * 1.7) {
             if showsDirectory, !directory.isEmpty {
                 Text(directory + "/")
                     .foregroundStyle(selected ? .white.opacity(0.85) : K.label2)
@@ -685,7 +699,7 @@ struct FilePathText: View {
                 .fontWeight(nameWeight)
                 .foregroundStyle(selected ? .white : K.label)
         }
-        .font(.system(size: size))
+        .font(.system(size: z(size)))
         .lineLimit(1)
     }
 }
@@ -727,12 +741,12 @@ private struct FolderThenName: Layout {
 
 // MARK: - Diff settings
 
-/// How diffs are drawn (Settings › Diff): font, wrapping, changed-word marks.
+/// How diffs are drawn (Settings › Diff): font and wrapping. (Changed-word marks are part of the
+/// rows a view makes, so each view reads that setting itself.)
 struct DiffStyle {
-    var font: Font = .system(size: 12, design: .monospaced)
-    var lineSpacing: CGFloat = 4
+    var font: Font = .system(size: z(12), design: .monospaced)
+    var lineSpacing: CGFloat = z(4)
     var wraps = true
-    var words = true
 }
 
 extension EnvironmentValues {
@@ -742,15 +756,15 @@ extension EnvironmentValues {
 /// Reads the diff settings and hands them to the rows below.
 struct DiffSettingsReader: ViewModifier {
     @AppStorage(SettingsKey.diffWrap, store: .kaern) private var wraps = true
-    @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     @AppStorage(SettingsKey.diffFontName, store: .kaern) private var fontName = ""
     @AppStorage(SettingsKey.diffFontSize, store: .kaern) private var fontSize = 12.0
 
     func body(content: Content) -> some View {
         _ = (fontName, fontSize)
-        let font = AppSettings.diffFont
-        let size = font.pointSize
-        return content.environment(\.diffStyle, DiffStyle(font: Font(font), lineSpacing: max(2, 20 - size * 1.33), wraps: wraps, words: words))
+        // The font the settings name, at the zoom; rows are 20 pt of the design tall.
+        let chosen = AppSettings.diffFont
+        let font = NSFont(descriptor: chosen.fontDescriptor, size: z(chosen.pointSize)) ?? chosen
+        return content.environment(\.diffStyle, DiffStyle(font: Font(font), lineSpacing: z(max(2, 20 - chosen.pointSize * 1.33)), wraps: wraps))
     }
 }
 

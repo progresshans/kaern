@@ -8,8 +8,8 @@ extension DebugDriver {
     static let phase4Commands: Set<String> = [
         "settings", "setting", "fakeAccount",
         "conflicts", "conflictShow", "conflictPick", "conflictKeep", "conflictEdit", "markResolved", "continueOp", "skipOp", "abortOp",
-        "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose",
-        "irAction", "irMove", "irStart", "squash", "type",
+        "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose", "finishFeature",
+        "irAction", "irMove", "irStart", "irBase", "squash", "type",
         "history", "blame", "historySelect", "blameFocus", "blameBefore", "exploreMode", "blameOption", "showInHistory",
         "autoFetchNow", "fetchAll", "activity", "fakeFailure", "signInSheet", "quickOpen",
     ]
@@ -68,9 +68,11 @@ extension DebugDriver {
         }
         guard let window, let tab = window.activeTab else { return }
         let repository = app.repository(for: tab.path)
+        /// A history row's commit, by its index or the start of its hash.
         func commitID(_ text: String?) -> String? {
-            guard let text, let index = Int(text), repository.commits.indices.contains(index) else { return nil }
-            return repository.commits[index].id
+            guard let text, !text.isEmpty else { return nil }
+            if let index = Int(text), repository.commits.indices.contains(index) { return repository.commits[index].id }
+            return repository.commits.first { $0.id.hasPrefix(text) }?.id
         }
         let rest = args.joined(separator: " ")
         switch command {
@@ -113,11 +115,13 @@ extension DebugDriver {
             }
         case "sheet":
             // sheet newBranch [n] | rename <branch> | tag <n> | merge | rebase | delete | settings | ir <n> | fromStash <n> | renameStash <n>
+            // (a commit's n is its history row or the start of its hash)
             switch args.first {
             case "newBranch": repository.askCreateBranch(at: commitID(args.count > 1 ? args[1] : nil))
             case "rename": repository.askRename(branch: args.count > 1 ? args[1] : repository.status.branch ?? "")
             case "tag": if let id = commitID(args.count > 1 ? args[1] : "0") { repository.askCreateTag(at: id) }
             case "merge": repository.askMerge()
+            case "finish": repository.askFinish(branch: args.count > 1 ? args[1] : repository.status.branch ?? "")
             case "rebase": repository.askRebase()
             case "delete": repository.askDeleteBranch(args.count > 1 ? args[1] : nil)
             case "settings": repository.sheet = .repositorySettings
@@ -125,6 +129,19 @@ extension DebugDriver {
             case "fromStash": if let index = args.count > 1 ? Int(args[1]) : nil, repository.stashes.indices.contains(index) { repository.askBranchFromStash(repository.stashes[index]) }
             case "renameStash": if let index = args.count > 1 ? Int(args[1]) : nil, repository.stashes.indices.contains(index) { repository.sheet = .renameStash(repository.stashes[index]) }
             default: break
+            }
+        case "finishFeature":
+            // finishFeature <branch> [merge] [delete] [rebase] [-- message…] — what the sheet's Finish does
+            // with those boxes ticked: keeps them for the repository, then finishes the branch into develop.
+            if let branch = args.first, let target = repository.finishTarget {
+                let words = args.dropFirst().prefix { $0 != "--" }
+                let message = args.drop { $0 != "--" }.dropFirst().joined(separator: " ")
+                repository.from("Debug") {
+                    repository.confirmFinish(FinishSheetRequest(branch: branch, target: target),
+                                             message: message.isEmpty ? RepositoryModel.finishMessageStart(for: branch) : message,
+                                             options: FinishOptions(mergeCommit: words.contains("merge"), deleteBranch: words.contains("delete"),
+                                                                    rebaseFirst: words.contains("rebase")))
+                }
             }
         case "sheetClose":
             repository.sheet = nil
@@ -145,6 +162,13 @@ extension DebugDriver {
                     guard draft.steps.indices.contains(row), draft.steps.indices.contains(target) else { return }
                     draft.steps.swapAt(row, target)
                 }
+            }
+        case "irBase":
+            // irBase <choice> — picks an item of the Onto pop-up: the commit the sheet opened with (its whole
+            // hash, as `choices` in the dump has it) or a branch's name.
+            if let choice = args.first, case .interactiveRebase(let draft) = repository.sheet,
+               repository.rebaseOntoChoices(draft).contains(where: { $0.id == choice }) {
+                repository.changeRebaseBase(choice)
             }
         case "irStart":
             if case .interactiveRebase(let draft) = repository.sheet { repository.from("Debug") { repository.startInteractiveRebase(draft) } }
@@ -186,7 +210,7 @@ extension DebugDriver {
         case "showInHistory":
             if let id = repository.exploreCommitID { repository.showCommitInHistory(id) }
         case "squash":
-            // squash <n> <n>…
+            // squash <n> <n>… (history rows or the starts of hashes)
             let ids = args.compactMap { commitID($0) }
             repository.from("Debug") { repository.askSquash(ids) }
         default:
@@ -222,6 +246,9 @@ extension DebugDriver {
         var result: [String: Any] = [
             "screen": repository.screen.map { "\($0)" } ?? "",
             "sheet": repository.sheet?.id ?? "",
+            // Finish Feature: where a feature goes ("" without develop) and the choices kept for this repository.
+            "finishTarget": repository.finishTarget ?? "",
+            "finishOptions": repository.finishOptions.stored,
             "operationFinish": repository.operationFinish.map { $0.title + " " + $0.detail } ?? "",
             "conflicted": repository.conflictedPaths,
             "mergedAutomatically": repository.mergedAutomatically.map(\.path),
@@ -265,8 +292,14 @@ extension DebugDriver {
         if case .interactiveRebase(let draft) = repository.sheet {
             result["rebase"] = [
                 "base": String(draft.base.prefix(7)), "steps": draft.steps.map { "\($0.action.rawValue) \($0.commit.shortID) \($0.commit.subject)" },
+                // The Onto pop-up: what it shows chosen, and what it offers (`irBase`).
+                "onto": draft.base, "choices": repository.rebaseOntoChoices(draft).map(\.id),
+                // What each row says on the right ("on origin", "into c92aa17", "removed").
+                "meta": draft.steps.indices.map { draft.meta(at: $0) },
                 "pushed": draft.pushed.map { String($0.prefix(7)) }.sorted(), "result": draft.resultCount, "canStart": draft.canStart,
                 "rewritesPushed": draft.rewritesPushed, "loading": draft.isLoading,
+                // The line under the table as the sheet shows it: "<ok|warning|error> <text>".
+                "check": draft.check(remote: repository.defaultRemote).map { "\($0.kind) \($0.text)" } ?? "",
             ] as [String: Any]
         }
         return result

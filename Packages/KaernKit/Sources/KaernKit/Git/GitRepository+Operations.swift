@@ -76,13 +76,16 @@ extension GitRepository {
     }
 
     /// `git merge --no-edit --autostash <revision>`. Conflicts stop the merge instead of throwing.
-    public func merge(_ revision: String, fastForward: FastForward = .allowed) async throws -> OperationOutcome {
+    /// `message` is the merge commit's, when one is made (git's "Merge branch '…'" without it); a
+    /// merge that stops keeps it as the message to continue with.
+    public func merge(_ revision: String, fastForward: FastForward = .allowed, message: String? = nil) async throws -> OperationOutcome {
         var arguments = ["merge", "--no-edit", "--autostash"]
         switch fastForward {
         case .allowed: break
         case .never: arguments.append("--no-ff")
         case .only: arguments.append("--ff-only")
         }
+        if let message, !message.isEmpty { arguments += ["-m", message] }
         arguments.append(revision)
         return try await runStoppable(arguments)
     }
@@ -139,7 +142,7 @@ extension GitRepository {
 
     /// Stages present for a conflicted path: 1 = common ancestor, 2 = ours, 3 = theirs.
     public func conflictStages(_ path: String) async throws -> Set<Int> {
-        let output = try await git(["ls-files", "--unmerged", "-z", "--", path])
+        let output = try await git(["ls-files", "--unmerged", "-z", "--"] + Self.literal([path]))
         var stages = Set<Int>()
         for record in Records.splitNUL(output.stdout) {
             // <mode> SP <object> SP <stage> TAB <path>
@@ -156,17 +159,17 @@ extension GitRepository {
     public func resolveConflict(_ path: String, taking side: ConflictSide) async throws {
         let stages = try await conflictStages(path)
         if !stages.contains(side == .ours ? 2 : 3) {
-            try await git(["rm", "-q", "--ignore-unmatch", "--", path])
+            try await git(["rm", "-q", "--ignore-unmatch", "--"] + Self.literal([path]))
             return
         }
-        try await git(["checkout", side == .ours ? "--ours" : "--theirs", "--", path])
-        try await git(["add", "--", path])
+        try await git(["checkout", side == .ours ? "--ours" : "--theirs", "--"] + Self.literal([path]))
+        try await git(["add", "--"] + Self.literal([path]))
     }
 
     /// Writes the resolved contents of a conflicted file and stages it.
     public func writeResolution(_ text: String, to path: String) async throws {
         try Data(text.utf8).write(to: root.appending(path: path))
-        try await git(["add", "--", path])
+        try await git(["add", "--"] + Self.literal([path]))
     }
 
     /// The working-tree text of a conflicted file with its markers, `nil` when it's gone or binary.

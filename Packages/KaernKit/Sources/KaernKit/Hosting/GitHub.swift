@@ -324,10 +324,11 @@ public struct GitHubClient: Sendable {
     public var session: URLSession = .shared
 
     /// `https://api.github.com`, or `https://<host>/api/v3` for GitHub Enterprise.
+    /// The host is typed in Sign In: one that can't be an address ("my host") gives a URL that
+    /// answers nothing (the reserved `.invalid`), so signing in fails with a message.
     public static func apiURL(for host: String) -> URL {
-        host.lowercased() == "github.com"
-            ? URL(string: "https://api.github.com")!
-            : URL(string: "https://\(host)/api/v3")!
+        if host.lowercased() == "github.com" { return URL(string: "https://api.github.com")! }
+        return URL(string: "https://\(host)/api/v3") ?? URL(string: "https://host.invalid/api/v3")!
     }
 
     public init(baseURL: URL, token: String) {
@@ -390,6 +391,18 @@ public struct GitHubClient: Sendable {
 
     /// Creates a repository under the signed-in user (Publish to GitHub). It starts empty, so
     /// the first push fills it.
+    /// The name GitHub gives a repository asked for as `name`: ASCII letters, digits, `-`, `_` and
+    /// `.` stay, and every other character (a space, 한글) becomes a dash. Publish shows this name
+    /// and asks for it, so what is made is what was shown.
+    public static func repositoryName(for name: String) -> String {
+        var result = ""
+        for scalar in name.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars {
+            let kept = scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || scalar == "-" || scalar == "_" || scalar == ".")
+            result.unicodeScalars.append(kept ? scalar : "-")
+        }
+        return result
+    }
+
     public func createRepository(name: String, isPrivate: Bool, description: String? = nil) async throws -> HostedRepository {
         var body: [String: Any] = ["name": name, "private": isPrivate, "auto_init": false]
         if let description, !description.isEmpty { body["description"] = description }

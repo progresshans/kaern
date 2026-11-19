@@ -56,7 +56,7 @@ nonisolated extension SVGIcon.Part {
     }
 }
 
-/// Draws an ``SVGIcon`` at `size` points in the current foreground style.
+/// Draws an ``SVGIcon`` at `size` points of the design (the zoom is applied here) in the current foreground style.
 struct Icon: View {
     let icon: SVGIcon
     var size: CGFloat
@@ -86,7 +86,7 @@ struct Icon: View {
                 }
             }
         }
-        .frame(width: size, height: height ?? size)
+        .frame(width: z(size), height: z(height ?? size))
         .accessibilityHidden(true)
     }
 

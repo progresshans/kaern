@@ -28,7 +28,7 @@ struct RepositorySettingsSheet: View {
             SheetTitle("\(repository.name) — Repository Settings")
             heading("Remotes")
             remotesTable
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 GhostButton(title: "Add Remote…") {
                     adding = true
                     editing = nil
@@ -46,21 +46,21 @@ struct RepositorySettingsSheet: View {
                 GhostButton(title: "Remove") { confirmingRemoval = selectedRemote }
                     .disabled(selectedRemote == nil)
             }
-            .padding(.top, 8)
+            .padding(.top, z(8))
             if let name = confirmingRemoval {
-                HStack(spacing: 8) {
+                HStack(spacing: z(8)) {
                     Text("Remove \(name)? Its remote branches go too, and branches that tracked it stop tracking.")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: z(11.5)))
                         .foregroundStyle(K.err)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button("Cancel") { confirmingRemoval = nil }.controlSize(.small)
                     Button("Remove") { remove(name) }.controlSize(.small)
                 }
-                .padding(.top, 6)
+                .padding(.top, z(6))
             }
             heading("Identity")
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: z(7)) {
                 RadioRow(isOn: !customIdentity, title: "Use my global identity",
                          subtitle: [globalName, globalEmail].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "Not set in your global Git config") {
                     setCustomIdentity(false)
@@ -70,38 +70,38 @@ struct RepositorySettingsSheet: View {
                     setCustomIdentity(true)
                 }
                 if customIdentity {
-                    HStack(spacing: 8) {
+                    HStack(spacing: z(8)) {
                         TextField("Name", text: $idName).textFieldStyle(.roundedBorder)
                             .onSubmit { save("user.name", idName) }
                         TextField("Email", text: $idEmail).textFieldStyle(.roundedBorder)
                             .onSubmit { save("user.email", idEmail) }
-                            .frame(minWidth: 240)
+                            .frame(minWidth: z(240))
                     }
-                    .font(.system(size: 12.5))
-                    .padding(.leading, 21)
+                    .font(.system(size: z(12.5)))
+                    .padding(.leading, z(21))
                     .onChange(of: idName) { if loaded { saveSoon("user.name", idName) } }
                     .onChange(of: idEmail) { if loaded { saveSoon("user.email", idEmail) } }
                 }
             }
             heading("Hooks")
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+            Grid(alignment: .leading, horizontalSpacing: z(10), verticalSpacing: z(4)) {
                 ForEach(hooks.filter { $0.name == "pre-commit" || $0.name == "commit-msg" || $0.isInstalled }) { hook in
                     GridRow {
-                        Text(hook.name).font(.system(size: 12, design: .monospaced)).frame(width: 100, alignment: .leading)
+                        Text(hook.name).font(.system(size: z(12), design: .monospaced)).frame(width: z(100), alignment: .leading)
                         Text(hook.summary ?? "none")
-                            .font(.system(size: 12, design: hook.isInstalled ? .monospaced : .default))
+                            .font(.system(size: z(12), design: hook.isInstalled ? .monospaced : .default))
                             .foregroundStyle(hook.isInstalled ? K.label : K.label3)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
                 }
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, z(8))
             Toggle("Run hooks when committing from Kaern", isOn: Binding(get: { runsHooks }, set: { setRunsHooks($0) }))
                 .toggleStyle(.checkbox)
-                .font(.system(size: 12.5))
+                .font(.system(size: z(12.5)))
             heading("Pull")
-            HStack(spacing: 10) {
+            HStack(spacing: z(10)) {
                 Picker("Pull behavior", selection: Binding(get: { pull }, set: { setPull($0) })) {
                     Text("Use Kaern’s Setting (\(PullChoice.app.shortTitle))").tag("global")
                     Text("Merge").tag("merge")
@@ -109,18 +109,18 @@ struct RepositorySettingsSheet: View {
                     Text("Fast-forward Only").tag("ff")
                 }
                 .labelsHidden()
-                .frame(width: 250)
+                .frame(width: z(250))
                 Text(pullHint)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                     .lineLimit(2)
             }
             if let failure {
-                Text(failure).font(.system(size: 11.5)).foregroundStyle(K.err).padding(.top, 8)
+                Text(failure).font(.system(size: z(11.5))).foregroundStyle(K.err).padding(.top, z(8))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: z(8)) {
                 Text("Saved to .git/config as you change it — the same as git config.")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                 Spacer(minLength: 0)
                 Button("Done") { repository.sheet = nil }
@@ -128,54 +128,54 @@ struct RepositorySettingsSheet: View {
                     .controlSize(.regular)
                 Button("", action: { repository.sheet = nil }).keyboardShortcut(.cancelAction).hidden().frame(width: 0, height: 0)
             }
-            .padding(.top, 16)
+            .padding(.top, z(16))
         }
         .task { await load() }
     }
 
     private func heading(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .semibold))
+            .font(.system(size: z(11.5), weight: .semibold))
             .foregroundStyle(K.label2)
-            .padding(.top, 16)
-            .padding(.bottom, 6)
+            .padding(.top, z(16))
+            .padding(.bottom, z(6))
     }
 
     // MARK: Remotes
 
     private var remotesTable: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Text("Name").frame(width: 90, alignment: .leading)
+            HStack(spacing: z(10)) {
+                Text("Name").frame(width: z(90), alignment: .leading)
                 Text("URL").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Used for").frame(width: 92, alignment: .leading)
+                Text("Used for").frame(width: z(92), alignment: .leading)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: z(11), weight: .semibold))
             .foregroundStyle(K.label2)
-            .padding(.horizontal, 10)
-            .frame(height: 24)
+            .padding(.horizontal, z(10))
+            .frame(height: z(24))
             .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
             ForEach(repository.remotes) { remote in
                 if editing == remote.name {
                     editRow(isNew: false)
                 } else {
                     let isOn = selectedRemote == remote.name
-                    HStack(spacing: 10) {
-                        Text(remote.name).frame(width: 90, alignment: .leading)
+                    HStack(spacing: z(10)) {
+                        Text(remote.name).frame(width: z(90), alignment: .leading)
                         Text(remote.fetchURL)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(size: z(12), design: .monospaced))
                             .foregroundStyle(isOn ? .white.opacity(0.88) : K.label2)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Text(remote.pushURL == nil ? "fetch · push" : "fetch · push elsewhere")
                             .foregroundStyle(isOn ? .white.opacity(0.88) : K.label2)
-                            .frame(width: 92, alignment: .leading)
+                            .frame(width: z(92), alignment: .leading)
                     }
-                    .font(.system(size: 12.5))
+                    .font(.system(size: z(12.5)))
                     .foregroundStyle(isOn ? .white : K.label)
-                    .padding(.horizontal, 10)
-                    .frame(height: 30)
+                    .padding(.horizontal, z(10))
+                    .frame(height: z(30))
                     .background(isOn ? K.sel : .clear)
                     .contentShape(Rectangle())
                     .onTapGesture { selectedRemote = remote.name }
@@ -183,35 +183,35 @@ struct RepositorySettingsSheet: View {
             }
             if repository.remotes.isEmpty, !adding {
                 Text("No remotes — this repository is only on this Mac.")
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
-                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .frame(maxWidth: .infinity, minHeight: z(30))
             }
             if adding { editRow(isNew: true) }
         }
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.field))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.field))
+        .clipShape(RoundedRectangle(cornerRadius: z(8), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: z(8), style: .continuous).strokeBorder(K.sepStrong, lineWidth: 0.5))
     }
 
     private func editRow(isNew: Bool) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             TextField("Remote name", text: $newName)
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 90)
+                .frame(width: z(90))
                 .disabled(!isNew)
             TextField("https://github.com/owner/repo.git", text: $newURL)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: z(12), design: .monospaced))
                 .onSubmit { commitRemote(isNew: isNew) }
             Button("Cancel") { adding = false; editing = nil }.controlSize(.small)
             Button(isNew ? "Add" : "Save") { commitRemote(isNew: isNew) }
                 .controlSize(.small)
                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || newURL.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .font(.system(size: 12.5))
-        .padding(.horizontal, 10)
-        .frame(height: 36)
+        .font(.system(size: z(12.5)))
+        .padding(.horizontal, z(10))
+        .frame(height: z(36))
         .overlay(alignment: .top) { K.sep.frame(height: 1) }
     }
 
@@ -285,21 +285,27 @@ struct RepositorySettingsSheet: View {
         loaded = true
     }
 
-    @State private var saveTask: Task<Void, Never>?
+    /// A save waiting for the typing to pause, per key: the name's doesn't go when the email
+    /// is typed right after it.
+    @State private var pendingSaves: [String: Task<Void, Never>] = [:]
+    @State private var lastSave: Task<Void, Never>?
 
     private func saveSoon(_ key: String, _ value: String) {
-        saveTask?.cancel()
-        saveTask = Task {
+        pendingSaves[key]?.cancel()
+        pendingSaves[key] = Task {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
             save(key, value)
         }
     }
 
+    /// One write after the other: two `git config` at once fight over the config file's lock.
     private func save(_ key: String, _ value: String?) {
         guard let git = repository.repository else { return }
         let trimmed = value?.trimmingCharacters(in: .whitespaces)
-        Task {
+        let previous = lastSave
+        lastSave = Task {
+            await previous?.value
             do {
                 try await git.setLocalConfig(key, trimmed?.isEmpty == true ? nil : trimmed)
                 failure = nil
@@ -369,14 +375,14 @@ private struct RadioRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 7) {
+            HStack(alignment: .top, spacing: z(7)) {
                 Image(systemName: isOn ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                     .foregroundStyle(isOn ? K.accent : K.label3)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 12.5))
-                    Text(subtitle).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                    Text(title).font(.system(size: z(12.5)))
+                    Text(subtitle).font(.system(size: z(11.5))).foregroundStyle(K.label2)
                 }
             }
             .contentShape(Rectangle())

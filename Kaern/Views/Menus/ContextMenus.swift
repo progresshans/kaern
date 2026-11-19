@@ -107,22 +107,34 @@ extension EnvironmentValues {
 
 private struct ContextClipModifier: ViewModifier {
     @State private var id = UUID()
+    @State private var place = FramePlace()
     @Environment(ContextMenuTracker.self) private var tracker: ContextMenuTracker?
 
     func body(content: Content) -> some View {
         content
             .environment(\.contextClip, id)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
                 tracker?.setClip(frame, id: id)
             }
+            // Back on screen where it was (its tab shows again): nothing moved, so nothing above ran.
+            .onAppear { if let frame = place.frame { tracker?.setClip(frame, id: id) } }
             .onDisappear { tracker?.setClip(nil, id: id) }
     }
+}
+
+/// Where a view is, as it last reported. In a box: it changes on every scrolled frame, and
+/// nothing is drawn from it.
+@MainActor
+final class FramePlace {
+    var frame: CGRect?
 }
 
 private struct ContextTargetModifier: ViewModifier {
     let target: ContextTarget
     let ring: ContextRing?
     @State private var id = UUID()
+    @State private var place = FramePlace()
     @Environment(ContextMenuTracker.self) private var tracker: ContextMenuTracker?
     @Environment(\.contextClip) private var clip
 
@@ -138,8 +150,16 @@ private struct ContextTargetModifier: ViewModifier {
             }
             // `.global` is the window's content view, which fills the window (top-left origin).
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
                 tracker?.setFrame(frame, for: target, view: id, clip: clip)
             }
+            // The same view, in the same place, for something else (the next commit's file of the
+            // same name): the menu is for what it shows now.
+            .onChange(of: target) {
+                if let frame = place.frame { tracker?.setFrame(frame, for: target, view: id, clip: clip) }
+            }
+            // Its tab shows again: it's where it was, and its frame went when the tab left.
+            .onAppear { if let frame = place.frame { tracker?.setFrame(frame, for: target, view: id, clip: clip) } }
             .onDisappear { tracker?.setFrame(nil, for: target, view: id, clip: clip) }
     }
 }
@@ -262,6 +282,12 @@ enum ContextMenus {
             })
         }
         menu.addItem(.separator())
+        // Gitflow's Finish (GitKraken's branch menu): on a feature/… branch, in a repository with develop.
+        if r.canFinish(name) {
+            menu.addItem(item("Finish Feature…", hint: elsewhere, enabled: idle && tree == nil) {
+                r.from(source) { r.askFinish(branch: name) }
+            })
+        }
         let noBranch = current == nil
         menu.addItem(item("Merge into “\(cur)”", hint: merged ? "Already merged" : noBranch ? "Not on a branch" : nil,
                           enabled: idle && !isCurrent && !merged && !noBranch) {
@@ -607,7 +633,7 @@ enum ContextMenus {
         let font = NSFont.menuFont(ofSize: 0)
         let result = NSMutableAttributedString(string: title, attributes: [.font: font])
         let width = (title as NSString).size(withAttributes: [.font: font]).width
-        let hintFont = NSFont.systemFont(ofSize: 11)
+        let hintFont = NSFont.systemFont(ofSize: z(11))
         let hintWidth = (hint as NSString).size(withAttributes: [.font: hintFont]).width
         let style = NSMutableParagraphStyle()
         style.tabStops = [NSTextTab(textAlignment: .right, location: max(280, width + 28 + hintWidth))]

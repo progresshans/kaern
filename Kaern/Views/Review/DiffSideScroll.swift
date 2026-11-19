@@ -155,9 +155,9 @@ private struct SideScrollBar: View {
             let x = side.maxOffset > 0 ? travel * side.offset / side.maxOffset : 0
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(hovering || dragStart != nil ? 0.08 : 0))
-                    .frame(height: 11)
+                    .frame(height: z(11))
                 Capsule().fill(Color.primary.opacity(hovering || dragStart != nil ? 0.5 : 0.35))
-                    .frame(width: knob, height: hovering || dragStart != nil ? 9 : 7)
+                    .frame(width: knob, height: hovering || dragStart != nil ? z(9) : z(7))
                     .padding(.horizontal, 1)
                     .offset(x: x)
                     .gesture(
@@ -170,12 +170,12 @@ private struct SideScrollBar: View {
                             .onEnded { _ in dragStart = nil }
                     )
             }
-            .frame(width: width, height: 13)
-            .padding(.horizontal, 8)
+            .frame(width: width, height: z(13))
+            .padding(.horizontal, z(8))
             .frame(maxHeight: .infinity, alignment: .bottom)
         }
-        .frame(height: 15)
-        .padding(.bottom, 2)
+        .frame(height: z(15))
+        .padding(.bottom, z(2))
         .opacity(side.maxOffset > 0 && (shows || hovering || dragStart != nil) ? 1 : 0)
         .allowsHitTesting(side.maxOffset > 0)
         .animation(.easeOut(duration: 0.2), value: shows)

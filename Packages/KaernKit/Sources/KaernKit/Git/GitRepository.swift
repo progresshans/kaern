@@ -242,7 +242,7 @@ public struct GitRepository: Sendable, Hashable {
     /// The diff of one file between two commits (`base` `nil`: as added in `target`).
     /// `ignoringWhitespace` is `git diff -w`: lines that only changed in white space drop out.
     public func diff(of change: FileChange, from base: String?, to target: String, ignoringWhitespace: Bool = false) async throws -> FileDiff {
-        let paths = [change.oldPath, change.path].compactMap { $0 }
+        let paths = Self.literal([change.oldPath, change.path].compactMap { $0 })
         let whitespace = ignoringWhitespace ? ["-w"] : []
         let arguments: [String]
         if let base {
@@ -268,7 +268,7 @@ public struct GitRepository: Sendable, Hashable {
         var arguments = ["diff", "--no-ext-diff", "-M"]
         if staged { arguments.append("--cached") }
         if ignoringWhitespace { arguments.append("-w") }
-        arguments += ["--"] + paths
+        arguments += ["--"] + Self.literal(paths)
         let output = try await git(arguments)
         var diff = DiffParser.parse(output.stdout).first
         diff?.ignoresWhitespace = ignoringWhitespace
@@ -281,22 +281,6 @@ public struct GitRepository: Sendable, Hashable {
         let counts = output.text.split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
         guard counts.count == 2 else { return nil }
         return CommitDistance(ahead: counts[1], behind: counts[0])
-    }
-
-    /// Local branches that contain `commit`.
-    public func branchesContaining(_ commit: String) async throws -> [String] {
-        let output = try await git(["branch", "--format=%(refname:short)", "--contains", commit])
-        return output.text.split(separator: "\n").map(String.init)
-    }
-
-    /// An untracked file shown as a new file.
-    public func untrackedDiff(path: String) async throws -> FileDiff? {
-        let output = try await git(["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path], accepted: [0, 1])
-        guard var diff = DiffParser.parse(output.stdout).first else { return nil }
-        diff.path = path
-        diff.oldPath = nil
-        diff.isNewFile = true
-        return diff
     }
 
     public func stashes() async throws -> [Stash] {
@@ -330,10 +314,46 @@ public struct GitRepository: Sendable, Hashable {
         return value.isEmpty ? nil : value
     }
 
-    /// When a fetch last finished, from `FETCH_HEAD`.
+    /// When a fetch last finished: when this working tree's `FETCH_HEAD` was written. Before its
+    /// first fetch, the remote branches it shares with the other working trees answer: the newest
+    /// `FETCH_HEAD` of those, or the clone (`git clone` writes no `FETCH_HEAD`, but each
+    /// `<remote>/HEAD`'s reflog says "clone: from <url>"). `nil` while no remote has been fetched:
+    /// a push alone doesn't count. Only a few small files are read: a refresh asks on the main actor.
     public var lastFetchDate: Date? {
-        let path = gitDirectory.appending(path: "FETCH_HEAD").path(percentEncoded: false)
-        return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        Self.modificationDate(of: gitDirectory.appending(path: "FETCH_HEAD")) ?? lastFetchElsewhere()
+    }
+
+    private func lastFetchElsewhere() -> Date? {
+        let fileManager = FileManager.default
+        let common = commonGitDirectory
+        let linked = (try? fileManager.contentsOfDirectory(at: common.appending(path: "worktrees"), includingPropertiesForKeys: nil)) ?? []
+        var dates = ([common] + linked).compactMap { Self.modificationDate(of: $0.appending(path: "FETCH_HEAD")) }
+        let remotes = (try? fileManager.contentsOfDirectory(at: common.appending(path: "logs/refs/remotes"), includingPropertiesForKeys: nil)) ?? []
+        for remote in remotes {
+            guard let data = fileManager.contents(atPath: remote.appending(path: "HEAD").path(percentEncoded: false)),
+                  let date = Self.newestFetch(inReflog: String(decoding: data, as: UTF8.self)) else { continue }
+            dates.append(date)
+        }
+        return dates.max()
+    }
+
+    private static func modificationDate(of file: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false)))?[.modificationDate] as? Date
+    }
+
+    /// The time of a reflog's last clone, fetch or pull (`git pull` fetches too; a push writes
+    /// "update by push", `git remote set-head` "remote set-head"). A line is
+    /// `<old> <new> <name> <email> <seconds> <zone>\t<message>`.
+    static func newestFetch(inReflog text: String) -> Date? {
+        for line in text.split(separator: "\n").reversed() {
+            guard let tab = line.firstIndex(of: "\t") else { continue }
+            let message = line[line.index(after: tab)...]
+            guard message.hasPrefix("clone: ") || message.hasPrefix("fetch") || message.hasPrefix("pull") else { continue }
+            let fields = line[..<tab].split(separator: " ")
+            guard fields.count >= 2, let seconds = TimeInterval(fields[fields.count - 2]) else { continue }
+            return Date(timeIntervalSince1970: seconds)
+        }
+        return nil
     }
 
     /// Checks a new branch name with `git check-ref-format --branch`.
@@ -346,9 +366,15 @@ public struct GitRepository: Sendable, Hashable {
 
     // MARK: - Staging and committing
 
+    /// `paths` as git takes a path and nothing else: without this, a file called `notes[1].txt`
+    /// or `*.md` is a pattern too, and a command for it reaches the other files it matches.
+    static func literal(_ paths: [String]) -> [String] {
+        paths.map { ":(literal)" + $0 }
+    }
+
     public func stage(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["add", "--all", "--"] + paths)
+        try await git(["add", "--all", "--"] + Self.literal(paths))
     }
 
     public func stageAll() async throws {
@@ -358,9 +384,9 @@ public struct GitRepository: Sendable, Hashable {
     public func unstage(_ paths: [String], hasHead: Bool) async throws {
         guard !paths.isEmpty else { return }
         if hasHead {
-            try await git(["restore", "--staged", "--"] + paths)
+            try await git(["restore", "--staged", "--"] + Self.literal(paths))
         } else {
-            try await git(["rm", "--cached", "-r", "-q", "--"] + paths)
+            try await git(["rm", "--cached", "-r", "-q", "--"] + Self.literal(paths))
         }
     }
 
@@ -375,13 +401,13 @@ public struct GitRepository: Sendable, Hashable {
     /// Throws away unstaged changes of tracked files (the index is kept).
     public func discardUnstaged(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["restore", "--worktree", "--"] + paths)
+        try await git(["restore", "--worktree", "--"] + Self.literal(paths))
     }
 
     /// Restores files to HEAD in both the index and the working tree.
     public func discardAll(_ paths: [String]) async throws {
         guard !paths.isEmpty else { return }
-        try await git(["restore", "--staged", "--worktree", "--source=HEAD", "--"] + paths)
+        try await git(["restore", "--staged", "--worktree", "--source=HEAD", "--"] + Self.literal(paths))
     }
 
     /// `git apply [--cached] [--reverse] --recount -` with `patch` on standard input.
@@ -509,29 +535,78 @@ public struct GitRepository: Sendable, Hashable {
     // MARK: - File-system events
 
     /// Sorts changed paths reported by ``FileSystemWatcher`` into what needs refreshing.
+    ///
+    /// A linked working tree keeps its own HEAD and index in its git directory
+    /// (`<main>/.git/worktrees/<name>`), and shares branches, tags and config with the others in
+    /// the common one (`<main>/.git`): a path there counts when it's one of the shared files, and
+    /// never as a file of the working tree.
     public func classify(_ paths: [String]) -> ChangeScope {
-        let gitDir = gitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+        let places = GitPlaces(self)
         var scope: ChangeScope = []
         for path in paths {
-            guard path.hasPrefix(gitDir) || path + "/" == gitDir else {
+            switch places.place(of: path) {
+            case .workTree:
                 scope.insert(.workTree)
-                continue
-            }
-            let relative = String(path.dropFirst(gitDir.count))
-            if relative.hasSuffix(".lock") || relative.hasPrefix("objects") || relative.hasPrefix("logs") {
-                continue
-            }
-            if relative == "index" {
-                scope.insert(.index)
-            } else if relative.hasPrefix("refs") || relative == "HEAD" || relative == "packed-refs"
-                        || relative == "FETCH_HEAD" || relative == "ORIG_HEAD" || relative == "config"
-                        || relative.hasPrefix("MERGE_") || relative.hasPrefix("REBASE_")
-                        || relative.hasPrefix("rebase-") || relative.hasPrefix("CHERRY_PICK")
-                        || relative.hasPrefix("REVERT_") {
-                scope.insert(.refs)
+            case .gitDirectory(let relative):
+                if relative.hasSuffix(".lock") || relative.hasPrefix("objects") || relative.hasPrefix("logs") {
+                    continue
+                }
+                if relative == "index" {
+                    scope.insert(.index)
+                } else if relative.hasPrefix("refs") || relative == "HEAD" || relative == "packed-refs"
+                            || relative == "FETCH_HEAD" || relative == "ORIG_HEAD" || relative == "config"
+                            || relative.hasPrefix("MERGE_") || relative.hasPrefix("REBASE_")
+                            || relative.hasPrefix("rebase-") || relative.hasPrefix("CHERRY_PICK")
+                            || relative.hasPrefix("REVERT_") {
+                    scope.insert(.refs)
+                }
+            case .commonDirectory(let relative):
+                // What every working tree shares. The rest there (the main working tree's index and
+                // HEAD, the other working trees' folders, objects) isn't this working tree's.
+                if !relative.hasSuffix(".lock"), relative.hasPrefix("refs") || relative == "packed-refs" || relative == "config" {
+                    scope.insert(.refs)
+                }
             }
         }
         return scope
+    }
+
+    /// The paths among `paths` that are files of the working tree (not in the git directory, nor
+    /// in the one a linked working tree shares with the others).
+    public func workTreePaths(_ paths: [String]) -> [String] {
+        let places = GitPlaces(self)
+        return paths.filter { if case .workTree = places.place(of: $0) { true } else { false } }
+    }
+
+    /// Where a changed path is, for ``classify(_:)``.
+    private struct GitPlaces {
+        enum Place {
+            case workTree
+            /// In the working tree's own git directory, with the path inside it.
+            case gitDirectory(String)
+            /// In the git directory linked working trees share, with the path inside it.
+            case commonDirectory(String)
+        }
+
+        let gitDirectory: String
+        /// `nil` when the git directory is the common one (the main working tree).
+        let commonDirectory: String?
+
+        init(_ repository: GitRepository) {
+            gitDirectory = repository.gitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+            let common = repository.commonGitDirectory.path(percentEncoded: false).trimmingSuffix("/") + "/"
+            commonDirectory = common == gitDirectory ? nil : common
+        }
+
+        func place(of path: String) -> Place {
+            if path.hasPrefix(gitDirectory) { return .gitDirectory(String(path.dropFirst(gitDirectory.count))) }
+            if path + "/" == gitDirectory { return .gitDirectory("") }
+            if let commonDirectory {
+                if path.hasPrefix(commonDirectory) { return .commonDirectory(String(path.dropFirst(commonDirectory.count))) }
+                if path + "/" == commonDirectory { return .commonDirectory("") }
+            }
+            return .workTree
+        }
     }
 }
 

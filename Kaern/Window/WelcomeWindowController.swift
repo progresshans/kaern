@@ -12,7 +12,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     private weak var app: AppModel?
     private var lights: TrafficLights?
 
-    static let size = NSSize(width: 900, height: 572)
+    static var size: NSSize { NSSize(width: z(900), height: z(572)) }
 
     init(model: WindowModel, app: AppModel) {
         self.model = model
@@ -33,7 +33,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.backgroundColor = NSColor(name: nil) { $0.isDark ? K.hex(0x1e1e1e) : K.hex(0xffffff) }
 
-        let hosting = NSHostingView(rootView: WelcomeRootView(window: model).environment(app))
+        let hosting = NSHostingView(rootView: WelcomeRootView(window: model).environment(app).zoomed())
         hosting.sizingOptions = []
         window.contentView = hosting
 
@@ -69,9 +69,9 @@ private struct WelcomeRootView: View {
         .ignoresSafeArea()
         .overlay {
             if isDropTarget {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: z(10), style: .continuous)
                     .strokeBorder(K.accent, lineWidth: 3)
-                    .padding(4)
+                    .padding(z(4))
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
             }

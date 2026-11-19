@@ -49,6 +49,8 @@ final class WindowModel: Identifiable {
     var showsDetails = true { didSet { if showsDetails != oldValue { changed() } } }
     /// The + popover (recent repositories and Open Repository…). Not saved.
     var showsNewTab = false
+    /// A drag with folders is over the window: the ring around it. Not saved.
+    var isDropTarget = false
     /// Focus mode: both side panels hidden, the commit row inline, the drawer below the graph.
     /// Not saved.
     var isFocused = false
@@ -246,33 +248,21 @@ final class WindowModel: Identifiable {
         activate(order[index].id)
     }
 
-    func close(_ id: UUID) {
-        close([id])
-    }
-
     func close(_ ids: [UUID]) {
         let closing = Set(ids)
         guard !closing.isEmpty else { return }
-        let activeIndex = tabs.firstIndex { $0.id == activeTabID }
+        // The tab that slides into the closed tab's place, like Safari and the board: the next
+        // one that stays, else the last one before it.
+        let next = tabs.firstIndex { $0.id == activeTabID }.flatMap { index in
+            tabs[index...].first { !closing.contains($0.id) } ?? tabs[..<index].last { !closing.contains($0.id) }
+        }
         tabs.removeAll { closing.contains($0.id) }
         dropEmptyGroups()
         if let active = activeTabID, closing.contains(active) {
-            // The tab that slides into the closed tab's place, like Safari and the board.
-            let index = min(activeIndex ?? 0, tabs.count - 1)
-            activeTabID = index >= 0 ? tabs[index].id : nil
+            activeTabID = next?.id
             onActiveTabChange?()
         }
         changed()
-    }
-
-    func closeOthers(than id: UUID) {
-        close(tabs.filter { $0.id != id }.map(\.id))
-        activate(id)
-    }
-
-    func closeToTheRight(of id: UUID) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        close(tabs[(index + 1)...].map(\.id))
     }
 
     // MARK: Reordering
@@ -338,11 +328,12 @@ final class WindowModel: Identifiable {
 
     /// Takes a tab out of its group and puts it right after the group.
     func removeFromGroup(_ id: UUID) {
-        guard var tab = tab(id), let groupID = tab.group else { return }
-        tabs.removeAll { $0.id == id }
+        guard var tab = tab(id), let groupID = tab.group, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs.remove(at: index)
         tab.group = nil
+        // The group's only tab stays where it is.
         let lastMember = tabs.lastIndex { $0.group == groupID }
-        tabs.insert(tab, at: lastMember.map { $0 + 1 } ?? tabs.count)
+        tabs.insert(tab, at: lastMember.map { $0 + 1 } ?? index)
         dropEmptyGroups()
         changed()
     }
@@ -352,10 +343,6 @@ final class WindowModel: Identifiable {
         tabs = tabs.map { RepoTab(id: $0.id, path: $0.path, group: $0.group == groupID ? nil : $0.group) }
         groups.removeAll { $0.id == groupID }
         changed()
-    }
-
-    func closeGroup(_ groupID: UUID) {
-        close(members(of: groupID).map(\.id))
     }
 
     func rename(_ groupID: UUID, to name: String) {

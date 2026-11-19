@@ -8,11 +8,26 @@ extension AppModel {
     /// File › Clone Repository… (⇧⌘C).
     func showClone(in window: WindowModel, url: String = "") {
         if case .clone = window.sheet { return }
+        guard canShowSheet(in: window) else { return }
         window.sheet = .clone(CloneModel(url: url))
+    }
+
+    /// A sheet that's working (a clone under way) stays: another one would take its place, and
+    /// the work would close that one when it finishes.
+    private func canShowSheet(in window: WindowModel) -> Bool {
+        guard window.sheet?.isBusy == true else { return true }
+        NSSound.beep()
+        return false
+    }
+
+    /// Closes `model`'s sheet, if that's still the one the window shows.
+    private func closeSheet(of model: AnyObject, in window: WindowModel) {
+        if window.sheet?.id == ObjectIdentifier(model) { window.sheet = nil }
     }
 
     /// File › Create New Repository… (⌥⌘N), or Create Repository Here… for `folder`.
     func showCreate(in window: WindowModel, folder: URL? = nil) {
+        guard canShowSheet(in: window) else { return }
         let model = CreateModel(existingFolder: folder)
         window.sheet = .create(model)
         Task {
@@ -29,6 +44,7 @@ extension AppModel {
     }
 
     func showPublish(_ repository: RepositoryModel, in window: WindowModel) {
+        guard canShowSheet(in: window) else { return }
         window.sheet = .publish(PublishModel(repositoryPath: repository.path, name: repository.name))
     }
 
@@ -47,10 +63,12 @@ extension AppModel {
         }
     }
 
+    /// The runner, as soon as git has been found. That takes a moment after launch (seconds when
+    /// the developer tools are cold) and always ends with one; `nil` only when the waiting task
+    /// was cancelled.
     func waitForGit() async -> GitRunner? {
-        for _ in 0..<100 {
-            if let runner { return runner }
-            try? await Task.sleep(for: .milliseconds(50))
+        while runner == nil {
+            do { try await Task.sleep(for: .milliseconds(50)) } catch { return nil }
         }
         return runner
     }
@@ -71,7 +89,13 @@ extension AppModel {
         let taskID = center.begin(repositoryPath: destination.path(percentEncoded: false), repositoryName: name,
                                   title: "Cloning \(name)", cancel: { [weak model] in model?.task?.cancel() })
         model.task = Task {
-            guard let runner = await waitForGit() else { return }
+            guard let runner = await waitForGit() else {
+                // Cancel before git was found.
+                center.finish(taskID, result: "Stopped")
+                model.isCloning = false
+                model.task = nil
+                return
+            }
             do {
                 let repository = try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Clone Repository")) {
                     try await GitRepository.clone(source, into: destination, runner: runner) { progress in
@@ -87,7 +111,7 @@ extension AppModel {
                 center.finish(taskID, result: "Cloned \(name) from \(from)")
                 model.isCloning = false
                 model.task = nil
-                window.sheet = nil
+                closeSheet(of: model, in: window)
                 if model.opensTab {
                     await openNow([URL(filePath: path, directoryHint: .isDirectory)], in: window)
                     self.repository(for: path).showToast("Cloned \(name) from \(from)")
@@ -134,12 +158,18 @@ extension AppModel {
         let writable = files.filter { !FileManager.default.fileExists(atPath: folder.appending(path: $0.path).path(percentEncoded: false)) }
         if !writable.isEmpty { steps.append(("write", "Write " + writable.map(\.path).joined(separator: ", "))) }
         if model.firstCommit { steps.append(("commit", "git add -A && git commit -m \"Initial commit\"")) }
-        if model.publish { steps.append(("publish", "Create \(name) on GitHub (\(model.isPrivate ? "private" : "public")) and push \(branch)")) }
+        // GitHub's own name for it (a space or 한글 in the folder's name is a dash there).
+        let githubName = GitHubClient.repositoryName(for: name)
+        if model.publish { steps.append(("publish", "Create \(githubName) on GitHub (\(model.isPrivate ? "private" : "public")) and push \(branch)")) }
         model.setSteps(steps)
         let center = ActivityCenter.shared
         let taskID = center.begin(repositoryPath: folder.path(percentEncoded: false), repositoryName: name, title: "Creating \(name)")
         model.task = Task {
-            guard let runner = await waitForGit() else { return }
+            guard let runner = await waitForGit() else {
+                center.finish(taskID, result: "Stopped")
+                model.isRunning = false
+                return
+            }
             model.advance(to: "init")
             do {
                 let (repository, _) = try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Create Repository")) {
@@ -157,20 +187,44 @@ extension AppModel {
                 let path = repository.root.path(percentEncoded: false).trimmingTrailingSlash
                 let fileCount = await repository.trackedFiles().count
                 let note = model.firstCommit ? "Created \(name) · 1 commit · \(Formatters.count(fileCount, "file", "files"))" : "Created \(name)"
+                // The repository is there from here on. When only publishing fails it still opens,
+                // and Publish to GitHub comes up saying so and asking whether to try again: its
+                // sheet can (under another name too), where Create would fail at a commit with
+                // nothing new.
+                var publishError: Error?
+                var madeOnGitHub: String?
                 if model.publish, let account = model.githubAccount {
                     model.advance(to: "publish")
-                    try await publish(repository, name: name, isPrivate: model.isPrivate, account: account, runner: runner)
+                    do {
+                        try await publish(repository, name: githubName, isPrivate: model.isPrivate, account: account, runner: runner)
+                    } catch {
+                        publishError = error
+                        madeOnGitHub = await self.madeOnGitHub(repository, name: githubName, account: account)
+                    }
                 }
-                model.advance(to: nil)
-                center.finish(taskID, result: note)
-                // A moment to see every step ticked off.
-                try? await Task.sleep(for: .milliseconds(350))
+                if let publishError {
+                    model.failCurrentStep()
+                    center.finish(taskID, result: "\(note) · Publishing failed: \(publishError.localizedDescription)", failed: true)
+                } else {
+                    model.advance(to: nil)
+                    center.finish(taskID, result: note)
+                    // A moment to see every step ticked off.
+                    try? await Task.sleep(for: .milliseconds(350))
+                }
                 model.isRunning = false
-                window.sheet = nil
+                closeSheet(of: model, in: window)
                 await openNow([URL(filePath: path, directoryHint: .isDirectory)], in: window, restart: true)
                 let opened = self.repository(for: path)
                 opened.createdNote = note
-                opened.showsPublishBanner = !model.publish
+                opened.showsPublishBanner = !model.publish || publishError != nil
+                if let publishError, window.sheet == nil {
+                    let retry = PublishModel(repositoryPath: path, name: name)
+                    retry.isPrivate = model.isPrivate
+                    retry.error = publishError.localizedDescription
+                    retry.followsCreate = true
+                    retry.madeOnGitHub = madeOnGitHub
+                    window.sheet = .publish(retry)
+                }
             } catch {
                 model.failCurrentStep()
                 center.finish(taskID, result: error.localizedDescription, failed: true)
@@ -182,17 +236,36 @@ extension AppModel {
 
     // MARK: Publish
 
-    /// Makes the GitHub repository, adds it as origin and pushes HEAD with its upstream.
+    /// Makes the GitHub repository, adds it as origin and pushes HEAD with its upstream. A try that
+    /// got as far as origin and failed at the push left only the push to do: asking GitHub for the
+    /// repository again would say its name is taken.
     func publish(_ repository: GitRepository, name: String, isPrivate: Bool, account: HostingAccount, runner: GitRunner) async throws {
-        guard let token = await runner.credential(host: account.host, username: account.login) else {
-            throw HostingError(status: 401, message: "Kaern couldn’t read the token for \(account.login). Sign in again in Settings › Accounts.")
+        if await madeOnGitHub(repository, name: name, account: account) == nil {
+            // Before anything is made on GitHub: `git remote add origin` would fail after it.
+            if let origin = await repository.configuredRemoteURL("origin") {
+                throw HostingError(status: 0, message: "There is already a remote named origin (\(origin)). Remove or rename it in Repository Settings to publish here.")
+            }
+            guard let token = await runner.credential(host: account.host, username: account.login) else {
+                throw HostingError(status: 401, message: "Kaern couldn’t read the token for \(account.login). Sign in again in Settings › Accounts.")
+            }
+            let client = GitHubClient(baseURL: GitHubClient.apiURL(for: account.host), token: token)
+            let created = try await client.createRepository(name: name, isPrivate: isPrivate)
+            try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Publish to GitHub")) {
+                try await repository.addRemote("origin", url: account.clonesWithSSH ? created.sshURL : created.httpsURL)
+            }
         }
-        let client = GitHubClient(baseURL: GitHubClient.apiURL(for: account.host), token: token)
-        let created = try await client.createRepository(name: name, isPrivate: isPrivate)
         try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Publish to GitHub")) {
-            try await repository.addRemote("origin", url: account.clonesWithSSH ? created.sshURL : created.httpsURL)
             try await repository.push(setUpstreamOn: "origin")
         }
+    }
+
+    /// "owner/name" when origin is that repository of the account's already: a Publish made it and
+    /// didn't get through the push.
+    func madeOnGitHub(_ repository: GitRepository, name: String, account: HostingAccount) async -> String? {
+        let fullName = "\(account.login)/\(name)"
+        guard let origin = await repository.configuredRemoteURL("origin"), let url = RemoteURL(origin),
+              url.names(fullName, on: account.host) else { return nil }
+        return fullName
     }
 
     func startPublish(_ model: PublishModel, in window: WindowModel) {
@@ -201,22 +274,30 @@ extension AppModel {
         guard let git = target.repository else { return }
         model.isRunning = true
         model.error = nil
-        model.progress = "Creating \(model.name) on GitHub…"
-        let name = model.name.trimmingCharacters(in: .whitespaces)
+        let name = model.githubName
+        model.progress = model.madeOnGitHub.map { "Pushing to \($0)…" } ?? "Creating \(name) on GitHub…"
         Task {
-            guard let runner = await waitForGit() else { return }
+            guard let runner = await waitForGit() else {
+                model.isRunning = false
+                model.progress = nil
+                return
+            }
             do {
                 try await publish(git, name: name, isPrivate: model.isPrivate, account: account, runner: runner)
                 model.isRunning = false
-                window.sheet = nil
+                closeSheet(of: model, in: window)
                 target.showsPublishBanner = false
                 target.createdNote = nil
                 await target.refreshRemotes()
                 target.showToast("Published \(target.name) to github.com/\(account.login)/\(name)")
             } catch {
+                // Made on GitHub with the push left: the sheet says so, and the sidebar shows origin.
+                let made = await madeOnGitHub(git, name: name, account: account)
+                model.madeOnGitHub = made
                 model.isRunning = false
                 model.progress = nil
                 model.error = error.localizedDescription
+                if made != nil { await target.refreshRemotes() }
             }
         }
     }

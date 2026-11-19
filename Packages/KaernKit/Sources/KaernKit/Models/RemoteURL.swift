@@ -68,6 +68,13 @@ public struct RemoteURL: Sendable, Hashable {
         path.hasSuffix(".git") ? String(path.dropLast(4)) : path
     }
 
+    /// Whether this is `owner/name` on `host`, written as HTTPS or SSH, with or without `.git`.
+    /// Hosts and GitHub's names don't tell upper case from lower.
+    public func names(_ repository: String, on host: String) -> Bool {
+        let path = repositoryPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return self.host.caseInsensitiveCompare(host) == .orderedSame && path.caseInsensitiveCompare(repository) == .orderedSame
+    }
+
     /// The host as people call it: GitHub, GitLab, Bitbucket, or the host name.
     public var hostName: String {
         switch host.lowercased() {

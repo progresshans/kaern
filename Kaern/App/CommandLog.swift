@@ -73,8 +73,12 @@ final class CommandLog {
         return index
     }
 
+    /// Trimming copies the whole list and its index, so it waits until the list is this far
+    /// past the limit: once in two hundred commands, not after each one.
+    private static let slack = 200
+
     private func trim() {
-        guard entries.count > Self.limit else { return }
+        guard entries.count > Self.limit + Self.slack else { return }
         // Drop the oldest finished background commands first, then the oldest of all.
         let excess = entries.count - Self.limit
         var dropped = 0

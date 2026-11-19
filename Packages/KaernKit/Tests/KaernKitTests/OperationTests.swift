@@ -159,6 +159,40 @@ struct OperationTests {
         #expect(subject == "Merge branch 'topic'")
     }
 
+    @Test func mergeCommitTakesTheMessageGiven() async throws {
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\n", to: "a.txt")
+        try await repository.commitAll("base")
+        try await repository.createBranch("feature/notes", startPoint: nil, checkout: true)
+        try repository.write("two\n", to: "b.txt")
+        try await repository.commitAll("add b")
+        try await repository.switchBranch("main")
+        let outcome = try await repository.merge("feature/notes", fastForward: .never, message: "Merge feature/notes: the notes file")
+        #expect(outcome == .finished)
+        let subject = try await repository.headSubject()
+        #expect(subject == "Merge feature/notes: the notes file")
+        // Two parents: a merge commit, though main could have fast-forwarded.
+        let parents = try await repository.git(["log", "-1", "--format=%P"]).text.split(separator: " ")
+        #expect(parents.count == 2)
+        // When the branch fast-forwards, no commit is made and the message isn't used.
+        try await repository.createBranch("feature/more", startPoint: nil, checkout: true)
+        try repository.write("three\n", to: "c.txt")
+        try await repository.commitAll("add c")
+        try await repository.switchBranch("main")
+        _ = try await repository.merge("feature/more", message: "Merge feature/more: unused")
+        let forwarded = try await repository.headSubject()
+        #expect(forwarded == "add c")
+    }
+
+    @Test func aStoppedMergeKeepsTheMessageGiven() async throws {
+        let (repository, _) = try await makeDivergedRepository()
+        defer { TestRepositories.remove(repository) }
+        let outcome = try await repository.merge("feature", message: "Merge feature: both changed b")
+        #expect(outcome == .stopped)
+        #expect(repository.operationState()?.message == "Merge feature: both changed b")
+    }
+
     @Test func failedMergeThrowsInsteadOfStopping() async throws {
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }

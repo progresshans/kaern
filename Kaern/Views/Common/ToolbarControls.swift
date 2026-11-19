@@ -14,12 +14,12 @@ struct ToolbarCap<Content: View>: View {
     var body: some View {
         if showsText {
             HStack(spacing: 0) { content }
-                .frame(height: 46)
+                .frame(height: z(46))
         } else {
             HStack(spacing: 0) { content }
-                .padding(.horizontal, 2)
-                .frame(height: 30)
-                .controlSurface(radius: 9)
+                .padding(.horizontal, z(2))
+                .frame(height: z(30))
+                .controlSurface(radius: z(9))
         }
     }
 }
@@ -30,7 +30,7 @@ struct ToolbarGroupSeparator: View {
 
     var body: some View {
         if showsText {
-            K.sepStrong.frame(width: 1, height: 22).padding(.horizontal, 2)
+            K.sepStrong.frame(width: 1, height: z(22)).padding(.horizontal, z(2))
         }
     }
 }
@@ -68,21 +68,21 @@ struct ToolbarButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: z(4)) {
                 Icon(icon, size: iconSize)
                 if showsText {
                     Text(label ?? name)
-                        .font(.system(size: 10))
+                        .font(.system(size: z(10)))
                         .lineLimit(1)
                         .fixedSize()
                 }
             }
                 .foregroundStyle(isOn ? K.accentText : K.label)
-                .padding(.horizontal, showsText ? 6 : 8)
-                .frame(minWidth: showsText ? 46 : 34)
+                .padding(.horizontal, showsText ? z(6) : z(8))
+                .frame(minWidth: showsText ? z(46) : z(34))
                 .frame(maxHeight: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: z(7), style: .continuous)
                         .fill(isOn ? K.accentSoft : (hovering && isEnabled ? K.hover : .clear))
                 )
                 .contentShape(Rectangle())
@@ -103,11 +103,11 @@ struct ToolbarBadge: View {
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 9.5, weight: .bold))
+            .font(.system(size: z(9.5), weight: .bold))
             .monospacedDigit()
             .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .frame(minWidth: 14, minHeight: 14)
+            .padding(.horizontal, z(4))
+            .frame(minWidth: z(14), minHeight: z(14))
             .background(Capsule().fill(K.badge))
             .background(Capsule().stroke(K.control, lineWidth: 3))
             .fixedSize()
@@ -121,16 +121,16 @@ struct ToolbarTooltip: View {
     let shortcut: String?
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(name).font(.system(size: 11.5, weight: .medium)).foregroundStyle(K.label)
+        HStack(spacing: z(10)) {
+            Text(name).font(.system(size: z(11.5), weight: .medium)).foregroundStyle(K.label)
             if let shortcut {
-                Text(shortcut).font(.system(size: 11.5)).foregroundStyle(K.label2)
+                Text(shortcut).font(.system(size: z(11.5))).foregroundStyle(K.label2)
             }
         }
         .lineLimit(1)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .popSurface(radius: 6)
+        .padding(.horizontal, z(8))
+        .padding(.vertical, z(4))
+        .popSurface(radius: z(6))
         .fixedSize()
         .allowsHitTesting(false)
     }
@@ -184,8 +184,8 @@ private struct TooltipModifier: ViewModifier {
                 if shows {
                     // 8 pt below the 30 pt button, like the board's `.tip` (top: 100% + 8px).
                     ToolbarTooltip(name: name, shortcut: shortcut)
-                        .offset(y: 38)
-                        .transition(.opacity.combined(with: .offset(y: -3)))
+                        .offset(y: z(38))
+                        .transition(.opacity.combined(with: .offset(y: -z(3))))
                         .zIndex(100)
                 }
             }

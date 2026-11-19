@@ -5,13 +5,15 @@ import KaernKit
 struct RebaseDraft: Equatable {
     /// The commit (or branch) the commits are replayed onto.
     var base: String
+    /// The commit `base` names, read with the list (see `rewritesPushed`).
+    var baseID: String?
     /// What the Onto pop-up shows for `base` ("develop · 1d77f5b").
     var baseTitle: String
     var steps: [RebaseStep]
-    /// Commits already on the upstream (pushed).
+    /// The listed commits that are already on the upstream (pushed).
     var pushed: Set<String> = []
     var hasUpstream = false
-    /// The first `base` the sheet opened with (moving onto another one rewrites every commit).
+    /// The first `base` the sheet opened with (the Onto pop-up's first choice).
     var originalBase: String
     /// Put uncommitted changes aside first and back afterwards.
     var stashChanges = true
@@ -28,17 +30,34 @@ struct RebaseDraft: Equatable {
         return first.action.joinsPrevious
     }
 
-    /// The rebase rewrites commits that are on the upstream (Push will need force).
+    /// The rebase rewrites commits that are on the upstream (Push will need force). git keeps a
+    /// picked commit as it is when its parent is the commit the rebase has reached: the base, then
+    /// the last commit kept. From the first step that isn't such a pick (dropped steps don't count),
+    /// every commit is a new one, and a squash or fixup there also rewrites the commit it joins.
     var rewritesPushed: Bool {
-        guard !pushed.isEmpty else { return false }
-        if base != originalBase { return true }
-        let pushedSteps = steps.prefix { pushed.contains($0.commit.id) }
-        // The pushed commits must stay first, in order, untouched.
-        let pushedInOrder = steps.filter { pushed.contains($0.commit.id) }
-        return pushedSteps.count != pushedInOrder.count || pushedSteps.contains { $0.action != .pick }
+        let listed = steps.filter { pushed.contains($0.commit.id) }
+        guard !listed.isEmpty else { return false }
+        var kept = Set<String>()
+        var reached = baseID
+        for step in steps where step.action != .drop {
+            if step.action == .pick, let at = reached, step.commit.parents.first == at {
+                kept.insert(step.commit.id)
+                reached = step.commit.id
+                continue
+            }
+            if step.action.joinsPrevious, let joined = reached { kept.remove(joined) }
+            break
+        }
+        return listed.contains { !kept.contains($0.commit.id) }
     }
 
-    var canStart: Bool { !isLoading && !steps.isEmpty && !firstJoinsNothing && resultCount > 0 }
+    /// A reworded commit whose new subject is empty: git stops the rebase at it ("Aborting commit
+    /// due to empty commit message").
+    var hasEmptyReword: Bool {
+        steps.contains { $0.action == .reword && $0.message?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true }
+    }
+
+    var canStart: Bool { !isLoading && !steps.isEmpty && !firstJoinsNothing && resultCount > 0 && !hasEmptyReword }
 
     /// What each row says on the right ("on origin", "into c92aa17", "removed").
     func meta(at index: Int) -> String {
@@ -52,6 +71,32 @@ struct RebaseDraft: Equatable {
         }
         return pushed.contains(step.commit.id) ? "on origin" : ""
     }
+
+    /// The line under the table (`.rcheck`).
+    struct Check: Equatable {
+        enum Kind { case ok, warning, error }
+        let kind: Kind
+        let text: String
+    }
+
+    /// What the line under the table says: ✓ when only unpushed commits change, ⚠ when Push will
+    /// need force, red when the rebase can't run. `remote` is the remote's name ("origin").
+    func check(remote: String?) -> Check? {
+        let names = steps.filter { pushed.contains($0.commit.id) }.map(\.commit.shortID)
+        if firstJoinsNothing {
+            return Check(kind: .error, text: "The first commit can’t be squashed or fixed up — there is nothing above it to join.")
+        } else if rewritesPushed {
+            let list = names.count == 1 ? names[0] : "\(names.count) of these commits"
+            return Check(kind: .warning, text: "\(list) \(names.count == 1 ? "is" : "are") already on \(remote ?? "the remote"). After this rebase, Push will need Force Push (with lease).")
+        } else if !names.isEmpty {
+            return Check(kind: .ok, text: "\(names.count == 1 ? names[0] : names.joined(separator: ", ")) \(names.count == 1 ? "stays" : "stay") as \(names.count == 1 ? "it is" : "they are") — only unpushed commits change, so a normal Push works afterwards.")
+        } else if hasUpstream {
+            return Check(kind: .ok, text: "None of these commits are on \(remote ?? "the remote") yet, so a normal Push works afterwards.")
+        } else if !steps.isEmpty {
+            return Check(kind: .ok, text: "This branch isn’t published yet, so nothing on a remote changes.")
+        }
+        return nil
+    }
 }
 
 extension RepositoryModel {
@@ -64,14 +109,13 @@ extension RepositoryModel {
         sheet = .interactiveRebase(draft)
         Task {
             let loaded = await GitCommandTrigger.$current.withValue(.background("Interactive rebase")) { () async -> RebaseDraft? in
-                guard let commits = try? await repository.commitsToRebase(onto: base) else { return nil }
+                guard let list = try? await Self.rebaseList(onto: base, in: repository) else { return nil }
                 var draft = draft
                 draft.isLoading = false
-                draft.steps = commits.map { RebaseStep(commit: $0) }
-                if let unpushed = await repository.unpushedCommits() {
-                    draft.hasUpstream = true
-                    draft.pushed = Set(commits.map(\.id)).subtracting(unpushed)
-                }
+                draft.steps = list.commits.map { RebaseStep(commit: $0) }
+                draft.baseID = list.baseID
+                draft.hasUpstream = list.pushed != nil
+                draft.pushed = list.pushed ?? []
                 // Squash N into One: the oldest picked commit stays, the others fold into it.
                 if !squashing.isEmpty {
                     var seenFirst = false
@@ -156,15 +200,29 @@ extension RepositoryModel {
         next.isLoading = true
         sheet = .interactiveRebase(next)
         Task {
-            let commits = (try? await GitCommandTrigger.$current.withValue(.background("Interactive rebase")) {
-                try await repository.commitsToRebase(onto: base)
-            }) ?? []
+            let list = try? await GitCommandTrigger.$current.withValue(.background("Interactive rebase")) {
+                try await Self.rebaseList(onto: base, in: repository)
+            }
             guard case .interactiveRebase(var current) = sheet, current.base == base else { return }
             let actions = Dictionary(draft.steps.map { ($0.commit.id, $0) }, uniquingKeysWith: { first, _ in first })
-            current.steps = commits.map { actions[$0.id] ?? RebaseStep(commit: $0) }
+            current.steps = (list?.commits ?? []).map { actions[$0.id] ?? RebaseStep(commit: $0) }
+            // Another base lists other commits, and which of them are pushed is read again with them.
+            current.baseID = list?.baseID
+            current.hasUpstream = list?.pushed != nil
+            current.pushed = list?.pushed ?? []
             current.isLoading = false
             sheet = .interactiveRebase(current)
         }
+    }
+
+    /// What the sheet lists for `base`: the commits a rebase onto it replays, the commit it names,
+    /// and which of the commits are on the upstream (`nil` without an upstream).
+    private static func rebaseList(onto base: String, in repository: GitRepository) async throws
+        -> (commits: [Commit], baseID: String?, pushed: Set<String>?) {
+        let commits = try await repository.commitsToRebase(onto: base)
+        let baseID = await repository.resolve(base + "^{commit}")
+        let pushed = await repository.unpushedCommits().map { Set(commits.map(\.id)).subtracting($0) }
+        return (commits, baseID, pushed)
     }
 
     func updateRebaseDraft(_ change: (inout RebaseDraft) -> Void) {

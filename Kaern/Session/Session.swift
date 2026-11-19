@@ -100,17 +100,24 @@ struct SessionStore {
             let session = try Self.decoder.decode(Session.self, from: data)
             guard session.version <= Session.currentVersion else {
                 Self.log.error("Session file is from a newer Kaern (version \(session.version)); starting empty")
+                // The next save replaces it: the newer Kaern's tabs and windows stay in a copy.
+                keepCopy(named: "newer")
                 return Session()
             }
             return session
         } catch {
             Self.log.error("Couldn't read the session file: \(error.localizedDescription, privacy: .public)")
             // Keep the unreadable file for inspection instead of overwriting it silently.
-            let backup = url.deletingPathExtension().appendingPathExtension("unreadable.json")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.copyItem(at: url, to: backup)
+            keepCopy(named: "unreadable")
             return Session()
         }
+    }
+
+    /// Copies the session file to `Session.<name>.json` next to it.
+    private func keepCopy(named name: String) {
+        let backup = url.deletingPathExtension().appendingPathExtension("\(name).json")
+        try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.copyItem(at: url, to: backup)
     }
 
     func save(_ session: Session) {

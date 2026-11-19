@@ -13,23 +13,27 @@ nonisolated enum PaneSizes {
     /// The least each pane can be dragged to. None has a most of its own: a column grows until the
     /// middle has `middleMin` left (the list, until the repository beside it has `screenLeast`),
     /// the drawer until the graph has `graphMin`.
-    static let sidebarMin: CGFloat = 180
-    static let panelMin: CGFloat = 280
-    static let listMin: CGFloat = 180
-    static let drawerMin: CGFloat = 180
+    static var sidebarMin: CGFloat { z(180) }
+    static var panelMin: CGFloat { z(280) }
+    static var listMin: CGFloat { z(180) }
+    static var drawerMin: CGFloat { z(180) }
     /// What the middle (the graph, Review, a stash, Explore) keeps when the columns beside it grow.
-    static let middleMin: CGFloat = 400
+    static var middleMin: CGFloat { z(400) }
     /// What the graph keeps above Focus's drawer.
-    static let graphMin: CGFloat = 150
+    static var graphMin: CGFloat { z(150) }
     /// What an open sidebar or panel leaves of the graph when it's over it (a narrow window).
-    static let overlayGap: CGFloat = 120
+    static var overlayGap: CGFloat { z(120) }
     /// What the repository beside the list needs: its sidebar, panel and middle at their least.
-    static let screenLeast = sidebarMin + panelMin + middleMin
+    static var screenLeast: CGFloat { sidebarMin + panelMin + middleMin }
 
-    /// The stored size, or `board` when there's none, within `range`.
+    /// The stored size, or `board` when there's none, within `range`. What's stored is the size at
+    /// actual size (`kept`), so a pane keeps its share of the window at any zoom.
     static func size(_ stored: Double, board: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
-        min(max(stored > 0 ? CGFloat(stored) : board, range.lowerBound), range.upperBound)
+        min(max(stored > 0 ? z(CGFloat(stored)) : board, range.lowerBound), range.upperBound)
     }
+
+    /// A size a pane was dragged to, as it's stored: at actual size.
+    static func kept(_ size: CGFloat) -> Double { Double(size / UIScale.value) }
 
     /// `lower` up to `upper`, or just `lower` when there's no room above it.
     static func range(_ lower: CGFloat, _ upper: CGFloat) -> ClosedRange<CGFloat> {
@@ -101,7 +105,7 @@ struct PaneResizeHandle: View {
     var body: some View {
         let across = side == .top
         Color.clear
-            .frame(width: across ? nil : 9, height: across ? 9 : nil)
+            .frame(width: across ? nil : z(9), height: across ? z(9) : nil)
             .frame(maxWidth: across ? .infinity : nil, maxHeight: across ? nil : .infinity)
             .contentShape(Rectangle())
             .pointerStyle(pointer)
@@ -120,7 +124,7 @@ struct PaneResizeHandle: View {
                     .onEnded { _ in start = nil }
             )
             .onTapGesture(count: 2, perform: reset)
-            .offset(x: side == .trailing ? 4.5 : side == .leading ? -4.5 : 0, y: across ? -4.5 : 0)
+            .offset(x: side == .trailing ? z(4.5) : side == .leading ? -z(4.5) : 0, y: across ? -z(4.5) : 0)
             .accessibilityElement()
             .accessibilityLabel(label)
             .accessibilityValue("\(Int(size.rounded())) points")
@@ -164,8 +168,39 @@ enum PaneFrames {
 extension View {
     /// Debug builds: tells the driver where this pane is (`dump` › `phase5.layout.panes`).
     func debugPaneFrame(_ name: String, window: UUID) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { PaneFrames.frames[window, default: [:]][name] = $0 }
-            .onDisappear { PaneFrames.frames[window]?[name] = nil }
+        modifier(DebugFrameReport(key: "pane:\(window):\(name)") { frame in
+            if let frame { PaneFrames.frames[window, default: [:]][name] = frame } else { PaneFrames.frames[window]?[name] = nil }
+        })
+    }
+}
+
+/// Debug builds: where a view is in the window, told when it moves and when it comes back on
+/// screen unmoved (its tab shows again), and `nil` when it leaves. `key` names what the frame is
+/// told for: a view made anew (the zoom changed) takes it over, and the one it replaces, which
+/// leaves a moment later, then says nothing.
+struct DebugFrameReport: ViewModifier {
+    let key: String
+    let report: (CGRect?) -> Void
+    @State private var place = FramePlace()
+    private static var tellers: [String: ObjectIdentifier] = [:]
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                place.frame = frame
+                Self.tellers[key] = ObjectIdentifier(place)
+                report(frame)
+            }
+            .onAppear {
+                guard let frame = place.frame else { return }
+                Self.tellers[key] = ObjectIdentifier(place)
+                report(frame)
+            }
+            .onDisappear {
+                guard Self.tellers[key] == ObjectIdentifier(place) else { return }
+                Self.tellers[key] = nil
+                report(nil)
+            }
     }
 }
 #else

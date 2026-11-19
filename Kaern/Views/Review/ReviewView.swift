@@ -10,8 +10,15 @@ struct ReviewView: View {
     @AppStorage(SettingsKey.diffWords, store: .kaern) private var words = true
     /// Files whose "Show More Lines" was clicked: how many lines they show.
     @State private var limits: [String: Int] = [:]
+    /// How many files All Files has rows for: the first ones, and more as the list is scrolled to
+    /// their end. A working copy can hold a thousand files, and the rows of each are worked out
+    /// before the first one shows.
+    @State private var fileLimit = ReviewView.firstFiles
+    /// The rows of the files shown, kept from one pass to the next (`DiffRowCache`).
+    @State private var rowCache = DiffRowCache()
 
     private static let lineLimit = 2_000
+    private static let firstFiles = 40
 
     var body: some View {
         let state = repository.review ?? ReviewState()
@@ -37,15 +44,19 @@ struct ReviewView: View {
         .overlay(alignment: .bottom) {
             if !repository.linePicks.isEmpty {
                 LinePickBar(repository: repository)
-                    .padding(.bottom, 44)
-                    .transition(.opacity.combined(with: .offset(y: 6)))
+                    .padding(.bottom, z(44))
+                    .transition(.opacity.combined(with: .offset(y: z(6))))
             }
         }
         .animation(.easeOut(duration: 0.15), value: repository.linePicks.isEmpty)
         .diffSettings()
         .onAppear { repository.diffViewers += 1 }
         .onDisappear { repository.diffViewers -= 1 }
-        .onChange(of: repository.selection) { limits = [:] }
+        .onChange(of: repository.selection) {
+            limits = [:]
+            fileLimit = Self.firstFiles
+        }
+        .onChange(of: repository.review?.compare) { fileLimit = Self.firstFiles }
     }
 
     /// The right-click menu a file's chip and header open: the same as its row in the panel
@@ -91,17 +102,23 @@ struct ReviewView: View {
             VStack(spacing: 0) {
                 if state.showsAllFiles {
                     FileIndex(files: files, target: contextTarget) { path in
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("file:" + path, anchor: .top) }
+                        // A file further down than the list has rows for: those first.
+                        if let index = files.firstIndex(where: { $0.path == path }), index >= fileLimit {
+                            fileLimit = index + Self.firstFiles / 2
+                            DispatchQueue.main.async { proxy.scrollTo("file:" + path, anchor: .top) }
+                        } else {
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("file:" + path, anchor: .top) }
+                        }
                     }
                 }
                 ScrollView {
                     LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        ForEach(shown) { file in
+                        ForEach(shown.prefix(fileLimit)) { file in
                             Section {
                                 if let special = file.special {
                                     SpecialFileView(file: file, special: special, repository: repository, inList: true)
                                 } else {
-                                    let rows = DiffRowItem.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
+                                    let rows = rowCache.rows(for: file, layout: layout, limit: limits[file.path] ?? Self.lineLimit, words: words)
                                     let picking = picking(for: file)
                                     ForEach(rows) { item in
                                         DiffRowView(item: item, repository: repository, picking: picking) {
@@ -119,8 +136,15 @@ struct ReviewView: View {
                                 }
                             }
                         }
+                        if shown.count > fileLimit {
+                            // Scrolled to the end of the files that have rows: the next ones get theirs.
+                            Color.clear
+                                .frame(height: 1)
+                                .onAppear { fileLimit += Self.firstFiles }
+                                .id(fileLimit)
+                        }
                     }
-                    .padding(.bottom, 20)
+                    .padding(.bottom, z(20))
                 }
                 .contextClip()
                 .diffSideScrolling(resetKey: shown.map(\.path).joined(separator: "\n") + "\(layout)")
@@ -129,9 +153,9 @@ struct ReviewView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: z(6)) {
             Text(repository.review?.compare != nil ? "No differences" : repository.selection == .workingCopy ? "No changes to review" : "This commit changes no files")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: z(13), weight: .semibold))
                 .foregroundStyle(K.label2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -149,21 +173,21 @@ private struct ReviewHeader: View {
     var body: some View {
         let current = currentIndex
         let file = files.indices.contains(current) ? files[current] : nil
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             Button { repository.review = nil } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: z(3)) {
                     Icon(Icons.arrowLeft, size: 12)
-                    Text("History").font(.system(size: 13, weight: .semibold))
+                    Text("History").font(.system(size: z(13), weight: .semibold))
                 }
                 .foregroundStyle(K.accentText)
-                .padding(.leading, 5)
-                .padding(.trailing, 10)
-                .frame(height: 28)
+                .padding(.leading, z(5))
+                .padding(.trailing, z(10))
+                .frame(height: z(28))
                 .contentShape(Rectangle())
             }
             .buttonStyle(AccentPlateStyle())
             .keyboardShortcut(.cancelAction)
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 if !state.showsAllFiles, let file {
                     StatusTile(letter: file.letter)
                     Text(file.path).truncationMode(.middle)
@@ -173,7 +197,7 @@ private struct ReviewHeader: View {
                     Text(title).truncationMode(.tail)
                 }
             }
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: z(13), weight: .semibold))
             .lineLimit(1)
             .layoutPriority(-1)
             if state.showsAllFiles || file?.special == nil {
@@ -183,17 +207,17 @@ private struct ReviewHeader: View {
             Spacer(minLength: 0)
             if !state.showsAllFiles, let file, !file.pickable.isEmpty, state.compare == nil {
                 Text(Self.stagedLines(file))
-                    .font(.system(size: 12))
+                    .font(.system(size: z(12)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                     .fixedSize()
             }
             if !state.showsAllFiles, !files.isEmpty {
-                HStack(spacing: 2) {
+                HStack(spacing: z(2)) {
                     StepButton(icon: Icons.arrowLeft, label: "Previous file") { show(current - 1) }
                         .disabled(current <= 0)
                     Text("\(current + 1) of \(files.count)")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: z(11.5)))
                         .foregroundStyle(K.label2)
                         .fixedSize()
                     StepButton(icon: Icons.arrowRight, label: "Next file") { show(current + 1) }
@@ -213,9 +237,9 @@ private struct ReviewHeader: View {
                 .disabled(!repository.canChangeIndex)
             }
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
-        .frame(height: 44)
+        .padding(.leading, z(8))
+        .padding(.trailing, z(12))
+        .frame(height: z(44))
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
@@ -240,7 +264,7 @@ private struct ReviewHeader: View {
         case .workingCopy:
             return "Uncommitted changes · " + Formatters.count(files.count, "file", "files")
         case .commit(let id):
-            return repository.commits.first { $0.id == id }?.subject ?? String(id.prefix(7))
+            return repository.commit(id)?.subject ?? String(id.prefix(7))
         }
     }
 
@@ -261,10 +285,10 @@ struct KindPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: z(11), weight: .semibold))
             .foregroundStyle(K.label2)
-            .padding(.horizontal, 7)
-            .frame(height: 18)
+            .padding(.horizontal, z(7))
+            .frame(height: z(18))
             .background(Capsule().fill(K.hover))
             .fixedSize()
     }
@@ -275,28 +299,47 @@ private struct FileIndex: View {
     let files: [ReviewFile]
     let target: (ReviewFile) -> ContextTarget
     let jump: (String) -> Void
+    /// How many files have a chip: a chip for each of a thousand files filled the window (and took
+    /// seconds to make). The rest come a hundred at a time from the last chip.
+    @State private var limit = FileIndex.firstChips
+
+    private static let firstChips = 40
 
     var body: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(files) { file in
+        FlowLayout(spacing: z(6)) {
+            ForEach(files.prefix(limit)) { file in
                 Button { jump(file.path) } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: z(6)) {
                         StatusTile(letter: file.letter)
-                        Text(file.name).font(.system(size: 12)).foregroundStyle(K.label).lineLimit(1)
+                        Text(file.name).font(.system(size: z(12))).foregroundStyle(K.label).lineLimit(1)
                     }
-                    .padding(.leading, 5)
-                    .padding(.trailing, 9)
-                    .frame(height: 24)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(K.hover))
+                    .padding(.leading, z(5))
+                    .padding(.trailing, z(9))
+                    .frame(height: z(24))
+                    .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.hover))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(file.path)
-                .contextTarget(target(file), ring: ContextRing(radius: 7, inset: 0))
+                .contextTarget(target(file), ring: ContextRing(radius: z(7), inset: 0))
+            }
+            if files.count > limit {
+                Button { limit += 100 } label: {
+                    Text("\((files.count - limit).formatted()) more")
+                        .font(.system(size: z(12)))
+                        .foregroundStyle(K.label2)
+                        .lineLimit(1)
+                        .padding(.horizontal, z(9))
+                        .frame(height: z(24))
+                        .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(K.hover))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show chips for the next files")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, z(16))
+        .padding(.vertical, z(10))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(K.content)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
@@ -308,18 +351,18 @@ private struct FileSectionHeader: View {
     let file: ReviewFile
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             StatusTile(letter: file.letter)
             FilePathText(path: file.path, nameWeight: .semibold, size: 13)
             if let part = file.partText {
-                Text(part).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(K.accentText).fixedSize()
+                Text(part).font(.system(size: z(10.5), weight: .semibold)).foregroundStyle(K.accentText).fixedSize()
             }
             Spacer(minLength: 0)
             LineCounts(additions: file.additions, deletions: file.deletions)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 14)
-        .frame(height: 36)
+        .padding(.leading, z(16))
+        .padding(.trailing, z(14))
+        .frame(height: z(36))
         .background(K.inspector)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
@@ -338,7 +381,7 @@ struct AccentPlateStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: z(7), style: .continuous)
                         .fill(hovering || configuration.isPressed ? K.accentSoft : .clear)
                 )
                 .onHover { hovering = $0 }
@@ -349,27 +392,27 @@ struct AccentPlateStyle: ButtonStyle {
 /// `.lshint`: how picking works, and the legend.
 private struct LinePickHint: View {
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: z(10)) {
             Text("Click a changed line to pick it · ⇧-click picks a range · ⌘-click adds one")
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
-            HStack(spacing: 5) {
-                RoundedRectangle(cornerRadius: 2).fill(K.accentSoft)
-                    .overlay(alignment: .leading) { K.accent.frame(width: 3) }
-                    .frame(width: 10, height: 10)
+            HStack(spacing: z(5)) {
+                RoundedRectangle(cornerRadius: z(2)).fill(K.accentSoft)
+                    .overlay(alignment: .leading) { K.accent.frame(width: z(3)) }
+                    .frame(width: z(10), height: z(10))
                 Text("picked")
-                RoundedRectangle(cornerRadius: 2).fill(K.addGut)
-                    .frame(width: 10, height: 10)
-                    .padding(.leading, 8)
+                RoundedRectangle(cornerRadius: z(2)).fill(K.addGut)
+                    .frame(width: z(10), height: z(10))
+                    .padding(.leading, z(8))
                 Text("staged")
             }
             .fixedSize()
         }
-        .font(.system(size: 11.5))
+        .font(.system(size: z(11.5)))
         .foregroundStyle(K.label2)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
+        .padding(.horizontal, z(14))
+        .frame(height: z(30))
         .background(K.alt)
         .overlay(alignment: .bottom) { K.sep.frame(height: 1) }
     }
@@ -384,10 +427,10 @@ struct LinePickBar: View {
         let unstaged = picks.unstaged.count
         let staged = picks.staged.count
         let total = picks.lines.count
-        HStack(spacing: 8) {
+        HStack(spacing: z(8)) {
             Text(total == 1 ? "1 line picked" : "\(total) lines picked")
                 .font(KFont.weighted(12.5, 0.35))
-                .padding(.trailing, 4)
+                .padding(.trailing, z(4))
             if unstaged > 0 {
                 PrimaryButton(title: unstaged == 1 ? "Stage 1 Line" : "Stage \(unstaged) Lines") { repository.stagePickedLines() }
                 GhostButton(title: unstaged == 1 ? "Discard 1 Line" : "Discard \(unstaged) Lines") { repository.discardPickedLines() }
@@ -397,15 +440,33 @@ struct LinePickBar: View {
             Button { repository.clearLinePicks() } label: {
                 Icon(Icons.close, size: 11)
                     .foregroundStyle(K.label2)
-                    .frame(width: 22, height: 22)
+                    .frame(width: z(22), height: z(22))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(HoverPlateStyle(radius: 6))
+            .buttonStyle(HoverPlateStyle(radius: z(6)))
             .accessibilityLabel("Clear picked lines")
         }
         .disabled(!repository.canChangeIndex)
-        .padding(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 8))
-        .popSurface(radius: 12)
+        .padding(EdgeInsets(top: z(7), leading: z(14), bottom: z(7), trailing: z(8)))
+        .popSurface(radius: z(12))
         .fixedSize()
+    }
+}
+
+/// The rows of the files Review shows, kept while the file, the layout and the limits stay the same:
+/// the diff of a file is cut into rows (and its edited lines compared word by word) once, not on
+/// every pass of the view.
+@MainActor
+private final class DiffRowCache {
+    private var entries: [String: (file: ReviewFile, layout: DiffLayout, limit: Int, words: Bool, rows: [DiffRowItem])] = [:]
+
+    func rows(for file: ReviewFile, layout: DiffLayout, limit: Int, words: Bool) -> [DiffRowItem] {
+        if let entry = entries[file.path], entry.layout == layout, entry.limit == limit, entry.words == words, entry.file == file {
+            return entry.rows
+        }
+        let rows = DiffRowItem.rows(for: file, layout: layout, limit: limit, words: words)
+        if entries.count >= 400 { entries.removeAll() }
+        entries[file.path] = (file, layout, limit, words, rows)
+        return rows
     }
 }

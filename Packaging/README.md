@@ -18,15 +18,13 @@ There are two kinds of versions:
 | Where | What |
 |---|---|
 | `.github/workflows/release.yml` | On a version tag: build, sign and notarize → GitHub release → appcast on `gh-pages`. |
-| `.github/workflows/ci.yml` | On each pull request and each push to `main` (unless only `site/` changed): the KaernKit tests, a Debug build, and the release build signed ad hoc. |
-| `.github/workflows/site.yml` | On each push to `main` that changes `site/`: the website onto `gh-pages`. |
+| `.github/workflows/ci.yml` | On each pull request and each push to `develop` or `main`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, the notes, and tries on your Mac. |
 | `CHANGELOG.md` | Each version's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
 | `Packaging/DMG/` | The background of the DMG's window, at 1x and 2x (`script/make_dmg_background.swift` draws it). |
-| `gh-pages` branch | The appcast and the website, served by GitHub Pages at kaern.progresshans.com. The release workflow commits the appcast, `site.yml` the website. Kaern's `SUFeedURL`, `https://progresshans.github.io/kaern/appcast.xml`, forwards there. |
+| `gh-pages` branch | The appcast, which the release workflow commits, served by GitHub Pages at `https://progresshans.github.io/kaern/appcast.xml`: Kaern's `SUFeedURL`. Nothing else lives there. The website, kaern.progresshans.com, has a repository of its own, which holds the domain. |
 | `.env` (from `.env.example`) | Your settings for tries on your Mac. |
-| `site/` | The website, kaern.progresshans.com, published on `gh-pages` by `site.yml` ([site/README.md](../site/README.md)). Releases don't change it. |
 
 Updates only run in Release builds. Debug builds (`./script/build_and_run.sh`, the flow checks) never start the
 updater, and they show no Check for Updates… item.
@@ -98,33 +96,43 @@ The project's own `MARKETING_VERSION` is only what Debug builds and tries on you
    - Mac runners are free for public repositories; a private one spends its Actions minutes at ten times the rate.
 7. **GitHub Pages**, after the first release (it makes the `gh-pages` branch): in Settings › Pages, set Source to
    "Deploy from a branch", the branch to `gh-pages` and the folder to `/ (root)`. The appcast is then at
-   `https://progresshans.github.io/kaern/appcast.xml`, Kaern's `SUFeedURL`. With the website's custom domain set
-   ([site/README.md](../site/README.md)), GitHub forwards it to `https://kaern.progresshans.com/appcast.xml`.
+   `https://progresshans.github.io/kaern/appcast.xml`, Kaern's `SUFeedURL`. Leave the custom domain empty: the
+   website has kaern.progresshans.com, in a repository of its own, and the appcast mustn't move with it.
    - Until then, copies find no appcast. They're all on the first release anyway.
    - For another place, change `SUFeedURL` and `KaernSourceURL` in `Packaging/Info.plist` and
      `KAERN_GITHUB_REPOSITORY` in `.env`.
 
 ## Each release
 
+Work lands on `develop`, and `main` is the last release. A beta is tagged on `develop`, a release on `main`; the
+release workflow stops for a tag that isn't on its branch.
+
 1. While you work, write what changes for people under `## [Unreleased]` in `CHANGELOG.md`.
-2. **A beta:** tag the commit on `main` and push the tag.
+2. **A beta:** tag the commit on `develop`, and push the branch and the tag.
    ```
-   git tag v1.1.0-beta.1 && git push origin v1.1.0-beta.1
+   git tag v1.1.0-beta.1 develop && git push origin develop v1.1.0-beta.1
    ```
    Its notes are `[Unreleased]`. When that's empty, they're the subjects of the commits since the last version.
-3. **A release:** rename `## [Unreleased]` to the version and the date, as in `## [1.1.0] - 2026-12-01`, and start a
-   new empty `## [Unreleased]` above it. `script/release.sh notes 1.1.0` shows what the update window will show.
-   Commit, push `main`, then tag and push:
+3. **A release:** on `develop`, rename `## [Unreleased]` to the version and the date, as in `## [1.1.0] - 2026-12-01`,
+   and start a new empty `## [Unreleased]` above it. `script/release.sh notes 1.1.0` shows what the update window will
+   show. Commit. Then merge `develop` into `main` with a merge commit, which records what the release took in, move
+   `develop` up to that commit, so the next beta counts its commits from this release, and tag it:
    ```
-   git tag v1.1.0 && git push origin v1.1.0
+   git switch main && git merge --no-ff develop -m "Release 1.1.0"
+   git switch develop && git merge --ff-only main
+   git push origin main develop
+   git tag v1.1.0 main && git push origin v1.1.0
    ```
-4. Actions › Release takes about 10 to 20 minutes, most of it waiting for Apple:
+4. **A fix for the release alone:** branch from `main`, merge the fix into `main` and release it from there as in 3,
+   with its notes in `CHANGELOG.md`. Then `git switch develop && git merge main`, so `develop` has the fix too. Its
+   version has to be newer than every version the appcast offers, betas included.
+5. Actions › Release takes about 10 to 20 minutes, most of it waiting for Apple:
    - **Build, sign and notarize** (on a GitHub Mac, with the release environment's secrets): the script's checks, the
      DMG and the ZIP, and the appcast entry.
    - **Publish:** the GitHub release (a pre-release for a beta) with the DMG, the ZIP and `SHA256SUMS` (a release also
      with `Kaern.dmg`, the same DMG under the name the website links to), then the
      appcast, committed to `gh-pages` as "Offer <version> as an update". Pages serves it a minute or two later, and
-     installed copies see the update at their next daily check. `main` doesn't change.
+     installed copies see the update at their next daily check. `develop` and `main` don't change.
 
 If a run fails, fix the cause and re-run it in the Actions tab. Publishing can run again: an existing GitHub release
 gets its files replaced, and an appcast that already offers the version isn't committed twice. If the appcast on

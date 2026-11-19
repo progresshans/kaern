@@ -15,15 +15,15 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             if showsHeader {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(repository.name).font(.system(size: 15, weight: .bold)).lineLimit(1)
+                    Text(repository.name).font(.system(size: z(15), weight: .bold)).lineLimit(1)
                     Text(Formatters.abbreviatedPath(repository.path))
-                        .font(.system(size: 11))
+                        .font(.system(size: z(11)))
                         .foregroundStyle(K.label2)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(EdgeInsets(top: 12, leading: 16, bottom: 8, trailing: 16))
+                .padding(EdgeInsets(top: z(12), leading: z(16), bottom: z(8), trailing: z(16)))
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -35,7 +35,7 @@ struct SidebarView: View {
                         worktreeSection.id(SidebarSection.worktrees)
                         submoduleSection.id(SidebarSection.submodules)
                     }
-                    .padding(EdgeInsets(top: 6, leading: 8, bottom: 4, trailing: 8))
+                    .padding(EdgeInsets(top: z(6), leading: z(8), bottom: z(4), trailing: z(8)))
                 }
                 .onAppear {
                     guard let focus else { return }
@@ -51,7 +51,7 @@ struct SidebarView: View {
             .scrollIndicators(.automatic)
             .contextClip()
             filterField
-                .padding(8)
+                .padding(z(8))
         }
         .frame(maxWidth: .infinity)
         .background(K.sidebar)
@@ -122,9 +122,9 @@ struct SidebarView: View {
     /// The checked-out branch: ahead and behind come from git status, the freshest count.
     private func currentRow(_ name: String, title: String, nested: Bool) -> some View {
         SidebarRow(icon: Icons.check, iconColor: K.accent, title: title, nested: nested, isCurrent: true,
-                   ahead: repository.status.ahead, behind: repository.status.behind)
+                   ahead: repository.upstreamDistance.ahead, behind: repository.upstreamDistance.behind)
             .help("\(name) — checked out")
-            .contextTarget(.branch(name), ring: ContextRing(radius: 6, inset: 0))
+            .contextTarget(.branch(name), ring: ContextRing(radius: z(6), inset: 0))
     }
 
     @ViewBuilder
@@ -139,12 +139,12 @@ struct SidebarView: View {
                 .help("\(ref.name) — checked out in the worktree \(tree.name). Click to see it, double-click to open it in its own tab.")
                 .onTapGesture { repository.showWorktree(tree) }
                 .simultaneousGesture(TapGesture(count: 2).onEnded { repository.openWorktree(tree.path) })
-                .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+                .contextTarget(.branch(ref.name), ring: ContextRing(radius: z(6), inset: 0))
         } else {
             SidebarRow(icon: Icons.rowBranch, title: title, nested: nested, ahead: ref.ahead, behind: ref.behind)
                 .help(ref.upstream.map { "\(ref.name) — tracks \($0). Double-click to switch." } ?? "\(ref.name) — double-click to switch.")
                 .onTapGesture(count: 2) { repository.from("Sidebar › double-click branch") { repository.switchBranch(ref.name) } }
-                .contextTarget(.branch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+                .contextTarget(.branch(ref.name), ring: ContextRing(radius: z(6), inset: 0))
         }
     }
 
@@ -215,10 +215,14 @@ struct SidebarView: View {
                 let rest = folder.branches.count - limit
                 if rest > 0 {
                     // "35 more — type to filter": a click shows more, then more as the list scrolls to them.
+                    // (Scrolled into view, not `onAppear`: the rows aren't lazy, so that ran whenever
+                    // the sidebar was made again, a tab switch included, and never on scrolling.)
                     SidebarRow(title: rest.formatted() + " more" + (filter.isEmpty ? " — type to filter" : ""),
                                depth: 2, isLink: true)
                         .onTapGesture { showMore(key) }
-                        .onAppear { if repository.sidebar.remoteFolderExtra[key] != nil { showMore(key) } }
+                        .onScrollVisibilityChange(threshold: 0.5) { visible in
+                            if visible, repository.sidebar.remoteFolderExtra[key] != nil { showMore(key) }
+                        }
                         .accessibilityAddTraits(.isButton)
                 }
             }
@@ -233,7 +237,7 @@ struct SidebarView: View {
             .help("\(ref.name) — click to show it in the graph, double-click to check out a local branch that tracks it.")
             .onTapGesture(count: 2) { repository.from("Sidebar › double-click remote branch") { repository.checkoutRemoteBranch(ref) } }
             .onTapGesture { repository.showRemoteBranch(ref) }
-            .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: 6, inset: 0))
+            .contextTarget(.remoteBranch(ref.name), ring: ContextRing(radius: z(6), inset: 0))
     }
 
     private func toggleRemoteFolder(_ key: String) {
@@ -283,7 +287,7 @@ struct SidebarView: View {
         ) {
             ForEach(shown) { tag in
                 SidebarRow(title: tag.name, flat: true, meta: tag.date.map { Formatters.shortDate($0) })
-                    .contextTarget(.tag(tag.name), ring: ContextRing(radius: 6, inset: 0))
+                    .contextTarget(.tag(tag.name), ring: ContextRing(radius: z(6), inset: 0))
             }
             if tags.count > limit, filter.isEmpty {
                 SidebarRow(title: repository.sidebar.showsAllTags ? "Show Fewer" : "Show \(tags.count - limit) More", flat: true, isLink: true)
@@ -310,7 +314,7 @@ struct SidebarView: View {
                 SidebarRow(title: copy ? RepositoryModel.stashTitle(stash) : stash.message, flat: true,
                            isCurrent: repository.screen == .stash(stash.id),
                            subtitle: ([stash.reference] + (copy ? ["auto"] : []) + [stashDate(stash.date)]).joined(separator: " · "))
-                    .contextTarget(.stash(stash.id), ring: ContextRing(radius: 6, inset: 0))
+                    .contextTarget(.stash(stash.id), ring: ContextRing(radius: z(6), inset: 0))
                     .onTapGesture { repository.openStash(stash.id) }
                     .accessibilityAddTraits(.isButton)
             }
@@ -376,17 +380,17 @@ struct SidebarView: View {
     }
 
     private var filterField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: z(6)) {
             Icon(Icons.search(1.4), size: 13)
                 .foregroundStyle(K.label2)
             TextField("Filter branches, tags, stashes", text: $repository.sidebar.filter)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: z(12)))
                 .foregroundStyle(K.label)
             if !repository.sidebar.filter.isEmpty {
                 // ScreenBigRepo: "43 matches".
                 Text(Formatters.count(matchCount, "match", "matches"))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: z(11.5)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                     .fixedSize()
@@ -399,9 +403,9 @@ struct SidebarView: View {
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, 9)
-        .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(K.hover))
+        .padding(.horizontal, z(9))
+        .frame(height: z(28))
+        .background(RoundedRectangle(cornerRadius: z(8), style: .continuous).fill(K.hover))
     }
 }
 
@@ -417,32 +421,32 @@ private struct WorktreeSidebarRow: View {
         let isOn = repository.selectedWorktree == tree.path
         let changes = repository.worktreeChanges[tree.path] ?? 0
         let highlighted = isCurrent && !showsOther
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: z(8)) {
+            VStack(alignment: .leading, spacing: z(2)) {
                 Text(tree.name)
-                    .font(highlighted ? KFont.body650 : .system(size: 13))
+                    .font(highlighted ? KFont.body650 : .system(size: z(13)))
                     .foregroundStyle(highlighted ? K.accentText : K.label)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(subtitle(isCurrent: isCurrent, changes: changes))
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if !isCurrent, changes > 0 {
-                Circle().fill(K.warn).frame(width: 7, height: 7).help("Uncommitted changes")
+                Circle().fill(K.warn).frame(width: z(7), height: z(7)).help("Uncommitted changes")
             }
             if isCurrent {
                 Icon(Icons.check, size: 13).foregroundStyle(K.accent)
             }
         }
         .padding(.leading, SidebarMetric.flatLeading)
-        .padding(.trailing, 8)
-        .frame(height: 42)
+        .padding(.trailing, z(8))
+        .frame(height: z(42))
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: z(6), style: .continuous)
                 .fill(highlighted ? K.accentSoft : (isOn || hovering ? K.hover : .clear))
         )
         .contentShape(Rectangle())
@@ -450,7 +454,7 @@ private struct WorktreeSidebarRow: View {
         .onTapGesture { repository.showWorktree(isCurrent ? nil : tree) }
         // Beside the click: its page shows at once, and a second click opens it in its own tab.
         .simultaneousGesture(TapGesture(count: 2).onEnded { if !isCurrent { repository.openWorktree(tree.path) } })
-        .contextTarget(.worktree(tree.path), ring: ContextRing(radius: 6, inset: 0))
+        .contextTarget(.worktree(tree.path), ring: ContextRing(radius: z(6), inset: 0))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .help(isCurrent ? tree.path : "\(tree.path) — double-click to open it in its own tab")
@@ -479,15 +483,15 @@ private struct SubmoduleSidebarRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: z(8)) {
+            VStack(alignment: .leading, spacing: z(2)) {
                 Text(item.path)
-                    .font(.system(size: 13))
+                    .font(.system(size: z(13)))
                     .foregroundStyle(K.label)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(item.detail)
-                    .font(.system(size: 11))
+                    .font(.system(size: z(11)))
                     .foregroundStyle(K.label2)
                     .lineLimit(1)
             }
@@ -501,10 +505,10 @@ private struct SubmoduleSidebarRow: View {
             dot
         }
         .padding(.leading, SidebarMetric.flatLeading)
-        .padding(.trailing, 8)
-        .frame(height: 42)
+        .padding(.trailing, z(8))
+        .frame(height: z(42))
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: z(6), style: .continuous)
                 .fill(isOn ? K.accentSoft : (hovering ? K.hover : .clear))
         )
         .contentShape(Rectangle())
@@ -522,13 +526,13 @@ private struct SubmoduleSidebarRow: View {
     private var dot: some View {
         switch item.state {
         case .notInitialized:
-            Circle().strokeBorder(K.label3, lineWidth: 1.2).frame(width: 7, height: 7)
+            Circle().strokeBorder(K.label3, lineWidth: 1.2).frame(width: z(7), height: z(7))
         case .moved:
-            Circle().fill(K.mod).frame(width: 7, height: 7)
+            Circle().fill(K.mod).frame(width: z(7), height: z(7))
         case .conflicted:
-            Circle().fill(K.err).frame(width: 7, height: 7)
+            Circle().fill(K.err).frame(width: z(7), height: z(7))
         case .upToDate:
-            Circle().fill(K.ok).frame(width: 7, height: 7)
+            Circle().fill(K.ok).frame(width: z(7), height: z(7))
         }
     }
 }
@@ -537,9 +541,9 @@ private struct SubmoduleSidebarRow: View {
 /// folder, a remote's folders and branches, a branch in a remote's folder) moves its icon `step` right of its parent's.
 private enum SidebarMetric {
     /// Left of a section's tile (21 pt).
-    static let tileLeading: CGFloat = 4
+    static var tileLeading: CGFloat { z(4) }
     /// From a tile or an icon to its title.
-    static let gap: CGFloat = 3
+    static var gap: CGFloat { z(3) }
     /// Left of a top-level row's 13 pt icon or chevron: centered under the section's tile.
     static let iconLeading: CGFloat = tileLeading + (21 - 13) / 2
     /// Where a top-level row's title starts.
@@ -547,7 +551,7 @@ private enum SidebarMetric {
     /// Rows without an icon (Tags, Stashes, Worktrees) start where the icons do.
     static let flatLeading: CGFloat = iconLeading
     /// One level in.
-    static let step: CGFloat = 10
+    static var step: CGFloat { z(10) }
 }
 
 /// A section (`.ssec`): hairline on top (not the first), header button, rows when open.
@@ -570,8 +574,8 @@ private struct SidebarSectionView<Rows: View>: View {
                 HStack(spacing: SidebarMetric.gap) {
                     Icon(tile, size: tileSize)
                         .foregroundStyle(.white)
-                        .frame(width: 21, height: 21)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color))
+                        .frame(width: z(21), height: z(21))
+                        .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(color))
                     Text(title)
                         .font(KFont.body650)
                         .foregroundStyle(K.label)
@@ -580,17 +584,17 @@ private struct SidebarSectionView<Rows: View>: View {
                         .font(KFont.weighted(11, 0.35))
                         .monospacedDigit()
                         .foregroundStyle(K.label2)
-                        .padding(.horizontal, 6)
-                        .frame(minWidth: 20, minHeight: 18)
+                        .padding(.horizontal, z(6))
+                        .frame(minWidth: z(20), minHeight: z(18))
                         .background(Capsule().fill(K.chip2))
                     Icon(Icons.chevronDown, size: 10)
                         .foregroundStyle(K.label2)
                         .rotationEffect(.degrees(isOpen ? 0 : -90))
                 }
                 .padding(.leading, SidebarMetric.tileLeading)
-                .padding(.trailing, 8)
-                .frame(height: 32)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? K.hover : .clear))
+                .padding(.trailing, z(8))
+                .frame(height: z(32))
+                .background(RoundedRectangle(cornerRadius: z(7), style: .continuous).fill(hovering ? K.hover : .clear))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -601,8 +605,8 @@ private struct SidebarSectionView<Rows: View>: View {
                 rows
             }
         }
-        .padding(.top, 4)
-        .padding(.bottom, 6)
+        .padding(.top, z(4))
+        .padding(.bottom, z(6))
         .overlay(alignment: .top) {
             if !isFirst { K.sep.frame(height: 1) }
         }
@@ -643,7 +647,7 @@ private struct SidebarRow: View {
                 Icon(Icons.chevronDown, size: 9)
                     .foregroundStyle(K.label2)
                     .rotationEffect(.degrees(chevron ? 0 : -90))
-                    .frame(width: 13)
+                    .frame(width: z(13))
                     .padding(.leading, SidebarMetric.iconLeading + indent)
                     .padding(.trailing, SidebarMetric.gap)
             } else if let icon {
@@ -654,12 +658,12 @@ private struct SidebarRow: View {
             } else {
                 Color.clear.frame(width: flat ? SidebarMetric.flatLeading : SidebarMetric.rowTitleX + indent, height: 1)
             }
-            HStack(spacing: 7) {
+            HStack(spacing: z(7)) {
                 if let subtitle {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: z(2)) {
                         titleText
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(.system(size: z(11)))
                             .foregroundStyle(K.label2)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -671,10 +675,10 @@ private struct SidebarRow: View {
                 }
                 if let meta {
                     Text(meta)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: z(11.5)))
                         .foregroundStyle(K.label2)
                         .lineLimit(1)
-                        .frame(maxWidth: 120, alignment: .trailing)
+                        .frame(maxWidth: z(120), alignment: .trailing)
                         .fixedSize()
                 }
                 if ahead > 0 { Pill(text: "↑\(ahead)", fill: K.accentSoft, color: K.accentText) }
@@ -686,12 +690,12 @@ private struct SidebarRow: View {
                     Icon(Icons.check, size: 13).foregroundStyle(K.accent)
                 }
             }
-            .padding(.trailing, 8)
+            .padding(.trailing, z(8))
         }
-        .frame(height: subtitle == nil ? KMetric.sidebarRow : 42)
+        .frame(height: subtitle == nil ? KMetric.sidebarRow : z(42))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: z(6), style: .continuous)
                 .fill(isCurrent ? K.accentSoft : (isOn || (hovering && !isPlaceholder) ? K.hover : .clear))
         )
         .contentShape(Rectangle())
@@ -715,10 +719,10 @@ private struct SidebarRow: View {
     }
 
     private var font: Font {
-        if isLink { return .system(size: 12, weight: .semibold) }
+        if isLink { return .system(size: z(12), weight: .semibold) }
         if isCurrent { return KFont.body650 }
-        if strong { return .system(size: 13, weight: .semibold) }
-        return .system(size: 13)
+        if strong { return .system(size: z(13), weight: .semibold) }
+        return .system(size: z(13))
     }
 
     private var color: Color {
@@ -746,29 +750,29 @@ private struct RemoteFolderRow: View {
             Icon(Icons.chevronDown, size: 9)
                 .foregroundStyle(K.label2)
                 .rotationEffect(.degrees(open ? 0 : -90))
-                .frame(width: 13)
+                .frame(width: z(13))
                 .padding(.leading, Self.chevronLeading)
-                .padding(.trailing, 4)
+                .padding(.trailing, z(4))
             Icon(Icons.folder, size: 13)
                 .foregroundStyle(K.label2)
                 .padding(.trailing, SidebarMetric.gap)
             Text(title)
-                .font(.system(size: 13))
+                .font(.system(size: z(13)))
                 .foregroundStyle(K.label)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(count)
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .monospacedDigit()
                 .foregroundStyle(K.label2)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.trailing, 8)
+                .padding(.trailing, z(8))
         }
         .frame(height: KMetric.sidebarRow)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+        .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering ? K.hover : .clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
@@ -829,11 +833,11 @@ struct Pill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .bold))
+            .font(.system(size: z(10.5), weight: .bold))
             .monospacedDigit()
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .frame(height: 17)
+            .padding(.horizontal, z(6))
+            .frame(height: z(17))
             .background(Capsule().fill(fill))
             .fixedSize()
     }

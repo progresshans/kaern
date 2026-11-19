@@ -87,5 +87,8 @@ struct BranchTagTests {
         #expect(TagNaming.suggestion(after: ["v0.9.3-alpha.7", "v0.9.3"]) == "v0.9.4-alpha.1")
         #expect(TagNaming.suggestion(after: ["1.2.3", "1.10.0"]) == "1.10.1")
         #expect(TagNaming.suggestion(after: ["v2.0.0-rc.1", "v2.0.0-beta.3"]) == "v2.0.0-rc.2")
+        // Tags with nothing after the prefix used to end the app.
+        #expect(TagNaming.suggestion(after: ["v", "V", "-", "v-", "v-beta"]) == nil)
+        #expect(TagNaming.suggestion(after: ["v", "v1.0.0", "v-"]) == "v1.0.1")
     }
 }

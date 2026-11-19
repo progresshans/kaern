@@ -9,18 +9,18 @@ import AppKit
 ///   Settings › General › Tabs picks 8, 12 or 16).
 /// - When even that doesn't fit, tabs stay at that width and the strip scrolls, with ‹ ›.
 enum TabStripLayout {
-    static let tabMax: CGFloat = 220
-    static let memberMax: CGFloat = 200
+    static var tabMax: CGFloat { z(220) }
+    static var memberMax: CGFloat { z(200) }
     @MainActor static var readableCharacters: CGFloat { CGFloat(AppSettings.tabCharacters) }
     /// Board: label padding 12 + 4, slot 18, tab padding 5.
-    static let tabChrome: CGFloat = 39
+    static var tabChrome: CGFloat { z(39) }
     /// Free space kept at the end of the strip (also a place to drag the window).
-    static let filler: CGFloat = 24
+    static var filler: CGFloat { z(24) }
     /// ‹ and › with their margins.
-    static let arrows: CGFloat = 56
-    static let labelFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
-    static let chipFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
-    static let chipCountFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+    static var arrows: CGFloat { z(56) }
+    static var labelFont: NSFont { NSFont.systemFont(ofSize: z(12), weight: .semibold) }
+    static var chipFont: NSFont { NSFont.systemFont(ofSize: z(12), weight: .semibold) }
+    static var chipCountFont: NSFont { NSFont.systemFont(ofSize: z(12), weight: .medium) }
 
     @MainActor private static var widthCache: [String: CGFloat] = [:]
 
@@ -123,7 +123,7 @@ enum TabStripLayout {
     /// attention dot), plus its margins (6 before, 4 after).
     @MainActor
     static func chipWidth(name: String, trailing: String?, trailingBold: Bool, attention: Bool) -> CGFloat {
-        var width: CGFloat = 10 + 8 + 6 + textWidth(name, font: chipFont)
+        var width: CGFloat = z(10 + 8 + 6) + textWidth(name, font: chipFont)
         if let trailing {
             width += 6 + textWidth(trailing, font: trailingBold ? chipFont : chipCountFont)
         }

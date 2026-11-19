@@ -7,12 +7,12 @@ struct IgnoreSuggestionCard: View {
     let suggestion: IgnoreSuggestion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: z(8)) {
             Text("\(Text("\(suggestion.count.formatted()) of them are in \(suggestion.folder).").bold()) They look generated. Ignore the folder?")
-                .font(.system(size: 12))
-                .lineSpacing(2)
+                .font(.system(size: z(12)))
+                .lineSpacing(z(2))
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
+            HStack(spacing: z(6)) {
                 PrimaryButton(title: "Add to .gitignore") {
                     repository.from("Ignore suggestion") { repository.ignoreSuggestedFolder() }
                 }
@@ -21,11 +21,11 @@ struct IgnoreSuggestionCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(K.modBg)
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
-        .padding(EdgeInsets(top: 10, leading: 10, bottom: 0, trailing: 10))
+        .padding(.horizontal, z(12))
+        .padding(.vertical, z(10))
+        .background(RoundedRectangle(cornerRadius: z(9), style: .continuous).fill(K.modBg)
+            .overlay(RoundedRectangle(cornerRadius: z(9), style: .continuous).strokeBorder(K.sep, lineWidth: 0.5)))
+        .padding(EdgeInsets(top: z(10), leading: z(10), bottom: 0, trailing: z(10)))
     }
 }
 
@@ -67,7 +67,7 @@ struct BigChangesList: View {
                     }
                 }
             }
-            .padding(EdgeInsets(top: 0, leading: 8, bottom: 8, trailing: 8))
+            .padding(EdgeInsets(top: 0, leading: z(8), bottom: z(8), trailing: z(8)))
         }
         .contextClip()
     }
@@ -81,13 +81,13 @@ struct BigChangesList: View {
             let limit = Self.firstFiles + (repository.changeFolderExtra[folder.path] ?? 0)
             ForEach(folder.entries.prefix(limit)) { entry in
                 BigFileRow(repository: repository, entry: entry, shownPath: String(entry.path.dropFirst(folder.path.count)))
-                    .padding(.leading, 22)
+                    .padding(.leading, z(22))
             }
             if folder.entries.count > limit {
                 MoreRow(title: "\((folder.entries.count - limit).formatted()) more in \(folder.path)") {
                     repository.changeFolderExtra[folder.path, default: 0] += Self.batch
                 }
-                .padding(.leading, 22)
+                .padding(.leading, z(22))
             }
         }
     }
@@ -113,7 +113,7 @@ private struct BigFolderRow: View {
 
     var body: some View {
         let allStaged = folder.unstagedCount == 0
-        HStack(spacing: 2) {
+        HStack(spacing: z(2)) {
             StageCheckbox(isOn: allStaged, label: (allStaged ? "Unstage " : "Stage ") + folder.path) {
                 repository.stageFolder(folder, staged: allStaged)
             }
@@ -123,14 +123,14 @@ private struct BigFolderRow: View {
                     if open { repository.openChangeFolders.remove(folder.path) } else { repository.openChangeFolders.insert(folder.path) }
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: z(6)) {
                     Icon(Icons.chevronDown, size: 9)
                         .foregroundStyle(K.label2)
                         .rotationEffect(.degrees(open ? 0 : -90))
                     Icon(Icons.folder, size: 13)
                         .foregroundStyle(K.label2)
                     Text(folder.path)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.system(size: z(12.5), weight: .semibold))
                         .foregroundStyle(suggested ? K.mod : K.label)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -140,9 +140,9 @@ private struct BigFolderRow: View {
                         .monospacedDigit()
                         .foregroundStyle(suggested ? K.mod : K.label2)
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, z(6))
                 .frame(height: KMetric.fileRow)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? K.hover : .clear))
+                .background(RoundedRectangle(cornerRadius: z(6), style: .continuous).fill(hovering ? K.hover : .clear))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -165,7 +165,7 @@ private struct BigFileRow: View {
         let staged = entry.stageState == .staged
         let isReviewed = repository.review.map { !$0.showsAllFiles && $0.path == entry.path } ?? false
         let stat = entry.hasUnstagedChanges ? repository.lineStats.unstaged[entry.path] : repository.lineStats.staged[entry.path]
-        HStack(spacing: 2) {
+        HStack(spacing: z(2)) {
             StageCheckbox(isOn: staged, label: (staged ? "Unstage " : "Stage ") + entry.path) {
                 if staged { repository.unstage([entry.path]) } else { repository.stage([entry.path]) }
             }
@@ -173,21 +173,21 @@ private struct BigFileRow: View {
             Button {
                 repository.review = ReviewState(showsAllFiles: false, path: entry.path)
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: z(7)) {
                     StatusTile(letter: letter, selected: isReviewed)
                     FilePathText(path: shownPath, selected: isReviewed)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if entry.stageState == .partial {
                         Text("partial")
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: z(10.5), weight: .semibold))
                             .foregroundStyle(isReviewed ? .white.opacity(0.85) : K.accentText)
                     }
                     LineCounts(additions: stat?.additions, deletions: stat?.deletions, selected: isReviewed)
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, z(6))
                 .frame(height: KMetric.fileRow)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: z(6), style: .continuous)
                         .fill(isReviewed ? K.sel : (hovering ? K.hover : .clear))
                 )
                 .contentShape(Rectangle())
@@ -195,7 +195,7 @@ private struct BigFileRow: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help(entry.path)
-            .contextTarget(.file(path: entry.path, staged: staged), ring: ContextRing(radius: 6, inset: 0))
+            .contextTarget(.file(path: entry.path, staged: staged), ring: ContextRing(radius: z(6), inset: 0))
         }
     }
 
@@ -217,11 +217,11 @@ private struct MoreRow: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11.5))
+                .font(.system(size: z(11.5)))
                 .foregroundStyle(hovering ? K.accentText : K.label2)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(EdgeInsets(top: 3, leading: 26, bottom: 5, trailing: 6))
+                .padding(EdgeInsets(top: z(3), leading: z(26), bottom: z(5), trailing: z(6)))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
