@@ -314,10 +314,46 @@ public struct GitRepository: Sendable, Hashable {
         return value.isEmpty ? nil : value
     }
 
-    /// When a fetch last finished, from `FETCH_HEAD`.
+    /// When a fetch last finished: when this working tree's `FETCH_HEAD` was written. Before its
+    /// first fetch, the remote branches it shares with the other working trees answer: the newest
+    /// `FETCH_HEAD` of those, or the clone (`git clone` writes no `FETCH_HEAD`, but each
+    /// `<remote>/HEAD`'s reflog says "clone: from <url>"). `nil` while no remote has been fetched:
+    /// a push alone doesn't count. Only a few small files are read: a refresh asks on the main actor.
     public var lastFetchDate: Date? {
-        let path = gitDirectory.appending(path: "FETCH_HEAD").path(percentEncoded: false)
-        return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        Self.modificationDate(of: gitDirectory.appending(path: "FETCH_HEAD")) ?? lastFetchElsewhere()
+    }
+
+    private func lastFetchElsewhere() -> Date? {
+        let fileManager = FileManager.default
+        let common = commonGitDirectory
+        let linked = (try? fileManager.contentsOfDirectory(at: common.appending(path: "worktrees"), includingPropertiesForKeys: nil)) ?? []
+        var dates = ([common] + linked).compactMap { Self.modificationDate(of: $0.appending(path: "FETCH_HEAD")) }
+        let remotes = (try? fileManager.contentsOfDirectory(at: common.appending(path: "logs/refs/remotes"), includingPropertiesForKeys: nil)) ?? []
+        for remote in remotes {
+            guard let data = fileManager.contents(atPath: remote.appending(path: "HEAD").path(percentEncoded: false)),
+                  let date = Self.newestFetch(inReflog: String(decoding: data, as: UTF8.self)) else { continue }
+            dates.append(date)
+        }
+        return dates.max()
+    }
+
+    private static func modificationDate(of file: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false)))?[.modificationDate] as? Date
+    }
+
+    /// The time of a reflog's last clone, fetch or pull (`git pull` fetches too; a push writes
+    /// "update by push", `git remote set-head` "remote set-head"). A line is
+    /// `<old> <new> <name> <email> <seconds> <zone>\t<message>`.
+    static func newestFetch(inReflog text: String) -> Date? {
+        for line in text.split(separator: "\n").reversed() {
+            guard let tab = line.firstIndex(of: "\t") else { continue }
+            let message = line[line.index(after: tab)...]
+            guard message.hasPrefix("clone: ") || message.hasPrefix("fetch") || message.hasPrefix("pull") else { continue }
+            let fields = line[..<tab].split(separator: " ")
+            guard fields.count >= 2, let seconds = TimeInterval(fields[fields.count - 2]) else { continue }
+            return Date(timeIntervalSince1970: seconds)
+        }
+        return nil
     }
 
     /// Checks a new branch name with `git check-ref-format --branch`.

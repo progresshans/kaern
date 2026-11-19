@@ -57,6 +57,9 @@ What changed in each version of Kaern. A version's section is what its update wi
   when a Squash or Fixup folds into one, when they trade places, or when they go onto a branch that has moved on.
 - Choosing another branch in Interactive Rebase's Onto, such as the branch's upstream, no longer says Push will
   need Force Push when the commits already on the remote stay as they are.
+- A repository you've just cloned counts as fetched when it was cloned: the status bar no longer says "Not fetched
+  from origin yet", and the Repositories window shows the time. Before a worktree's first fetch, its tab shows when
+  the repository was last fetched.
 - And many smaller fixes.
 
 ## [1.0.0] - 2026-11-13
