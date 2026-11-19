@@ -53,6 +53,8 @@ What changed in each version of Kaern. A version's section is what its update wi
 - Undoing Create Branch from Stash puts the stash back.
 - The list of remote branches shows more when scrolled to "N more".
 - A tag called "v" no longer stops the suggestion for the next tag name.
+- Interactive Rebase warns that Push will need Force Push when a Squash or Fixup folds into a commit that's
+  already on the remote.
 - And many smaller fixes.
 
 ## [1.0.0] - 2026-11-13

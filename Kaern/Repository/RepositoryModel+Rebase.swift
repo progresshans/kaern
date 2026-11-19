@@ -33,9 +33,13 @@ struct RebaseDraft: Equatable {
         guard !pushed.isEmpty else { return false }
         if base != originalBase { return true }
         let pushedSteps = steps.prefix { pushed.contains($0.commit.id) }
-        // The pushed commits must stay first, in order, untouched.
+        // The pushed commits must stay first, in order, untouched…
         let pushedInOrder = steps.filter { pushed.contains($0.commit.id) }
-        return pushedSteps.count != pushedInOrder.count || pushedSteps.contains { $0.action != .pick }
+        if pushedSteps.count != pushedInOrder.count || pushedSteps.contains(where: { $0.action != .pick }) { return true }
+        // …and nothing may fold into the last of them: a squash or fixup as the next kept step joins
+        // it (dropped steps in between don't count), as the row's "into <hash>" says.
+        guard !pushedSteps.isEmpty else { return false }
+        return steps.dropFirst(pushedSteps.count).first(where: { $0.action != .drop })?.action.joinsPrevious == true
     }
 
     /// A reworded commit whose new subject is empty: git stops the rebase at it ("Aborting commit
@@ -57,6 +61,32 @@ struct RebaseDraft: Equatable {
             return "into \(target.commit.shortID)"
         }
         return pushed.contains(step.commit.id) ? "on origin" : ""
+    }
+
+    /// The line under the table (`.rcheck`).
+    struct Check: Equatable {
+        enum Kind { case ok, warning, error }
+        let kind: Kind
+        let text: String
+    }
+
+    /// What the line under the table says: ✓ when only unpushed commits change, ⚠ when Push will
+    /// need force, red when the rebase can't run. `remote` is the remote's name ("origin").
+    func check(remote: String?) -> Check? {
+        let names = steps.filter { pushed.contains($0.commit.id) }.map(\.commit.shortID)
+        if firstJoinsNothing {
+            return Check(kind: .error, text: "The first commit can’t be squashed or fixed up — there is nothing above it to join.")
+        } else if rewritesPushed {
+            let list = names.count == 1 ? names[0] : "\(names.count) of these commits"
+            return Check(kind: .warning, text: "\(list) \(names.count == 1 ? "is" : "are") already on \(remote ?? "the remote"). After this rebase, Push will need Force Push (with lease).")
+        } else if !names.isEmpty {
+            return Check(kind: .ok, text: "\(names.count == 1 ? names[0] : names.joined(separator: ", ")) \(names.count == 1 ? "stays" : "stay") as \(names.count == 1 ? "it is" : "they are") — only unpushed commits change, so a normal Push works afterwards.")
+        } else if hasUpstream {
+            return Check(kind: .ok, text: "None of these commits are on \(remote ?? "the remote") yet, so a normal Push works afterwards.")
+        } else if !steps.isEmpty {
+            return Check(kind: .ok, text: "This branch isn’t published yet, so nothing on a remote changes.")
+        }
+        return nil
     }
 }
 

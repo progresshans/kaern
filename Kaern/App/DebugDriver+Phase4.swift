@@ -68,9 +68,11 @@ extension DebugDriver {
         }
         guard let window, let tab = window.activeTab else { return }
         let repository = app.repository(for: tab.path)
+        /// A history row's commit, by its index or the start of its hash.
         func commitID(_ text: String?) -> String? {
-            guard let text, let index = Int(text), repository.commits.indices.contains(index) else { return nil }
-            return repository.commits[index].id
+            guard let text, !text.isEmpty else { return nil }
+            if let index = Int(text), repository.commits.indices.contains(index) { return repository.commits[index].id }
+            return repository.commits.first { $0.id.hasPrefix(text) }?.id
         }
         let rest = args.joined(separator: " ")
         switch command {
@@ -113,6 +115,7 @@ extension DebugDriver {
             }
         case "sheet":
             // sheet newBranch [n] | rename <branch> | tag <n> | merge | rebase | delete | settings | ir <n> | fromStash <n> | renameStash <n>
+            // (a commit's n is its history row or the start of its hash)
             switch args.first {
             case "newBranch": repository.askCreateBranch(at: commitID(args.count > 1 ? args[1] : nil))
             case "rename": repository.askRename(branch: args.count > 1 ? args[1] : repository.status.branch ?? "")
@@ -200,7 +203,7 @@ extension DebugDriver {
         case "showInHistory":
             if let id = repository.exploreCommitID { repository.showCommitInHistory(id) }
         case "squash":
-            // squash <n> <n>…
+            // squash <n> <n>… (history rows or the starts of hashes)
             let ids = args.compactMap { commitID($0) }
             repository.from("Debug") { repository.askSquash(ids) }
         default:
@@ -282,8 +285,12 @@ extension DebugDriver {
         if case .interactiveRebase(let draft) = repository.sheet {
             result["rebase"] = [
                 "base": String(draft.base.prefix(7)), "steps": draft.steps.map { "\($0.action.rawValue) \($0.commit.shortID) \($0.commit.subject)" },
+                // What each row says on the right ("on origin", "into c92aa17", "removed").
+                "meta": draft.steps.indices.map { draft.meta(at: $0) },
                 "pushed": draft.pushed.map { String($0.prefix(7)) }.sorted(), "result": draft.resultCount, "canStart": draft.canStart,
                 "rewritesPushed": draft.rewritesPushed, "loading": draft.isLoading,
+                // The line under the table as the sheet shows it: "<ok|warning|error> <text>".
+                "check": draft.check(remote: repository.defaultRemote).map { "\($0.kind) \($0.text)" } ?? "",
             ] as [String: Any]
         }
         return result
