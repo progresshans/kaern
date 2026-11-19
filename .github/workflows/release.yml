@@ -1,6 +1,6 @@
 # Kaern's releases. Pushing a version tag builds the app on a GitHub Mac, signs it with the Developer ID, notarizes it,
 # publishes the DMG and the ZIP as a GitHub release, then adds it to the appcast that offers updates (appcast.xml on the
-# gh-pages branch, which GitHub Pages serves with the website that site.yml puts there):
+# gh-pages branch, which GitHub Pages serves at progresshans.github.io/kaern/appcast.xml):
 # - v1.1.0 makes a release, offered to every copy. Its commit must be on main, which gets develop for a release;
 # - v1.1.0-beta.2 makes a beta: a GitHub pre-release, offered only to copies with Get beta versions on. Its commit
 #   must be on develop, where work lands.

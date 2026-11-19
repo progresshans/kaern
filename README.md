@@ -117,7 +117,8 @@ one, the app is signed to run locally, and macOS asks again for Documents and ot
 build. `KAERN_SIGN_IDENTITY` picks another certificate, and `-` signs to run locally.
 
 The app is `Kaern/` (SwiftUI on AppKit); the git engine and its tests are the `Packages/KaernKit` Swift package.
-[Packaging/README.md](Packaging/README.md) describes releases, and [site/README.md](site/README.md) the website.
+[Packaging/README.md](Packaging/README.md) describes releases. The website, kaern.progresshans.com, has a repository of
+its own.
 
 ## License
 
