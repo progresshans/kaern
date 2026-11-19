@@ -1,4 +1,4 @@
-# Kaern's checks, on each pull request and each push to develop or main, unless only the website (site/, site.yml) changed:
+# Kaern's checks, on each pull request and each push to develop or main:
 # - the KaernKit tests, and a Debug build of the app (with the debug driver the flow checks use);
 # - the release build as a version tag makes it (script/release.sh), but signed ad hoc and not notarized, so it needs
 #   no secrets.
@@ -6,16 +6,10 @@ name: CI
 
 on:
   pull_request:
-    paths-ignore:
-      - "site/**"
-      - ".github/workflows/site.yml"
   push:
     branches:
       - develop
       - main
-    paths-ignore:
-      - "site/**"
-      - ".github/workflows/site.yml"
 
 permissions:
   contents: read
