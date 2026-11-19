@@ -9,7 +9,7 @@ extension DebugDriver {
         "settings", "setting", "fakeAccount",
         "conflicts", "conflictShow", "conflictPick", "conflictKeep", "conflictEdit", "markResolved", "continueOp", "skipOp", "abortOp",
         "undoPop", "openStash", "closeScreen", "stashBranch", "renameStash", "sheet", "sheetName", "sheetSubmit", "sheetClose", "finishFeature",
-        "irAction", "irMove", "irStart", "squash", "type",
+        "irAction", "irMove", "irStart", "irBase", "squash", "type",
         "history", "blame", "historySelect", "blameFocus", "blameBefore", "exploreMode", "blameOption", "showInHistory",
         "autoFetchNow", "fetchAll", "activity", "fakeFailure", "signInSheet", "quickOpen",
     ]
@@ -163,6 +163,13 @@ extension DebugDriver {
                     draft.steps.swapAt(row, target)
                 }
             }
+        case "irBase":
+            // irBase <choice> — picks an item of the Onto pop-up: the commit the sheet opened with (its whole
+            // hash, as `choices` in the dump has it) or a branch's name.
+            if let choice = args.first, case .interactiveRebase(let draft) = repository.sheet,
+               repository.rebaseOntoChoices(draft).contains(where: { $0.id == choice }) {
+                repository.changeRebaseBase(choice)
+            }
         case "irStart":
             if case .interactiveRebase(let draft) = repository.sheet { repository.from("Debug") { repository.startInteractiveRebase(draft) } }
         case "activity":
@@ -285,6 +292,8 @@ extension DebugDriver {
         if case .interactiveRebase(let draft) = repository.sheet {
             result["rebase"] = [
                 "base": String(draft.base.prefix(7)), "steps": draft.steps.map { "\($0.action.rawValue) \($0.commit.shortID) \($0.commit.subject)" },
+                // The Onto pop-up: what it shows chosen, and what it offers (`irBase`).
+                "onto": draft.base, "choices": repository.rebaseOntoChoices(draft).map(\.id),
                 // What each row says on the right ("on origin", "into c92aa17", "removed").
                 "meta": draft.steps.indices.map { draft.meta(at: $0) },
                 "pushed": draft.pushed.map { String($0.prefix(7)) }.sorted(), "result": draft.resultCount, "canStart": draft.canStart,
