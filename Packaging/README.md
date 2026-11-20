@@ -17,8 +17,8 @@ There are two kinds of versions:
 
 | Where | What |
 |---|---|
-| `.github/workflows/release.yml` | On a version tag: build, sign and notarize → GitHub release → appcast on `gh-pages`. |
-| `.github/workflows/ci.yml` | On each pull request and each push to `develop` or `main`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
+| `.github/workflows/release.yml` | On a version tag: build, sign and notarize, with the KaernKit tests beside it → GitHub release → appcast on `gh-pages`. |
+| `.github/workflows/ci.yml` | On each pull request and each push to `develop`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, the notes, and tries on your Mac. |
 | `CHANGELOG.md` | Each version's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
@@ -89,8 +89,9 @@ The project's own `MARKETING_VERSION` is only what Debug builds and tries on you
      | `SPARKLE_PRIVATE_KEY` | The update key's private half, from step 3. |
 
    - Delete the exported `.p12` and the key file once they're in.
-6. **A build on GitHub:** after pushing `main`, check Actions › CI. Besides the KaernKit tests and a Debug build, it
-   makes the release build as a tag would, signed ad hoc and with no secrets, on the same kind of GitHub Mac.
+6. **A build on GitHub:** after pushing `develop`, check Actions › CI. Besides the KaernKit tests and a Debug build,
+   it makes the release build as a tag would, signed ad hoc and with no secrets, on the same kind of GitHub Mac.
+   - A push to `main` starts no CI: `main` only moves for a release, whose workflow tests that commit itself.
    - Both workflows run on GitHub's `xcode-27` image: macOS 27 with its default Xcode 27. It's a public preview and,
      for now, the only macOS 27 image. When GitHub releases a `macos-27` label, change `runs-on` in both.
    - Mac runners are free for public repositories; a private one spends its Actions minutes at ten times the rate.
@@ -129,15 +130,18 @@ release workflow stops for a tag that isn't on its branch.
 5. Actions › Release takes about 10 to 20 minutes, most of it waiting for Apple:
    - **Build, sign and notarize** (on a GitHub Mac, with the release environment's secrets): the script's checks, the
      DMG and the ZIP, and the appcast entry.
-   - **Publish:** the GitHub release (a pre-release for a beta) with the DMG, the ZIP and `SHA256SUMS` (a release also
-     with `Kaern.dmg`, the same DMG under the name the website links to), then the
+   - **Test KaernKit** (on another GitHub Mac at the same time, with no secrets): the tests CI runs.
+   - **Publish**, once both have passed: the GitHub release (a pre-release for a beta) with the DMG, the ZIP and
+     `SHA256SUMS` (a release also with `Kaern.dmg`, the same DMG under the name the website links to), then the
      appcast, committed to `gh-pages` as "Offer <version> as an update". Pages serves it a minute or two later, and
      installed copies see the update at their next daily check. `develop` and `main` don't change.
 
-If a run fails, fix the cause and re-run it in the Actions tab. Publishing can run again: an existing GitHub release
-gets its files replaced, and an appcast that already offers the version isn't committed twice. If the appcast on
-`gh-pages` changed while the release was being built, publishing stops: run the whole workflow again. (The website's
-commits there don't count.)
+If a run fails, fix the cause and re-run it in the Actions tab. When the tests fail, nothing is published. If they
+pass when that job is run again, the build already made is published; a fix in the code is a new commit, which takes
+a new tag (the next beta, or the release's tag moved to it). Publishing can run again: an existing GitHub release gets
+its files replaced, and an appcast that already offers the version isn't committed twice. If the appcast on `gh-pages`
+changed while the release was being built, publishing stops: run the whole workflow again. (The website's commits
+there don't count.)
 
 **To take a version back** from the appcast, revert the commit on `gh-pages` that offered it (or edit `appcast.xml`
 there in GitHub's editor). Pages serves the change in a few minutes, and copies stop being offered that version. Copies

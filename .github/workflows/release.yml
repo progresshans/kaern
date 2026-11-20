@@ -5,7 +5,10 @@
 # - v1.1.0-beta.2 makes a beta: a GitHub pre-release, offered only to copies with Get beta versions on. Its commit
 #   must be on develop, where work lands.
 #
-# The same build, signed ad hoc and with no secrets, runs on each push to develop and main (ci.yml).
+# The KaernKit tests run beside the build, and nothing is published unless both pass.
+#
+# The same tests and the same build, signed ad hoc and with no secrets, run on each pull request and each push to
+# develop (ci.yml).
 #
 # The setup (the release environment and its secrets) is in Packaging/README.md.
 name: Release
@@ -126,9 +129,24 @@ jobs:
         run: |
           if [[ -n "${KAERN_NOTARY_KEYCHAIN:-}" ]]; then security delete-keychain "$KAERN_NOTARY_KEYCHAIN" || true; fi
 
+  test:
+    name: Test KaernKit
+    # Beside the build, on a Mac of its own: no environment, so no secrets. Publishing waits for both, so a version
+    # whose tests fail isn't published. Re-running this job alone then publishes the build already made.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test KaernKit
+        run: swift test --package-path Packages/KaernKit
+
   publish:
     name: Publish the release and the appcast
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
