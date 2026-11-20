@@ -353,6 +353,7 @@ struct BigRepositoryTests {
         #expect(stream.isFinished)
         #expect(try await stream.next(10).isEmpty)
         #expect(stream.count == 50)
+        // No wait here: the record ends in the read that reaches the end of history.
         #expect(events.started == 1 && events.finished == 1)
         #expect(events.lastOutput == "50 commits read")
 

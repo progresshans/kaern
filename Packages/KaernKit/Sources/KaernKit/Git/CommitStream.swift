@@ -25,7 +25,9 @@ public final class CommitStream: @unchecked Sendable {
     private var process: Process?
     private var stopped = false
     private var finishedReading = false
-    /// How git exited (set by its termination handler).
+    /// How git exited (set by its termination handler). The one place that says git has exited:
+    /// `read` and the Command Log's record both go by it, so the record ends in the step that
+    /// reads the end of history.
     private var termination: (status: Int32, reason: Process.TerminationReason)?
     /// Signalled once git has exited, from its termination handler: after the end of git's
     /// output, `read` waits on this for the exit status. (Never `waitUntilExit()` on `queue`:
@@ -41,8 +43,6 @@ public final class CommitStream: @unchecked Sendable {
     private var delivered = 0
     private var record: GitCommandRecord?
     private var started: ContinuousClock.Instant?
-    /// git has exited (its termination handler said so).
-    private var exited = false
     /// The last commit was read.
     private var readToEnd = false
     /// git's standard error, read on the side.
@@ -203,10 +203,9 @@ public final class CommitStream: @unchecked Sendable {
             let exit = (status: process.terminationStatus, reason: process.terminationReason)
             self.lock.withLock { self.termination = exit }
             self.exitSignal.signal()
-            self.queue.async {
-                self.exited = true
-                self.finishIfDone()
-            }
+            // A stream that was stopped before git exited ends its record here, and so does one
+            // whose read stopped waiting for git's exit.
+            self.queue.async { self.finishIfDone() }
         }
         do {
             try process.run()
@@ -248,9 +247,9 @@ public final class CommitStream: @unchecked Sendable {
     /// Ends the Command Log record once git has exited and the stream was read to the end,
     /// stopped or failed (on `queue`).
     private func finishIfDone() {
-        guard record != nil, exited else { return }
-        let stopped = lock.withLock { self.stopped }
-        guard readToEnd || stopped || failure != nil else { return }
+        guard record != nil else { return }
+        let (exited, stopped) = lock.withLock { (termination != nil, self.stopped) }
+        guard exited, readToEnd || stopped || failure != nil else { return }
         finishRecord(stopped: stopped)
     }
 
