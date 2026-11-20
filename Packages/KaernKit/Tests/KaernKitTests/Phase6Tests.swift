@@ -36,8 +36,7 @@ struct Phase6Tests {
         #expect(!stream.isFinished)
         // Every read after that fails the same way; none gives part of the history.
         await #expect(throws: GitError.self) { _ = try await stream.next(10) }
-        // The Command Log record ends, saying git failed.
-        for _ in 0 ..< 150 where events.finished < 1 { try await Task.sleep(for: .milliseconds(20)) }
+        // The Command Log record ends, saying git failed. No wait here: it ends in the read that fails.
         #expect(events.started == 1 && events.finished == 1)
         #expect(events.lastOutput.contains("git failed"))
 

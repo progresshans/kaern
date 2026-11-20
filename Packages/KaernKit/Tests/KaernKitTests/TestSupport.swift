@@ -16,6 +16,19 @@ enum TestRepositories {
     }
 }
 
+/// Waits until `condition` holds, looking every 20 ms, for something that happens in its own time (git starting, a
+/// stopped git exiting). Check the condition afterwards: the limit only keeps a test whose event never comes from
+/// hanging. It says nothing about speed, and is far longer than the event takes on a busy CI Mac, where a test
+/// takes ten times as long as here.
+func waitUntil(limit: Duration = .seconds(60), _ condition: () async throws -> Bool) async throws {
+    let clock = ContinuousClock()
+    let end = clock.now + limit
+    while clock.now < end {
+        if try await condition() { return }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+}
+
 extension GitRepository {
     /// Writes a file relative to the working tree (creating folders).
     func write(_ text: String, to path: String) throws {
