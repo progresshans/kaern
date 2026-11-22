@@ -1,7 +1,12 @@
-# Kaern's checks, on each pull request and each push to develop or main:
+# Kaern's checks, on each pull request and each push to develop:
 # - the KaernKit tests, and a Debug build of the app (with the debug driver the flow checks use);
 # - the release build as a version tag makes it (script/release.sh), but signed ad hoc and not notarized, so it needs
 #   no secrets.
+#
+# Not on a push to main. main only moves for a release, and the release workflow tests the commit it tags
+# (release.yml). Checked here too, a release's commit would be checked twice, since develop is pushed with it; and
+# with the release's own jobs that is six Mac jobs, one more than GitHub runs at once (five on a Free, Pro or Team
+# plan), so the release would wait.
 name: CI
 
 on:
@@ -9,7 +14,6 @@ on:
   push:
     branches:
       - develop
-      - main
 
 permissions:
   contents: read
