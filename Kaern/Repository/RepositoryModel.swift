@@ -503,10 +503,14 @@ final class RepositoryModel: Identifiable {
     /// The last marker file the file watcher reported (see `filesChanged`).
     @ObservationIgnored private(set) var debugWatchMarker = ""
     /// An action, a first load, a refresh or a history read is under way (the debug dump: scripts
-    /// wait for this to clear instead of sleeping).
+    /// wait for this to clear instead of sleeping). So is a read for the stash view or the compare
+    /// panel, from the moment it's asked for: its git command starts a little later, and until then
+    /// no running command gives it away.
     var debugIsBusy: Bool {
         activity != nil || phase == .opening || phase == .loading || refreshTask != nil || isReloadingHistory || isLoadingMoreHistory
             || ignoreChecks > 0 || worktreeReadTask != nil
+            || (loadingStash != nil && stashTask?.isCancelled == false)
+            || (loadingComparison != nil && compareTask?.isCancelled == false)
     }
     /// File events being checked against .gitignore before they start a refresh (``filesChanged(_:)``).
     @ObservationIgnored private var ignoreChecks = 0
