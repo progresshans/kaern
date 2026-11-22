@@ -89,6 +89,9 @@ public struct GitRunner: Sendable {
     /// pointers, and git compares them as they are. `git add` keeps the filters, so staging a
     /// real file at an LFS path fails rather than putting the file into git itself.
     public let isLFSInstalled: Bool
+    /// How long a stopped git and what it started get to end by themselves, before they are ended by force.
+    /// Long enough for a busy Mac and for a hook that tidies up; short enough for a command that will never end.
+    var stopGrace: Duration = .seconds(10)
 
     public static let defaultExecutableURL = URL(filePath: "/usr/bin/git")
 
@@ -242,6 +245,7 @@ public struct GitRunner: Sendable {
             directory: directory,
             environment: extra.isEmpty ? environment : environment.merging(extra) { _, new in new },
             input: input,
+            stopGrace: stopGrace,
             onProgress: progress,
             onLaunch: { stop in
                 if let onCommand, let launched { onCommand(.started(launched, stop: GitCommandHandle(stop))) }
@@ -289,19 +293,87 @@ public struct GitRunner: Sendable {
 
     private final class ProcessBox: @unchecked Sendable {
         let process: Process
+        private let grace: Duration
         private let stopped = Mutex(false)
-        init(_ process: Process) { self.process = process }
+        /// git's process group, once a stop has signalled it. Foundation starts git as the leader of a group
+        /// of its own, and what git starts stays in that group unless it leaves it.
+        private let group = Mutex<pid_t?>(nil)
+        private let forceIsDue = Mutex(false)
+        init(_ process: Process, grace: Duration) {
+            self.process = process
+            self.grace = grace
+        }
         var wasStopped: Bool { stopped.withLock { $0 } }
 
-        /// Ends git and everything it started (a hook and the tools it runs), so the pipes close.
+        /// Ends git and everything it started (a hook and the tools it runs), so the pipes close. It asks them
+        /// to end (SIGTERM); what is still there after `grace` is ended by force (SIGKILL).
         func terminate() {
             stopped.withLock { $0 = true }
             guard process.isRunning else { return }
-            let pid = process.processIdentifier
-            for child in ProcessBox.descendants(of: pid) {
-                kill(child, SIGTERM)
+            send(SIGTERM)
+            guard forceIsDue.withLock({ due in defer { due = true }; return !due }) else { return }
+            let (seconds, attoseconds) = grace.components
+            let wait = Double(seconds) + Double(attoseconds) * 1e-18
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + wait) {
+                // A hook may refuse to end, and so can git: a SIGTERM that arrives just as git 2.54 sets up
+                // to pass signals on to what it started leaves it spinning, without end.
+                if self.process.isRunning {
+                    self.send(SIGKILL)
+                } else {
+                    self.endWhatIsLeft(with: SIGKILL)
+                }
             }
-            process.terminate()
+        }
+
+        /// Signals git, while it runs, and everything it started.
+        private func send(_ signal: Int32) {
+            guard process.isRunning else { return }
+            let pid = process.processIdentifier
+            // One signal for git's group reaches everything in it at once. Listing what git started and
+            // signalling each misses what git starts in between.
+            if getpgid(pid) == pid {
+                group.withLock { $0 = pid }
+                kill(-pid, signal)
+            }
+            // What left the group but is still under git. And everything, should git ever not lead a group
+            // of its own: its group would then be this app's, which a stop must never signal.
+            for child in ProcessBox.descendants(of: pid) {
+                kill(child, signal)
+            }
+            kill(pid, signal)
+        }
+
+        /// Once a stopped git has exited: ends what it was starting when the stop came. A signal that reaches
+        /// git while it starts a child ends git only after that, and the child, born after the signal, never
+        /// got it. It is in git's group all the same.
+        func endWhatIsLeftAfterExit() {
+            endWhatIsLeft(with: SIGTERM)
+            // And again, twice. What was only just born can miss a signal: a shell's child still has the
+            // shell's trap for a moment, and takes the signal as the shell would.
+            for delay in [0.2, 1.0] {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay) {
+                    self.endWhatIsLeft(with: SIGTERM)
+                }
+            }
+        }
+
+        /// Signals what is still in the group of a git that has exited.
+        private func endWhatIsLeft(with signal: Int32) {
+            guard let group = group.withLock({ $0 }) else { return }
+            var buffer = [pid_t](repeating: 0, count: 256)
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                proc_listpgrppids(group, bytes.baseAddress, Int32(bytes.count))
+            }
+            let members = buffer.prefix(max(0, Int(count))).filter { $0 > 0 }
+            // With nothing left the group is gone, and its number is free for another from here on. And git
+            // has exited, so a process with its ID is another one, given the ID since: that group is its own.
+            guard !members.isEmpty, !members.contains(group) else {
+                self.group.withLock { $0 = nil }
+                return
+            }
+            for member in members {
+                kill(member, signal)
+            }
         }
 
         private static func descendants(of pid: pid_t) -> [pid_t] {
@@ -334,6 +406,7 @@ public struct GitRunner: Sendable {
         directory: URL?,
         environment: [String: String],
         input: Data?,
+        stopGrace: Duration,
         onProgress: (@Sendable (String) -> Void)?,
         onLaunch: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void
     ) async throws -> Execution {
@@ -356,7 +429,7 @@ public struct GitRunner: Sendable {
             process.standardInput = FileHandle.nullDevice
         }
 
-        let box = ProcessBox(process)
+        let box = ProcessBox(process, grace: stopGrace)
         let collector = Collector()
         let outHandle = stdoutPipe.fileHandleForReading
         let errHandle = stderrPipe.fileHandleForReading
@@ -370,6 +443,7 @@ public struct GitRunner: Sendable {
                 let resumed = Mutex(false)
                 process.terminationHandler = { finished in
                     let status = finished.terminationStatus
+                    if box.wasStopped { box.endWhatIsLeftAfterExit() }
                     let finish: @Sendable () -> Void = {
                         guard resumed.withLock({ done in defer { done = true }; return !done }) else { return }
                         let out = collector.stdout.withLock { $0 }
