@@ -4,6 +4,11 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop always ends the command. A hook or tool that git had only just started goes with it, and a command that
+  doesn't end when asked is ended by force after 10 seconds.
+
 ## [1.0.1] - 2026-11-19
 
 Resizable panes, worktrees in tabs of their own, Finish Feature and zoom, with smoother scrolling and many fixes.

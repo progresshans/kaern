@@ -221,4 +221,97 @@ struct CommandRecordTests {
         // Stopped rather than left to end, as above.
         #expect(clock.now - start < .seconds(60))
     }
+
+    /// A runner whose "git" is a shell script in the repository: for a stop that meets git in a state that the
+    /// real one is in for a few milliseconds at most.
+    private func runner(standingIn script: String, in repository: GitRepository, stopGrace: Duration) throws -> GitRunner {
+        let file = repository.root.appending(path: "stand-in.sh")
+        try Data("#!/bin/sh\n\(script)\n".utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path(percentEncoded: false))
+        var runner = RepositoryTests.runner
+        runner.executableURL = file
+        runner.stopGrace = stopGrace
+        return runner
+    }
+
+    /// The process ID a script wrote into a file of the repository.
+    private func process(in file: String, of repository: GitRepository) -> pid_t? {
+        repository.read(file).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// Whether a process is there (signal 0 only asks).
+    private func isRunning(_ process: pid_t) -> Bool { kill(process, 0) == 0 }
+
+    /// A stop can reach git in the few milliseconds in which it starts something. git then ends, and what it was
+    /// starting is born after the stop's signal and never gets it. It has to go all the same.
+    @Test func aStopEndsWhatGitWasJustStarting() async throws {
+        let base = try await TestRepositories.make()
+        defer { TestRepositories.remove(base) }
+        // Stands in for git at that moment: asked to end, it starts `sleep` and ends. Force is five minutes
+        // away, so if the sleep goes, the stop ended it.
+        let runner = try runner(standingIn: """
+            trap 'sleep 300 & echo $! > started; exit 0' TERM
+            touch running
+            while :; do sleep 1; done
+            """, in: base, stopGrace: .seconds(300))
+        let task = Task { try await runner.run(["status"], in: base.root) }
+        try await waitUntil { base.read("running") != nil }
+        try #require(base.read("running") != nil)
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        let started = try #require(process(in: "started", of: base))
+        try await waitUntil { !isRunning(started) }
+        #expect(!isRunning(started), "what git was starting when the stop came is still running")
+        kill(started, SIGKILL)
+    }
+
+    /// What refuses to end when asked is ended by force, once it has had its time.
+    @Test func aCommandThatRefusesToEndIsEndedByForce() async throws {
+        let base = try await TestRepositories.make()
+        defer { TestRepositories.remove(base) }
+        var runner = RepositoryTests.runner
+        runner.stopGrace = .seconds(1)
+        // The shell ignores the request to end (SIGTERM) and sleeps for five minutes; git waits for it.
+        let command = ["-c", "alias.wait=!trap '' TERM; echo $$ > running; sleep 300", "wait"]
+        let task = Task { [runner] in try await runner.run(command, in: base.root) }
+        try await waitUntil { process(in: "running", of: base) != nil }
+        let shell = try #require(process(in: "running", of: base))
+        let clock = ContinuousClock()
+        let start = clock.now
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        // Ended after its second of grace rather than after its five minutes.
+        #expect(clock.now - start < .seconds(60))
+        try await waitUntil { !isRunning(shell) }
+        #expect(!isRunning(shell), "the shell that ignored the stop is still running")
+        kill(shell, SIGKILL)
+    }
+
+    /// The same for what is left once git has ended: it is ended by force too.
+    @Test func whatRefusesToEndAfterGitHasEndedIsEndedByForce() async throws {
+        let base = try await TestRepositories.make()
+        defer { TestRepositories.remove(base) }
+        // Stands in for git with something that ignores the request to end: asked, only "git" ends.
+        let runner = try runner(standingIn: """
+            (trap '' TERM; exec sleep 300) &
+            echo $! > started
+            trap 'exit 0' TERM
+            touch running
+            wait
+            """, in: base, stopGrace: .seconds(1))
+        let task = Task { try await runner.run(["status"], in: base.root) }
+        try await waitUntil { base.read("running") != nil }
+        let started = try #require(process(in: "started", of: base))
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        try await waitUntil { !isRunning(started) }
+        #expect(!isRunning(started), "what ignored the stop is still running after git ended")
+        kill(started, SIGKILL)
+    }
 }
