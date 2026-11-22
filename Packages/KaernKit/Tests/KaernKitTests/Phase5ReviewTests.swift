@@ -30,7 +30,8 @@ struct Phase5ReviewTests {
             _ = try await other.next(2)
             other.cancel()
         }
-        for _ in 0 ..< 150 where events.finished < 2 { try await Task.sleep(for: .milliseconds(20)) }
+        // A stopped stream's record ends when its git has exited, which takes git its own time.
+        try await waitUntil { events.finished >= 2 }
         #expect(events.started == 2 && events.finished == 2)
 
         // A new stream reads on from where the first one stopped.

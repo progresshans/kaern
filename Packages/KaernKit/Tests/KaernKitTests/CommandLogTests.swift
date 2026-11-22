@@ -121,6 +121,17 @@ struct CommandRecordTests {
         return runner
     }
 
+    /// A command that takes five minutes left alone: git starts a shell, which makes the file `running` in the
+    /// repository and becomes `sleep`. A test stops the command once that file is there, so the stop finds git with
+    /// what it started. (In the few milliseconds git takes to start it, a stop can end git and miss the shell.)
+    private static let longCommand = ["-c", "alias.wait=!touch running && exec sleep 300", "wait"]
+
+    /// Waits until the shell of `longCommand` runs.
+    private func waitUntilItRuns(in repository: GitRepository) async throws {
+        try await waitUntil { repository.read("running") != nil }
+        try #require(repository.read("running") != nil)
+    }
+
     @Test func recordsTriggerOutputAndMasksSecrets() async throws {
         let base = try await TestRepositories.make()
         defer { TestRepositories.remove(base) }
@@ -173,22 +184,21 @@ struct CommandRecordTests {
         let clock = ContinuousClock()
         let started = clock.now
         let task = Task {
-            try await runner.run(["-c", "alias.wait=!sleep 30", "wait"], in: base.root)
+            try await runner.run(Self.longCommand, in: base.root)
         }
-        // Wait for the start, then stop it from the record's handle.
-        var handle: GitCommandHandle?
-        for _ in 0..<200 where handle == nil {
-            try await Task.sleep(for: .milliseconds(20))
-            handle = events.list.withLock { events in
-                events.compactMap { if case .started(_, let stop) = $0 { stop } else { nil } }.first
-            }
+        // Once it runs, stop it from the record's handle.
+        try await waitUntilItRuns(in: base)
+        let handle = events.list.withLock { events in
+            events.compactMap { if case .started(_, let stop) = $0 { stop } else { nil } }.first
         }
         try #require(handle != nil)
         handle?.stop()
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(clock.now - started < .seconds(10))
+        // It was stopped rather than left to end: a stop takes a second or two on a busy Mac, the command five
+        // minutes. A minute tells the two apart without timing the stop.
+        #expect(clock.now - started < .seconds(60))
         let record = try #require(events.finished.first)
         #expect(record.wasStopped)
     }
@@ -198,15 +208,17 @@ struct CommandRecordTests {
         defer { TestRepositories.remove(base) }
         let runner = RepositoryTests.runner
         let task = Task {
-            try await runner.run(["-c", "alias.wait=!sleep 30", "wait"], in: base.root)
+            try await runner.run(Self.longCommand, in: base.root)
         }
-        try await Task.sleep(for: .milliseconds(300))
+        // Cancel it once it runs: a cancel before git starts is another path, where git doesn't start at all.
+        try await waitUntilItRuns(in: base)
         task.cancel()
         let clock = ContinuousClock()
         let start = clock.now
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(clock.now - start < .seconds(5))
+        // Stopped rather than left to end, as above.
+        #expect(clock.now - start < .seconds(60))
     }
 }

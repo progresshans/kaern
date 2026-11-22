@@ -102,12 +102,13 @@ struct Phase6ReviewTests {
         // The work is stopped (Cancel): the changes come back staged, though the task is cancelled.
         let task = Task {
             try await repository.withChangesStashed(message: "Before Test") {
-                try await Task.sleep(for: .seconds(30))
+                // Long work: left alone it takes five minutes, so the stop below always comes first.
+                try await Task.sleep(for: .seconds(300))
                 return .finished
             }
         }
         // Wait until the changes are in the stash list (the work is sleeping), then stop it.
-        for _ in 0 ..< 100 where (try? await repository.stashes())?.isEmpty != false { try await Task.sleep(for: .milliseconds(50)) }
+        try await waitUntil { (try? await repository.stashes())?.isEmpty == false }
         #expect(try await repository.stashes().count == 1)
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
