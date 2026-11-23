@@ -107,7 +107,8 @@ struct Phase6ReviewTests {
                 return .finished
             }
         }
-        // Wait until the changes are in the stash list (the work is sleeping), then stop it.
+        // Wait until the changes are in the stash list, then stop it. git may still be taking them out of the
+        // files then, or the work is sleeping: either way they come back.
         try await waitUntil { (try? await repository.stashes())?.isEmpty == false }
         #expect(try await repository.stashes().count == 1)
         task.cancel()
