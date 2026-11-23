@@ -6,7 +6,7 @@
 #   ./script/build_and_run.sh --logs               launch and stream the app's logs
 #   ./script/build_and_run.sh --telemetry          launch and stream the app's subsystem logs
 #   ./script/build_and_run.sh --debug              run under lldb
-#   ./script/build_and_run.sh --test               run the KaernKit tests (swift test)
+#   ./script/build_and_run.sh --test [options]     run the KaernKit tests (swift test)
 #
 # The app is signed with the Developer ID Application certificate in your keychain when there is one, as
 # script/release.sh does, or with KAERN_SIGN_IDENTITY ("-" signs to run locally). macOS knows an app by its
@@ -31,8 +31,17 @@ DERIVED_DATA="$ROOT_DIR/build"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 
 if [[ "$MODE" == "--test" || "$MODE" == "test" ]]; then
+  # The integration tests run Apple's git. Its behavior and the active toolchain matter in CI failures.
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    sw_vers
+    uname -m
+    xcodebuild -version
+    swift --version
+    /usr/bin/git --version
+  fi
   cd "$ROOT_DIR/Packages/KaernKit"
-  exec swift test
+  export NSUnbufferedIO=YES
+  exec swift test "$@"
 fi
 
 if pkill -x "$APP_NAME" >/dev/null 2>&1; then

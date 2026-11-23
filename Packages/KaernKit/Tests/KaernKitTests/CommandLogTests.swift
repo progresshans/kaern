@@ -5,6 +5,8 @@ import Testing
 
 @Suite("Command log: redaction", .hangGuard)
 struct RedactionTests {
+    private static let longDiff = String(repeating: "+        let rows = commits.map { RowModel(commit: $0, graph: graph[$0.id]) }\n", count: 800)
+
     @Test func masksCredentialsInURLs() {
         #expect(GitRedaction.redact("https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/o/r.git")
                 == "https://***@github.com/o/r.git")
@@ -50,10 +52,14 @@ struct RedactionTests {
             #expect(GitRedaction.redact(sample) == GitRedaction.redactWithEveryPattern(sample), "\(sample)")
         }
         // A long diff with nothing to hide, and the same with one secret at its end.
-        let line = "+        let rows = commits.map { RowModel(commit: $0, graph: graph[$0.id]) }\n"
-        let long = String(repeating: line, count: 800)
+        let long = Self.longDiff
         #expect(GitRedaction.redact(long) == long)
         #expect(GitRedaction.redact(long + "password=hunter2") == long + "password=***")
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["KAERN_BENCHMARK_REDACTION"] == "1"))
+    func measureRedactionOnLongDiff() {
+        let long = Self.longDiff
         let clock = ContinuousClock()
         let quick = clock.measure { for _ in 0..<10 { _ = GitRedaction.redact(long) } }
         let every = clock.measure { for _ in 0..<10 { _ = GitRedaction.redactWithEveryPattern(long) } }

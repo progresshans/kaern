@@ -111,6 +111,9 @@ With Xcode 26 or later on an Apple silicon Mac:
 ./script/build_and_run.sh --test   # run the KaernKit tests
 ```
 
+To time Command Log redaction separately, run
+`KAERN_BENCHMARK_REDACTION=1 ./script/build_and_run.sh --test --filter measureRedactionOnLongDiff`.
+
 macOS knows an app by its signature. With a Developer ID Application certificate in your keychain, the script signs
 the Debug app with it, as `script/release.sh` does, so every build keeps the folder access you gave Kaern. Without
 one, the app is signed to run locally, and macOS asks again for Documents and other protected folders after each

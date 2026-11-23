@@ -38,22 +38,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # git too: the tests run /usr/bin/git, and what a stopped or failing git does differs between its versions.
-      - name: Show the Mac and its tools
-        run: |
-          sw_vers
-          uname -m
-          xcodebuild -version
-          swift --version
-          /usr/bin/git --version
-
-      # Unbuffered, so each line is in the log when it happens. Into a pipe, as here, the tests' output otherwise waits
-      # for the run to end, and a run that hangs is cut off by the job's limit before it says which test it was. With
-      # this, the test's ten-minute limit (hangGuard in TestSupport.swift) names it in the log.
       - name: Test KaernKit
-        env:
-          NSUnbufferedIO: "YES"
-        run: swift test --package-path Packages/KaernKit
+        run: ./script/build_and_run.sh --test
 
   flow:
     name: App build and flow checks

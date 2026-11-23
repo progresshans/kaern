@@ -141,20 +141,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # As in ci.yml: the tests run /usr/bin/git, and what a stopped or failing git does differs between its versions.
-      - name: Show the Mac and its tools
-        run: |
-          sw_vers
-          uname -m
-          xcodebuild -version
-          swift --version
-          /usr/bin/git --version
-
-      # Unbuffered, as in ci.yml: each line is in the log when it happens, so a test that hangs is named there.
       - name: Test KaernKit
-        env:
-          NSUnbufferedIO: "YES"
-        run: swift test --package-path Packages/KaernKit
+        run: ./script/build_and_run.sh --test
 
   publish:
     name: Publish the release and the appcast
