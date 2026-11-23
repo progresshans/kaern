@@ -7,7 +7,8 @@ What changed in each version of Kaern. A version's section is what its update wi
 ### Improved
 
 - A branch or tag name that doesn't fit can be read whole: rest the pointer on it. In the history, a label that
-  its column cuts short unfolds over the graph, the way the "+2" list does.
+  its column cuts short unfolds over the graph, the way the "+2" list does. In the sidebar, the row is drawn as wide
+  as its name needs, on over the history beside it.
 
 ### Fixed
 

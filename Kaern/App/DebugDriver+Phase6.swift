@@ -6,7 +6,8 @@ import KaernKit
 /// the graph's scope and remote branch folders.
 extension DebugDriver {
     static let phase6Commands: Set<String> = [
-        "graphScope", "showRemote", "remoteOpen", "remoteFolder", "remoteMore", "sidebarFilter", "retryHistory", "pullWith", "selectRef",
+        "graphScope", "showRemote", "remoteOpen", "remoteFolder", "remoteMore", "sidebarFilter", "wholeName", "retryHistory", "pullWith",
+        "selectRef",
         "ignoreSuggestion", "changeFolder", "changeMore", "fileList", "stageFolder",
         "worktree", "worktreeAction", "addWorktree", "worktreeSheet", "signatureOpen", "trustKey", "rawSignature",
         "cancelActivity",
@@ -38,6 +39,10 @@ extension DebugDriver {
             repository.sidebar.remoteFolderExtra[rest, default: 0] += RemoteFolders.batch
         case "sidebarFilter":
             repository.sidebar.filter = rest
+        case "wholeName":
+            // wholeName <row title> | wholeName off — unfolds the name of the sidebar row with that title, as the
+            // pointer resting on it would: only a name the sidebar cuts short unfolds.
+            DebugWholeName.shared.open = rest == "off" || rest.isEmpty ? nil : rest
         case "retryHistory":
             repository.retryHistory()
         case "cancelActivity":
