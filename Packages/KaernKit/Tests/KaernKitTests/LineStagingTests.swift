@@ -3,7 +3,7 @@ import Testing
 @testable import KaernKit
 
 /// Picked lines across several hunks: staged, unstaged and discarded with one patch each.
-@Suite("Line staging (integration)")
+@Suite("Line staging (integration)", .hangGuard)
 struct LineStagingTests {
     /// 30 lines; the edit changes lines 3, 4 and 25, adds two after 12 and deletes 20.
     private static let base = (1...30).map { "line \($0)" }

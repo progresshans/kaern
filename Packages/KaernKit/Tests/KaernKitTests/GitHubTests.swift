@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("GitHub pull requests")
+@Suite("GitHub pull requests", .hangGuard)
 struct GitHubTests {
     static let json = """
     [{

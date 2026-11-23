@@ -3,7 +3,7 @@ import Synchronization
 import Testing
 @testable import KaernKit
 
-@Suite("Command log: redaction")
+@Suite("Command log: redaction", .hangGuard)
 struct RedactionTests {
     @Test func masksCredentialsInURLs() {
         #expect(GitRedaction.redact("https://x-access-token:ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/o/r.git")
@@ -71,7 +71,7 @@ struct RedactionTests {
     }
 }
 
-@Suite("Command log: kinds")
+@Suite("Command log: kinds", .hangGuard)
 struct CommandKindTests {
     @Test func sortsCommandsByWhatTheyDo() {
         #expect(GitCommandKinds.of(["fetch", "--prune", "origin"]) == .network)
@@ -102,7 +102,7 @@ struct CommandKindTests {
     }
 }
 
-@Suite("Command log: records (integration)")
+@Suite("Command log: records (integration)", .hangGuard)
 struct CommandRecordTests {
     final class Events: Sendable {
         let list = Mutex<[GitCommandEvent]>([])

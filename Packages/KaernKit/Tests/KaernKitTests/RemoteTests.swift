@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Remote URLs and failures")
+@Suite("Remote URLs and failures", .hangGuard)
 struct RemoteTests {
     @Test func parsesHTTPSAndSSHRemotes() throws {
         let https = try #require(RemoteURL("https://progresshans@github.com/progresshans/powerlens.git"))

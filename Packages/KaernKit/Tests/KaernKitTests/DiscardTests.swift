@@ -3,7 +3,7 @@ import Testing
 @testable import KaernKit
 
 /// Discard keeps a copy in the stash list first, and ⌘Z puts everything back.
-@Suite("Discard with a kept copy (integration)")
+@Suite("Discard with a kept copy (integration)", .hangGuard)
 struct DiscardTests {
     private func makeRepository() async throws -> GitRepository {
         let repository = try await TestRepositories.make()
@@ -82,7 +82,7 @@ struct DiscardTests {
     }
 }
 
-@Suite("Ignore")
+@Suite("Ignore", .hangGuard)
 struct IgnoreTests {
     @Test func patternsForAPath() {
         let nested = IgnorePatterns(path: ".github/workflows/ci.yml")

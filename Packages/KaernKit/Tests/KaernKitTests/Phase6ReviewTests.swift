@@ -5,7 +5,7 @@ import Testing
 /// The problems the phase-6 review found: Remove… losing ignored files or acting on the wrong
 /// folder, changes left in the stash list after a stop, index undo after folder staging, remote
 /// branches with names a bracket pattern can't match, and long signature reads.
-@Suite("Phase 6 review", .serialized)
+@Suite("Phase 6 review", .serialized, .hangGuard)
 struct Phase6ReviewTests {
     static let runner = RepositoryTests.runner
 

@@ -4,7 +4,7 @@ import Testing
 
 /// When a repository's remotes were last fetched: the status bar's "Fetched from origin …" and
 /// the Repositories window's Fetched column.
-@Suite("Last fetch")
+@Suite("Last fetch", .hangGuard)
 struct LastFetchTests {
     static let runner = RepositoryTests.runner
 

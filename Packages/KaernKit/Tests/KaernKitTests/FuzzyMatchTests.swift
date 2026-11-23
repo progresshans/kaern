@@ -1,7 +1,7 @@
 import Testing
 @testable import KaernKit
 
-@Suite("Fuzzy matching")
+@Suite("Fuzzy matching", .hangGuard)
 struct FuzzyMatchTests {
     @Test func prefersContiguousWordStartMatches() throws {
         let contiguous = try #require(FuzzyMatch.match("rest", in: "feature/restore-automatic-alpha"))

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Clone and create")
+@Suite("Clone and create", .hangGuard)
 struct CloneAndCreateTests {
     static let runner = RepositoryTests.runner
 
@@ -242,7 +242,7 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     }
 }
 
-@Suite("Hosted repositories", .serialized)
+@Suite("Hosted repositories", .serialized, .hangGuard)
 struct HostedRepositoryTests {
     @Test func listsAndCreatesGitHubRepositories() async throws {
         StubProtocol.lock.withLock {
@@ -315,7 +315,7 @@ struct HostedRepositoryTests {
     }
 }
 
-@Suite("Big repositories")
+@Suite("Big repositories", .hangGuard)
 struct BigRepositoryTests {
     static func repository(commits: Int) async throws -> GitRepository {
         let repository = try await TestRepositories.make()
@@ -386,7 +386,7 @@ final class EventLog: @unchecked Sendable {
     var lastOutput: String { lock.withLock { output } }
 }
 
-@Suite("Bot folding")
+@Suite("Bot folding", .hangGuard)
 struct BotFoldingTests {
     static func commit(_ id: String, _ parents: [String], by author: String, _ subject: String, minutes: Int) -> Commit {
         Commit(id: id + String(repeating: "0", count: 40 - id.count), parents: parents.map { $0 + String(repeating: "0", count: 40 - $0.count) },
@@ -467,7 +467,7 @@ struct BotFoldingTests {
     }
 }
 
-@Suite("Diff extras")
+@Suite("Diff extras", .hangGuard)
 struct DiffExtrasTests {
     static let runner = RepositoryTests.runner
 

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Interactive rebase (integration)")
+@Suite("Interactive rebase (integration)", .hangGuard)
 struct InteractiveRebaseTests {
     @Test func reordersRewordsFixesUpAndDrops() async throws {
         let repository = try await TestRepositories.make()
