@@ -6,7 +6,11 @@ SESSION = fresh_run()
 STEM = SESSION[:-len('.json')]
 samples.install('base', SAMPLES)
 write_session(SESSION)
-real = os.path.expanduser('~/.gitconfig'); real_before = os.stat(real).st_mtime
+real = os.path.expanduser('~/.gitconfig')
+def real_state():
+    """When your own ~/.gitconfig was last written (None: you have none, which is fine: it must stay that way)."""
+    return os.stat(real).st_mtime if os.path.exists(real) else None
+real_before = real_state()
 start_app('light', columns=False, git_config=False)
 d = wait_launched()
 genv = d['gitConfigEnvironment']; print('git config environment:', genv)
@@ -23,5 +27,5 @@ snap('isolation-settings-git', window='Git')
 k('settings', 'close')
 until(lambda d: not window_open(d, ' Git'), label='the Settings window closed')
 kill_app()
-assert os.stat(real).st_mtime == real_before
+assert real_state() == real_before, 'the test instance wrote your ~/.gitconfig (%s, was %s)' % (real_state(), real_before)
 print('ISOLATION OK')
