@@ -2,9 +2,9 @@
 import Foundation
 
 /// An instance on a test session: a Debug build launched with `-KaernSessionFile <path>`.
-/// What it would change outside its sample repositories stays next to that session file, so a
-/// test run never touches your session, settings, git config or Keychain:
-/// - `<session>.settings.plist`: Kaern's settings (`UserDefaults.kaern`)
+/// Each session has its own settings, git config and credentials:
+/// - `<session>.settings.plist`: settings used directly by a manual session, or archived
+///   from the flow launcher's private macOS preferences domain (`UserDefaults.kaern`)
 /// - `<session>.gitconfig`: git's global config, unless the launcher passes `GIT_CONFIG_GLOBAL`
 /// - `<session>.credentials`: what a sign-in hands to git's credential helper
 enum TestSession {

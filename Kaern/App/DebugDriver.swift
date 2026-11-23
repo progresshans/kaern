@@ -868,11 +868,14 @@ final class DebugDriver {
     private var lastDragSequence = 0
     private var lastResizeHandle = ""
     private var lastResizeValue: CGFloat = 0
+    private var sizesAfterDragChange: [String: Double] = [:]
+    private var sizesAfterMouseUp: [String: Double] = [:]
 
     func didDragPane(_ label: String, to value: CGFloat) {
         guard pointerTasks > 0 else { return }
         lastResizeHandle = label
         lastResizeValue = value
+        sizesAfterDragChange = PaneFrames.storedSizes
     }
 
     private func click(at point: CGPoint, count: Int) {
@@ -891,6 +894,8 @@ final class DebugDriver {
     private func drag(from start: CGPoint, to end: CGPoint) {
         lastResizeHandle = ""
         lastResizeValue = 0
+        sizesAfterDragChange = [:]
+        sizesAfterMouseUp = [:]
         pointerTasks += 1
         Task {
             defer { pointerTasks -= 1 }
@@ -904,6 +909,7 @@ final class DebugDriver {
             }
             try? await Task.sleep(for: .milliseconds(80))
             mouse(.leftMouseUp, at: end)
+            sizesAfterMouseUp = PaneFrames.storedSizes
         }
     }
 
@@ -1108,7 +1114,8 @@ final class DebugDriver {
             "fieldPlaceholder": field?.placeholderString ?? field?.placeholderAttributedString?.string ?? "",
             "appearance": NSApp.effectiveAppearance.isDark ? "dark" : "light",
             "pointerBusy": pointerTasks > 0,
-            "drag": ["sequence": lastDragSequence, "handle": lastResizeHandle, "value": lastResizeValue] as [String: Any],
+            "drag": ["sequence": lastDragSequence, "handle": lastResizeHandle, "value": lastResizeValue,
+                     "storedAfterChange": sizesAfterDragChange, "storedAfterMouseUp": sizesAfterMouseUp] as [String: Any],
         ]
     }
 }

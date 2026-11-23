@@ -7,6 +7,7 @@ import itertools, json, os, re, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from k3 import *
 import samples
+import preferences
 from paths import APP
 
 GITCONFIG = os.path.join(RUN_DIR, 'test-gitconfig')
@@ -44,7 +45,9 @@ def write_session(path, samples_dir=SAMPLES):
 def start_app(appearance='light', extra=(), columns=True, drop=(), session_file=None, git_config=True):
     """Starts the Debug app in the background (it never takes focus) on a session file, listening on this
     run's channel, with the run's own global git config."""
-    args = ['-KaernSessionFile', session_file or session(), '-KaernDebugChannel', CHANNEL, '-KaernAppearance', appearance]
+    path = session_file or session()
+    args = ['-KaernSessionFile', path, '-KaernCheckPreferencesID', preferences.open_session(path),
+            '-KaernDebugChannel', CHANNEL, '-KaernAppearance', appearance]
     # The real mouse stays out of it (a hovered row changes pictures and what Return picks in Quick Open);
     # KAERN_POINTER=1 lets it in, to click around in an instance started by hand.
     if not os.environ.get('KAERN_POINTER'): args += ['-KaernDebugIgnorePointer', 'YES']
@@ -110,23 +113,21 @@ def launch(appearance='light', scenario='base', *extra):
 
 
 def stored_setting(key):
-    """A Kaern setting as this instance's settings file has it (None: not there)."""
-    import plistlib
-    try:
-        with open(session()[:-len('.json')] + '.settings.plist', 'rb') as f: return plistlib.load(f).get(key)
-    except (OSError, ValueError):
-        return None
+    """The setting saved for this session, independent of the live app's view of it."""
+    return preferences.saved_settings(session()).get(key)
+
+
+def wait_saved_settings(expected, seconds=10):
+    def saved(_):
+        settings = preferences.saved_settings(session())
+        return all(settings.get(key) == value for key, value in expected.items())
+    until(saved, seconds=seconds, label='saved settings ' + str(expected))
 
 
 def set_setting(key, value, seconds=10):
-    """`setting <key> <value>` (None removes it), then waits until the settings file has it: that is what
-    the next launch reads. (The dump's `settings` can't be waited on for a removal: an instance that
-    started with the key keeps listing it.)"""
+    """Apply a setting (None removes it) and wait for the session's persistent domain to reflect it."""
     k('setting', key, '-' if value is None else value)
-    end = time.time() + seconds * PATIENCE
-    while stored_setting(key) != value:
-        if time.time() >= end: raise SystemExit('the setting %s did not become %r in the settings file (it is %r)' % (key, value, stored_setting(key)))
-        time.sleep(0.01)
+    wait_saved_settings({key: value}, seconds)
     sync()
 
 
@@ -136,6 +137,7 @@ def quit_app():
     pids = app_pids()
     k('quit')
     if not wait_gone(pids, 8): kill_app()
+    else: preferences.archive_in(RUN_DIR)
     trace('quit', began)
 
 

@@ -42,6 +42,11 @@ def branch(d): return d['active']['branch']
 def p4(d): return d['active']['phase4']
 def said(d, start): return (toast(d) or '').startswith(start)
 
+def check_saved_options(expected):
+    settle(lambda d: p4(d)['finishOptions'] == expected
+           and (stored_setting('KaernFinishOptions') or {}).get(ROOT) == expected,
+           label='Finish options saved for powerlens: ' + expected)
+
 launch_prepared(mode, prepare=prepare)
 show_tab('powerlens')
 d = until(lambda d: branch(d) == 'feature/one' and p4(d)['finishTarget'] == 'develop', label='the feature branch, with develop there')
@@ -62,7 +67,8 @@ k('finishFeature', 'feature/one', 'merge', '--', 'Merge', 'feature/one:', 'the',
 d = until(lambda d: branch(d) == 'develop' and said(d, 'Merged feature/one into develop with '), seconds=30, label='feature/one finished')
 print('(1)', toast(d), '| subject:', head('%s'), '| parents:', len(head('%P').split()), '| kept:', p4(d)['finishOptions'])
 assert head('%s') == 'Merge feature/one: the first one' and len(head('%P').split()) == 2
-assert has('feature/one') and p4(d)['finishOptions'] == 'merge'
+assert has('feature/one')
+check_saved_options('merge')
 assert not said(d, 'Merged feature/one into develop with ') or 'deleted' not in toast(d)
 merged = rev('develop')
 # The next sheet starts with the boxes as they were left: Delete isn't ticked.
@@ -82,7 +88,8 @@ k('finishFeature', 'feature/two', 'merge', 'delete', '--', 'Merge', 'feature/two
 d = until(lambda d: branch(d) == 'develop' and (toast(d) or '').endswith('deleted feature/two'), seconds=30, label='feature/two finished and deleted')
 print('(2)', toast(d), '| subject:', head('%s'), '| parents:', len(head('%P').split()), '| kept:', p4(d)['finishOptions'])
 assert head('%s') == 'Merge feature/two: the second' and len(head('%P').split()) == 2
-assert not has('feature/two') and p4(d)['finishOptions'] == 'merge,delete'
+assert not has('feature/two')
+check_saved_options('merge,delete')
 k('undo'); settle(lambda d: has('feature/two'), label='⌘Z: feature/two is back')
 print('    ⌘Z: feature/two is back at', rev('feature/two')[:7])
 steady()
@@ -94,7 +101,8 @@ k('finishFeature', 'feature/three', 'rebase')
 d = until(lambda d: branch(d) == 'develop' and said(d, 'Fast-forwarded develop to feature/three'), seconds=30, label='feature/three rebased and finished')
 print('(3)', toast(d), '| subject:', head('%s'), '| parents:', len(head('%P').split()), '| kept:', p4(d)['finishOptions'])
 assert rev('develop') == rev('feature/three') != before and head('%s') == 'Add three.txt' and len(head('%P').split()) == 1
-assert has('feature/three') and p4(d)['finishOptions'] == 'rebase'
+assert has('feature/three')
+check_saved_options('rebase')
 assert g(ROOT, 'log', '-1', '--format=%s', 'develop~1').strip() == 'Merge feature/two: the second'
 steady()
 

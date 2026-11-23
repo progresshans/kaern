@@ -159,11 +159,7 @@ f = frame(full_dump(), 'drawer')
 d = drag('Drawer height', mx, f[1], mx, f[1] - 70, drawer=400)
 k('focus', 'off')
 until(sized(drawer=None), label='Focus off again')
-for key, value in (('KaernSidebarWidth', 300), ('KaernPanelWidth', 400), ('KaernDrawerHeight', 400)):
-    end = time.time() + 10
-    while stored_setting(key) != value:
-        assert time.time() < end, '%s reached the settings file (%r)' % (key, stored_setting(key))
-        time.sleep(0.05)
+wait_saved_settings({'KaernSidebarWidth': 300, 'KaernPanelWidth': 400, 'KaernDrawerHeight': 400})
 quit_app()
 relaunch(mode)
 show_tab('powerlens')
@@ -189,9 +185,16 @@ p = frame(full_dump(), 'panel')
 # The 9 pt handle straddles the leading edge. Press inside its overlap with the panel.
 x, y = p[0] + 2, p[1] + p[3] / 2
 d = drag('Panel width', x, y, x + 60, y, panel=340)
+assert d['driver']['drag']['storedAfterMouseUp']['panel'] == 340, d['driver']['drag']
+wait_saved_settings({'KaernPanelWidth': 340})
 snap('panes-overlay340', mode, changed=True)
 k('overlayPanel', 'off')
 assert panes(until(sized(panel=None)))['sidebar'] == 240
+quit_app()
+relaunch(mode)
+show_tab('powerlens')
+d = at_width(1440, sidebar=240, panel=340)
+assert panes(d)['panel'] == 340 and stored_setting('KaernPanelWidth') == 340, panes(d)
 quit_app()
 
 # Sidebar switching: the repository list too.

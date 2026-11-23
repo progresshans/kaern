@@ -28,6 +28,7 @@ import concurrent.futures, fcntl, json, os, re, shutil, signal, subprocess, sys,
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from paths import APP, PATIENCE, REPO, TOOLS, WORK
+import preferences
 
 
 class Check:
@@ -151,7 +152,8 @@ def areas_for(path):
 def app_lacks(app):
     """What the checks need that this build of the app doesn't have (its launch arguments and marker are
     plain strings in the binary)."""
-    needed = {b'KaernDebugChannel': 'the debug channel', b'KaernDebugIgnorePointer': 'the pointer switch', b'kaern-debug-sync-': "the file watcher's marker"}
+    needed = {b'KaernDebugChannel': 'the debug channel', b'KaernDebugIgnorePointer': 'the pointer switch',
+              b'KaernCheckPreferencesID': 'the private preferences domain', b'kaern-debug-sync-': "the file watcher's marker"}
     found = set()
     folder = os.path.join(app, 'Contents', 'MacOS')
     for name in os.listdir(folder) if os.path.isdir(folder) else []:
@@ -220,9 +222,10 @@ def end_instances(run_id=None):
     folder = os.path.join(WORK, 'runs', run_id) + '/' if run_id else os.path.join(WORK, 'runs') + '/'
     pattern = '-KaernSessionFile ' + re.sub(r'([.+*?()\[\]{}|^$\\])', r'\\\1', folder)
     pids = subprocess.run(['pgrep', '-f', '--', pattern], capture_output=True, text=True).stdout.split()
-    for pid in pids:
-        try: os.kill(int(pid), signal.SIGTERM)
-        except (ProcessLookupError, ValueError): pass
+    if pids:
+        from k3 import stop_processes
+        stop_processes([int(pid) for pid in pids])
+    preferences.archive_in(folder, '*.check-prefs' if run_id else '*/*.check-prefs')
     return len(pids)
 
 

@@ -167,6 +167,13 @@ struct PaneResizeHandle: View {
 @MainActor
 enum PaneFrames {
     static var frames: [UUID: [String: CGRect]] = [:]
+
+    static var storedSizes: [String: Double] {
+        ["sidebar": UserDefaults.kaern.double(forKey: PaneSizes.sidebarKey),
+         "panel": UserDefaults.kaern.double(forKey: PaneSizes.panelKey),
+         "drawer": UserDefaults.kaern.double(forKey: PaneSizes.drawerKey),
+         "list": UserDefaults.kaern.double(forKey: PaneSizes.listKey)]
+    }
 }
 
 extension View {

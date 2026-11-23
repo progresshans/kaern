@@ -5,8 +5,9 @@ a conflict, drag a pane…), and its state is read back and compared. The KaernK
 cover what the app does with them.
 
 They drive a Debug build through its debug driver (`Kaern/App/DebugDriver*.swift`). A test instance is started with a
-session file of its own (`-KaernSessionFile`), and keeps its settings, git config and credentials next to that file,
-so your Kaern, your repositories and your git config are never touched. The repositories it works on are samples
+session file of its own (`-KaernSessionFile`) and a private macOS preferences domain. After the app exits, the
+launcher exports the domain to the session's `.settings.plist` and removes the live domain. A relaunch imports
+that file. The session's git config and credentials also live beside it. The repositories it works on are samples
 made from scratch (`make_samples.py`, `bigsample.py`, `scen6.py`).
 
 ## Run

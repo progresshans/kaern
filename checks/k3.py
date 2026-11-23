@@ -21,6 +21,7 @@ elif __name__ == '__main__':
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from paths import PATIENCE, TOOLS, WORK
+import preferences
 
 
 def _run_name():
@@ -195,6 +196,15 @@ def _give_up(what, label, seconds, d):
         if drag.get('sequence'):
             lines.append('  drag: %s' % drag)
             lines.append('  panes: %s' % d.get('phase5', {}).get('layout', {}).get('panes'))
+        session = d.get('settings', {}).get('KaernSessionFile')
+        if session and os.path.dirname(os.path.realpath(session)) == RUN_DIR:
+            try:
+                saved = preferences.saved_settings(session)
+                keys = ('KaernPanelWidth', 'KaernSidebarWidth', 'KaernDrawerHeight', 'KaernRepositoryListWidth', 'KaernFinishOptions')
+                d['savedSettings'] = {key: saved.get(key) for key in keys}
+                lines.append('  saved settings: %s' % d['savedSettings'])
+            except Exception as error:  # keep the original timeout and its other evidence
+                lines.append('  could not read the saved settings: %s' % error)
         lines.append('  tabs: %s' % ['%s:%s%s' % (t['name'], t['phase'], '*' if t.get('busy') else '') for w in d.get('windows', []) for t in w['tabs']])
         for part in ('phase4', 'phase5', 'phase6'):
             source = a if part == 'phase4' else d
@@ -341,9 +351,7 @@ def wait_gone(pids, seconds=8):
     return True
 
 
-def kill_app(session=None, hard=False):
-    """Ends this run's instances (all of them, or the one on `session`) and waits until they're gone."""
-    pids = app_pids(session)
+def stop_processes(pids, hard=False):
     for pid in pids:
         try: os.kill(pid, signal.SIGKILL if hard else signal.SIGTERM)
         except ProcessLookupError: pass
@@ -351,7 +359,17 @@ def kill_app(session=None, hard=False):
         for pid in pids:
             try: os.kill(pid, signal.SIGKILL)
             except ProcessLookupError: pass
-        wait_gone(pids, 5)
+        if not wait_gone(pids, 5):
+            raise SystemExit('the test instance did not exit: %s' % pids)
+
+
+def kill_app(session=None, hard=False):
+    """End this run's instances and archive their private preferences after they exit."""
+    stop_processes(app_pids(session), hard)
+    if session:
+        preferences.archive_session(session)
+    else:
+        preferences.archive_in(RUN_DIR)
 
 
 def rss_mb(session=None):
