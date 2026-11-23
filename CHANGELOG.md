@@ -9,10 +9,10 @@ What changed in each version of Kaern. A version's section is what its update wi
 - A branch or tag name that doesn't fit can be read whole: rest the pointer on it. In the history, a label that
   its column cuts short unfolds over the graph, the way the "+2" list does. In the sidebar, the row is drawn as wide
   as its name needs, on over the history beside it.
-- With many branches, every section of the sidebar is still a glance away: the headers stay in view and each
-  section scrolls on its own. While everything fits, nothing changes. When it doesn't, drag the line between two
-  sections to give one more room; Kaern keeps the heights for next time, and a double-click on the line shares the
-  room out again.
+- With many branches or changes, every list is still a glance away. The sidebar's headers stay in view and each of
+  its sections scrolls on its own, and so do the panel's Unstaged Files and Staged Files. While everything fits,
+  nothing changes. When it doesn't, drag the line between two of them to give one more room; Kaern keeps the
+  heights for next time, and a double-click on the line shares the room out again.
 
 ### Fixed
 

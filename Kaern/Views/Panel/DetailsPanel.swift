@@ -71,6 +71,18 @@ private struct WorkingCopyPanel: View {
     @FocusState private var filesFocused: Bool
     /// The list the reviewed file was opened from: a partly staged file is in both.
     @State private var openedStaged = false
+    /// How tall the column of the two lists is. It starts at the last one's: the panel is made again whenever the
+    /// working copy is picked, and its lists are laid out right away.
+    @State private var listsHeight = Self.lastListsHeight
+    @State private var drag = StackedDrag()
+    @AppStorage(StackedWeights.changesKey, store: .kaern) private var weights = StackedWeights()
+
+    private static var lastListsHeight: CGFloat = 0
+    private static let unstagedID = "unstaged"
+    private static let stagedID = "staged"
+    /// The lists' sides, and the space under the last one.
+    private static var inset: CGFloat { z(8) }
+    private static var bottom: CGFloat { z(8) }
 
     var body: some View {
         let entries = repository.status.entries
@@ -98,25 +110,74 @@ private struct WorkingCopyPanel: View {
                 let unstaged = FileList.files(entries.filter(\.hasUnstagedChanges), tree: tree)
                 let staged = FileList.files(entries.filter(\.hasStagedChanges), tree: tree)
                 let current = current(unstaged: unstaged, staged: staged)
+                let column = listsColumn(unstaged: unstaged, staged: staged)
+                // Each list scrolls on its own under its header, and both headers stay in view (`StackedLists`).
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
-                                .disabled(unstaged.isEmpty || !repository.canChangeIndex)
-                            FileList(repository: repository, entries: unstaged, staged: false, tree: tree,
-                                     current: current?.staged == false ? current?.path : nil) { open($0, staged: false) }
-                            PanelSectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
-                                .disabled(staged.isEmpty || !repository.canChangeIndex)
-                            FileList(repository: repository, entries: staged, staged: true, tree: tree,
-                                     current: current?.staged == true ? current?.path : nil) { open($0, staged: true) }
-                        }
-                        .padding(EdgeInsets(top: 0, leading: z(8), bottom: z(8), trailing: z(8)))
+                    VStack(alignment: .leading, spacing: 0) {
+                        PanelSectionHeader(title: "Unstaged Files (\(unstaged.count))", action: "Stage All") { repository.stageAll() }
+                            .disabled(unstaged.isEmpty || !repository.canChangeIndex)
+                            .padding(.horizontal, Self.inset)
+                        fileList(unstaged, staged: false, current: current, height: column.height(Self.unstagedID))
+                        PanelSectionHeader(title: "Staged Files (\(staged.count))", action: "Unstage All") { repository.unstageAll() }
+                            .disabled(staged.isEmpty || !repository.canChangeIndex)
+                            .padding(.horizontal, Self.inset)
+                            // A line between the lists while they scroll, which can be dragged.
+                            .overlay(alignment: .top) {
+                                if column.overflows { K.sep.frame(height: 1).padding(.horizontal, Self.inset) }
+                            }
+                            .overlay(alignment: .top) { edge(column) }
+                        fileList(staged, staged: true, current: current, height: column.height(Self.stagedID))
                     }
-                    .contextClip()
+                    .padding(.bottom, Self.bottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        listsHeight = height
+                        Self.lastListsHeight = height
+                    }
                     .arrowKeySteps($filesFocused) { step($0, unstaged: unstaged, staged: staged, proxy: proxy) }
                 }
             }
             Composer(repository: repository)
+        }
+    }
+
+    /// The two lists' heights in what the panel leaves them.
+    private func listsColumn(unstaged: [StatusEntry], staged: [StatusEntry]) -> StackedColumn {
+        let column = StackedColumn(ids: [Self.unstagedID, Self.stagedID], items: [
+            StackedLists.Item(content: FileList.height(unstaged, tree: tree), row: KMetric.fileRow, weight: weights.weight(Self.unstagedID)),
+            StackedLists.Item(content: FileList.height(staged, tree: tree), row: KMetric.fileRow, weight: weights.weight(Self.stagedID)),
+        ], room: listsHeight - Self.bottom - 2 * PanelSectionHeader.height)
+        #if DEBUG
+        DebugStacks.record("changes \(repository.path)", column, shown: column.ids)
+        #endif
+        return column
+    }
+
+    /// One list's files, in a scroll view of its own as tall as the column gives it.
+    private func fileList(_ entries: [StatusEntry], staged: Bool, current: (path: String, staged: Bool)?, height: CGFloat) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                FileList(repository: repository, entries: entries, staged: staged, tree: tree,
+                         current: current?.staged == staged ? current?.path : nil) { open($0, staged: staged) }
+            }
+            .padding(.horizontal, Self.inset)
+        }
+        // Rows that all fit don't move under the wheel.
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: height)
+        .contextClip()
+        .debugStackFrame("\(repository.path) changes \(staged ? "staged" : "unstaged")")
+    }
+
+    /// The line between the lists: dragged while they scroll; a double-click shares the panel between them again.
+    private func edge(_ column: StackedColumn) -> StackedEdge {
+        StackedEdge(ways: StackedLists.ways(column.heights, items: column.items, edgeAbove: 1), label: "Height of Unstaged Files",
+                    scope: repository.path) { change in
+            guard let change else { drag.start = nil; return }
+            let start = drag.heights(from: change.start, now: column.heights)
+            weights = weights.keeping(column.weights(dragging: 1, from: start, by: change.translation), for: column.ids)
+        } reset: {
+            weights = StackedWeights()
         }
     }
 
@@ -204,6 +265,9 @@ struct PanelSectionHeader: View {
     @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
+    /// With the space above it.
+    static var height: CGFloat { z(28) + z(4) }
+
     var body: some View {
         HStack(spacing: z(6)) {
             Text(title)
@@ -253,7 +317,7 @@ private struct FileList: View {
                 .font(.system(size: z(12)))
                 .foregroundStyle(K.label2)
                 .padding(.horizontal, z(6))
-                .frame(height: z(24))
+                .frame(height: Self.folderRow)
             case .file(let entry):
                 PanelFileRow(repository: repository, entry: entry, staged: staged, showsDirectory: !tree,
                              isReviewed: entry.path == current) { open(entry.path) }
@@ -267,6 +331,16 @@ private struct FileList: View {
         enum Kind { case folder(String), file(StatusEntry) }
         let id: String
         let kind: Kind
+    }
+
+    /// A tree's folder row; a file's is `KMetric.fileRow`.
+    static var folderRow: CGFloat { z(24) }
+
+    /// How tall the list's rows are, all of them.
+    static func height(_ entries: [StatusEntry], tree: Bool) -> CGFloat {
+        rows(entries, tree: tree, root: "").reduce(0) { total, row in
+            if case .folder = row.kind { total + folderRow } else { total + KMetric.fileRow }
+        }
     }
 
     /// A file's row, for scrolling to it (a partly staged file has one in each list).
