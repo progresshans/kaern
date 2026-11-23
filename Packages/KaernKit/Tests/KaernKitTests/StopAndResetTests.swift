@@ -149,6 +149,104 @@ struct StopAndResetTests {
         #expect(worktree.read("a.txt") == "one\nchanged\n")
     }
 
+    /// A runner whose `git stash push` is still running after it made the entry: it writes the file `made` into
+    /// `folder` then, and stays for two more seconds. The real one is in that state for a few milliseconds, between
+    /// writing the entry and taking the changes out of the files.
+    static func runner(stayingInStashPush folder: URL) throws -> GitRunner {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let git = Self.runner.executableURL.path(percentEncoded: false)
+        let file = folder.appending(path: "git.sh")
+        try Data("""
+            #!/bin/sh
+            case " $* " in
+            *" stash push "*)
+                "\(git)" "$@"
+                status=$?
+                touch "\(folder.appending(path: "made").path(percentEncoded: false))"
+                sleep 2
+                exit $status ;;
+            esac
+            exec "\(git)" "$@"
+
+            """.utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path(percentEncoded: false))
+        var runner = Self.runner
+        runner.executableURL = file
+        return runner
+    }
+
+    /// Runs `work` on `repository` with that runner and stops it while `git stash push` is still running, the
+    /// entry made. Returns the error the work ended with (`nil`: none).
+    static func run(stoppingInStashPushOf repository: GitRepository,
+                    _ work: @escaping @Sendable (GitRepository) async throws -> Void) async throws -> (any Error)? {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "kaern-tests-git-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let slow = try await GitRepository.open(repository.root, runner: runner(stayingInStashPush: folder))
+        let made = folder.appending(path: "made").path(percentEncoded: false)
+        let task = Task { try await work(slow) }
+        try await waitUntil { FileManager.default.fileExists(atPath: made) }
+        try #require(FileManager.default.fileExists(atPath: made), "git stash push never got to its entry")
+        task.cancel()
+        do {
+            try await task.value
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// A stop can also reach `git stash push` itself. git writes the entry first and takes the changes out of the
+    /// files after that; ended in between, it left them in the stash list, and whole or in part in the files, and
+    /// nothing put them back. A stop waits for git there, and then they come back.
+    @Test func aStopWhileTheChangesGoAsideBringsThemBack() async throws {
+        // Around an operation (Merge, Rebase, Cherry-pick, Revert, Pull).
+        let repository = try await TestRepositories.make()
+        defer { TestRepositories.remove(repository) }
+        try repository.write("one\n", to: "a.txt")
+        try await repository.commitAll("one")
+        try repository.write("one\nmine\n", to: "a.txt")
+        try await repository.stage(["a.txt"])
+        let error = try await Self.run(stoppingInStashPushOf: repository) { repository in
+            _ = try await repository.withChangesStashed(message: "Before Test") {
+                _ = try await repository.git(["rev-parse", "HEAD"])
+                return .finished
+            }
+        }
+        #expect(error is CancellationError, "\(String(describing: error))")
+        #expect(try await repository.stashes().isEmpty)
+        #expect(repository.read("a.txt") == "one\nmine\n")
+        #expect(try await repository.git(["diff", "--cached", "--name-only"]).text.contains("a.txt"))
+
+        // Remove… of a worktree.
+        let (main, folder) = try await Phase6ReviewTests.repositoryWithWorktree()
+        defer { TestRepositories.remove(main); try? FileManager.default.removeItem(at: folder) }
+        let worktree = try await GitRepository.open(folder, runner: Self.runner)
+        try worktree.write("one\nchanged\n", to: "a.txt")
+        let stopped = try await Self.run(stoppingInStashPushOf: main) { main in
+            _ = try await main.removeWorktree(folder.path(percentEncoded: false), keepingChangesAs: "Worktree test")
+        }
+        #expect(stopped is CancellationError, "\(String(describing: stopped))")
+        #expect(try await main.stashes().isEmpty)
+        #expect(worktree.read("a.txt") == "one\nchanged\n")
+    }
+
+    /// The same for Reset Hard, whose entry also takes the untracked files in the way.
+    @Test func aResetStoppedWhileTheChangesGoAsidePutsThemBack() async throws {
+        let (repository, target) = try await ResetHardTests.filesInTheWayOfTheCommitBefore()
+        defer { TestRepositories.remove(repository) }
+        let head = try #require(await repository.resolve("HEAD"))
+        let error = try await Self.run(stoppingInStashPushOf: repository) { repository in
+            _ = try await repository.resetHard(to: target, message: "Before reset")
+        }
+        #expect(error is CancellationError, "\(String(describing: error))")
+        #expect(await repository.resolve("HEAD") == head)
+        #expect(try await repository.stashes().isEmpty)
+        #expect(repository.read(".env") == "TOKEN=my secret\n" && repository.read("notes.md") == "my notes\n")
+        #expect(repository.read("cache/mine.txt") == "in a folder\n" && repository.read("docs") == "a file\n")
+        #expect(repository.read("a.txt") == "one\nunstaged\n")
+        #expect(try await repository.git(["diff", "--cached", "--name-only"]).text.trimmingCharacters(in: .whitespacesAndNewlines) == "s.txt")
+    }
+
     @Test func aRenameStoppedHalfwayPutsTheStashesBack() async throws {
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }
