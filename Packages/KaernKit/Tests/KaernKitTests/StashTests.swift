@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Stashes (integration)")
+@Suite("Stashes (integration)", .hangGuard)
 struct StashTests {
     @Test func branchNameFromTheMessage() {
         #expect(StashDetails.branch(fromMessage: "On develop: release notes draft") == "develop")

@@ -1,7 +1,7 @@
 import Testing
 @testable import KaernKit
 
-@Suite("Window columns")
+@Suite("Window columns", .hangGuard)
 struct PaneLayoutTests {
     @Test func defaultWindowFitsEverything() {
         let layout = PaneLayout(width: 1440, showSidebar: true, showInspector: true, sidebarWidth: 210, inspectorWidth: 320)

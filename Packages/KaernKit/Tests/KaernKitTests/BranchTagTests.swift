@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Branches and tags (integration)")
+@Suite("Branches and tags (integration)", .hangGuard)
 struct BranchTagTests {
     @Test func renamesBranchesAndRemembersRecentOnes() async throws {
         let repository = try await TestRepositories.make()

@@ -1,7 +1,7 @@
 import Testing
 @testable import KaernKit
 
-@Suite("Commit search")
+@Suite("Commit search", .hangGuard)
 struct CommitSearchTests {
     @Test func prefixesPickTheScope() {
         #expect(CommitSearchScope.parsePrefix("author:Minji")! == (.author, "Minji"))
@@ -27,7 +27,7 @@ struct CommitSearchTests {
     }
 }
 
-@Suite("Commit search (integration)")
+@Suite("Commit search (integration)", .hangGuard)
 struct HistorySearchTests {
     @Test func searchesTheWholeHistoryByScope() async throws {
         let repository = try await TestRepositories.make()

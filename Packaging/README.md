@@ -19,6 +19,7 @@ There are two kinds of versions:
 |---|---|
 | `.github/workflows/release.yml` | On a version tag: build, sign and notarize, with the KaernKit tests beside it → GitHub release → appcast on `gh-pages`. |
 | `.github/workflows/ci.yml` | On each pull request and each push to `develop`: the KaernKit tests, a Debug build, and the release build signed ad hoc. |
+| `.github/dependabot.yml` | Once a week: one pull request against `develop` when the actions the workflows use have newer versions. They're pinned to a commit, so they don't move by themselves. GitHub reads this file from `main`: a change to it counts from the next release. |
 | `script/release.sh` | The build the workflow runs: archive → Developer ID export → notarize and staple the app → ZIP and DMG → notarize and staple the DMG. Also the appcast entry, the notes, and tries on your Mac. |
 | `CHANGELOG.md` | Each version's notes, shown in the update window and on the GitHub release. |
 | `Packaging/Info.plist` | Sparkle's keys, merged into the Info.plist Xcode generates: `SUFeedURL`, `SUPublicEDKey`, a daily check that asks before installing. Also `KaernSourceURL`, shown in About Kaern. |
@@ -140,8 +141,7 @@ If a run fails, fix the cause and re-run it in the Actions tab. When the tests f
 pass when that job is run again, the build already made is published; a fix in the code is a new commit, which takes
 a new tag (the next beta, or the release's tag moved to it). Publishing can run again: an existing GitHub release gets
 its files replaced, and an appcast that already offers the version isn't committed twice. If the appcast on `gh-pages`
-changed while the release was being built, publishing stops: run the whole workflow again. (The website's commits
-there don't count.)
+changed while the release was being built, publishing stops: run the whole workflow again.
 
 **To take a version back** from the appcast, revert the commit on `gh-pages` that offered it (or edit `appcast.xml`
 there in GitHub's editor). Pages serves the change in a few minutes, and copies stop being offered that version. Copies

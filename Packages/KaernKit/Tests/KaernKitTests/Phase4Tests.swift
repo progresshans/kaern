@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Settings engine")
+@Suite("Settings engine", .hangGuard)
 struct SettingsEngineTests {
     @Test func contextLinesWidenHunks() async throws {
         let repository = try await TestRepositories.make()
@@ -47,7 +47,7 @@ struct SettingsEngineTests {
     }
 }
 
-@Suite("Conflicts and stashes")
+@Suite("Conflicts and stashes", .hangGuard)
 struct ConflictStashTests {
     /// main has `a.txt` changed one way; a stash made on the parent commit changes it another way.
     private func conflictingStash() async throws -> GitRepository {
@@ -208,7 +208,7 @@ struct ConflictStashTests {
     }
 }
 
-@Suite("Why a command failed")
+@Suite("Why a command failed", .hangGuard)
 struct GitFailureTests {
     @Test func signInExpired() {
         let error = """
@@ -252,7 +252,7 @@ struct GitFailureTests {
     }
 }
 
-@Suite("What a failed command says")
+@Suite("What a failed command says", .hangGuard)
 struct GitErrorTextTests {
     private func text(_ output: String) -> String? {
         GitError(arguments: ["push"], status: 128, message: output).errorDescription

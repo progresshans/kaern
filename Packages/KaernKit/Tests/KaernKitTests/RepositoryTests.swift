@@ -4,7 +4,7 @@ import Testing
 @testable import KaernKit
 
 /// Runs real git commands against throwaway repositories in the temporary directory.
-@Suite("Repository (integration)")
+@Suite("Repository (integration)", .hangGuard)
 struct RepositoryTests {
     /// Isolated from the user's global config (signing, hooks, aliases) so results are predictable.
     static let runner = GitRunner(extraEnvironment: [

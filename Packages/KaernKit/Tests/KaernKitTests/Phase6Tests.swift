@@ -4,7 +4,7 @@ import Testing
 
 /// Phase 6: a failed `git log` is an error (not an empty history), the graph's scopes, and Pull
 /// with rebase over uncommitted changes.
-@Suite("Phase 6")
+@Suite("Phase 6", .hangGuard)
 struct Phase6Tests {
     static let runner = RepositoryTests.runner
 

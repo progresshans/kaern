@@ -4,7 +4,7 @@ import Testing
 
 /// The problems the phase-5 review found: a cut history read, LFS pointers naming files
 /// elsewhere, secrets in the Command Log, and Update to Recorded leaving commits behind.
-@Suite("Phase 5 review")
+@Suite("Phase 5 review", .hangGuard)
 struct Phase5ReviewTests {
     static let runner = RepositoryTests.runner
 

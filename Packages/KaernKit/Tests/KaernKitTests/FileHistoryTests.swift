@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("File history and blame")
+@Suite("File history and blame", .hangGuard)
 struct FileHistoryParsingTests {
     @Test func blameGroupsLinesByCommitAndRanksAges() {
         let old = String(repeating: "a", count: 40)
@@ -72,7 +72,7 @@ struct FileHistoryParsingTests {
     }
 }
 
-@Suite("File history and blame (integration)")
+@Suite("File history and blame (integration)", .hangGuard)
 struct FileHistoryTests {
     @Test func historyAndBlameOfARenamedFile() async throws {
         let repository = try await TestRepositories.make()

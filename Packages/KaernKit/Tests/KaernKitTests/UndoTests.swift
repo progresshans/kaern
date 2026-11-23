@@ -3,7 +3,7 @@ import Testing
 @testable import KaernKit
 
 /// The git pieces behind ⌘Z: every step here must leave the repository exactly as it was.
-@Suite("Undo plumbing (integration)")
+@Suite("Undo plumbing (integration)", .hangGuard)
 struct UndoTests {
     private func makeRepository() async throws -> GitRepository {
         let repository = try await TestRepositories.make()

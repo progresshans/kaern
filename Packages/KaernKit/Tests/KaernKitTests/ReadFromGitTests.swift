@@ -4,7 +4,7 @@ import Testing
 
 /// What the app read earlier (a stash list, a branch name) can be older than the repository by the
 /// time an action runs. These act on what git has then.
-@Suite("Read from git when acting", .serialized)
+@Suite("Read from git when acting", .serialized, .hangGuard)
 struct ReadFromGitTests {
     /// One stash ("first", changing a.txt) read into a list, then a second one made after the list
     /// was read ("second", changing b.txt): the first is stash@{1} by now, while the list read

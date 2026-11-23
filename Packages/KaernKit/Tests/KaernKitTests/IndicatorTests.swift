@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Submodules, worktrees, LFS and signatures")
+@Suite("Submodules, worktrees, LFS and signatures", .hangGuard)
 struct IndicatorTests {
     @Test func parsesSubmoduleStatusLines() {
         let up = Submodule.parse(" a41c9e2a41c9e2a41c9e2a41c9e2a41c9e2a41c9 Vendor/Sparkle (2.6.4)")
@@ -50,7 +50,7 @@ struct IndicatorTests {
     }
 }
 
-@Suite("Ignored paths (integration)")
+@Suite("Ignored paths (integration)", .hangGuard)
 struct IgnoredPathTests {
     @Test func filtersOutIgnoredFolders() async throws {
         let repository = try await TestRepositories.make()

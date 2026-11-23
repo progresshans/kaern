@@ -4,7 +4,7 @@ import Testing
 
 /// What Reset Hard puts aside before `git reset --hard`: git writes over (or deletes) untracked and
 /// ignored files where the target commit has files, so they go into the stash with the changes.
-@Suite("Reset Hard keeps what git would write over", .serialized)
+@Suite("Reset Hard keeps what git would write over", .serialized, .hangGuard)
 struct ResetHardTests {
     /// A commit with notes.md, .env, the file `cache` and the folder `docs/`, and the next commit
     /// that removes them (and ignores .env): then they are made again by hand, the other way round

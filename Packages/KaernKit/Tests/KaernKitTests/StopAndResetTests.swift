@@ -5,7 +5,7 @@ import Testing
 /// What the review of the stale-status branch found: a git command started after a stop ran to
 /// its end, Reset Hard let git delete a repository of its own in the way, and the changes put
 /// aside before an operation came back with conflict markers when they clashed with it.
-@Suite("Stops, Reset Hard and kept changes", .serialized)
+@Suite("Stops, Reset Hard and kept changes", .serialized, .hangGuard)
 struct StopAndResetTests {
     static let runner = RepositoryTests.runner
 

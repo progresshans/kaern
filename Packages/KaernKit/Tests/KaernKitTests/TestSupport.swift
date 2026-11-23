@@ -1,5 +1,14 @@
 import Foundation
+import Testing
 @testable import KaernKit
+
+extension Trait where Self == TimeLimitTrait {
+    /// On every suite, for each of its tests: one that never ends fails by name after ten minutes, and the others go
+    /// on. Without it the whole run waits for CI's limit on the job, and the log doesn't say which test it was.
+    /// It says nothing about speed. Ten minutes is twice the five a test takes when the stop it checks ends nothing,
+    /// so that test still fails on its own check, and far more than any test takes on a busy CI Mac.
+    static var hangGuard: Self { .timeLimit(.minutes(10)) }
+}
 
 /// Throwaway repositories for integration tests, isolated from the user's git config.
 enum TestRepositories {

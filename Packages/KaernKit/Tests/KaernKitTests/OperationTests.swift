@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Operations (integration)")
+@Suite("Operations (integration)", .hangGuard)
 struct OperationTests {
     /// main and feature both change line 2 of f.txt; feature has a second, clean commit.
     private func makeDivergedRepository() async throws -> (GitRepository, featureFirst: String) {
@@ -204,7 +204,7 @@ struct OperationTests {
     }
 }
 
-@Suite("Conflict document")
+@Suite("Conflict document", .hangGuard)
 struct ConflictDocumentTests {
     let sample = """
     struct AlphaVersion {

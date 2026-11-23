@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Commit graph")
+@Suite("Commit graph", .hangGuard)
 struct GraphTests {
     private func commit(_ id: String, _ parents: [String]) -> Commit {
         Commit(id: id, parents: parents, author: Signature(name: "A", email: "a@example.com", date: .now), subject: id)

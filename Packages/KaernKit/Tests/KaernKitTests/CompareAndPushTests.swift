@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Compare, pick and push (integration)")
+@Suite("Compare, pick and push (integration)", .hangGuard)
 struct CompareAndPushTests {
     /// main: base → m1 → m2; topic (from base): t1 → t2.
     private func makeBranches() async throws -> (GitRepository, [String: String]) {
@@ -258,7 +258,7 @@ struct CompareAndPushTests {
     }
 }
 
-@Suite("Undo plumbing, phase 3 (integration)")
+@Suite("Undo plumbing, phase 3 (integration)", .hangGuard)
 struct UndoPlumbingTests {
     @Test func indexEntriesGoBackAndForth() async throws {
         let repository = try await TestRepositories.make()

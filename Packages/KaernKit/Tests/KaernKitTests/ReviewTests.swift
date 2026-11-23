@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KaernKit
 
-@Suite("Body preview")
+@Suite("Body preview", .hangGuard)
 struct BodyPreviewTests {
     @Test func collapsesWhiteSpaceIntoOneLine() {
         let body = "Write history in batches\nand recover the store\n\n  after a crash.\n"
@@ -34,7 +34,7 @@ struct BodyPreviewTests {
     }
 }
 
-@Suite("Graph turns")
+@Suite("Graph turns", .hangGuard)
 struct GraphTurnTests {
     private func commit(_ id: String, _ parents: [String]) -> Commit {
         Commit(id: id, parents: parents, author: Signature(name: "A", email: "a@example.com", date: .now), subject: id)
@@ -130,7 +130,7 @@ struct GraphTurnTests {
     }
 }
 
-@Suite("Diff segments")
+@Suite("Diff segments", .hangGuard)
 struct DiffSegmentTests {
     @Test func marksOnlyTheFileThatIsNotUTF8AsLossy() {
         var data = Data("""
@@ -160,7 +160,7 @@ struct DiffSegmentTests {
 }
 
 /// Real git against throwaway repositories, isolated from the user's config.
-@Suite("Review diffs and hunk staging (integration)")
+@Suite("Review diffs and hunk staging (integration)", .hangGuard)
 struct ReviewIntegrationTests {
     private func makeRepository() async throws -> GitRepository {
         try await TestRepositories.make()
@@ -265,7 +265,7 @@ struct ReviewIntegrationTests {
     }
 }
 
-@Suite("Line stats (integration)")
+@Suite("Line stats (integration)", .hangGuard)
 struct LineStatTests {
     @Test func keepsStagedAndUnstagedApart() async throws {
         let repository = try await TestRepositories.make()

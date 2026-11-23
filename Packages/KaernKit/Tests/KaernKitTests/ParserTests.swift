@@ -6,7 +6,7 @@ private func nulJoined(_ records: [String]) -> Data {
     Data((records.joined(separator: "\u{0}") + "\u{0}").utf8)
 }
 
-@Suite("Status parser")
+@Suite("Status parser", .hangGuard)
 struct StatusParserTests {
     @Test func parsesBranchHeadersAndEntries() {
         let data = nulJoined([
@@ -68,7 +68,7 @@ struct StatusParserTests {
     }
 }
 
-@Suite("Log and ref parsers")
+@Suite("Log and ref parsers", .hangGuard)
 struct LogAndRefParserTests {
     @Test func parsesLogRecords() {
         let sep = "\u{1F}"
@@ -135,7 +135,7 @@ struct LogAndRefParserTests {
     }
 }
 
-@Suite("Diff parser")
+@Suite("Diff parser", .hangGuard)
 struct DiffParserTests {
     static let sample = """
     diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml

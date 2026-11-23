@@ -1,0 +1,25 @@
+# Dependabot keeps the actions the workflows use up to date. They're pinned to a commit, which nobody can move the way
+# a tag can be moved, so they don't move by themselves either. Once a week Dependabot looks for newer versions and
+# opens one pull request with all of them, against develop, where work lands. It changes the commit and the version
+# in the comment beside it. CI runs on the pull request; merge it like any other change.
+# - A version has to be a week old first, in case it's taken back.
+# - CI doesn't run release.yml, so an action only that workflow uses (keeping and getting the release files) is first
+#   tried by the next beta's tag.
+# - Sparkle isn't covered: it's named in the Xcode project, and Dependabot only reads a Package.swift.
+#
+# GitHub reads this file from the default branch, main: a change to it counts from the next release.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
