@@ -126,6 +126,7 @@ extension GitRepository {
         let stash = try await stashAll(message: message, includeUntracked: false)
         let outcome: OperationOutcome
         do {
+            try Task.checkCancellation()
             outcome = try await work()
         } catch {
             let failure = error

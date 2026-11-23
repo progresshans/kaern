@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import KaernKit
 
@@ -149,44 +150,52 @@ struct StopAndResetTests {
         #expect(worktree.read("a.txt") == "one\nchanged\n")
     }
 
-    /// A runner whose `git stash push` is still running after it made the entry: it writes the file `made` into
-    /// `folder` then, and stays for two more seconds. The real one is in that state for a few milliseconds, between
-    /// writing the entry and taking the changes out of the files.
-    static func runner(stayingInStashPush folder: URL) throws -> GitRunner {
+    enum StopSource: CaseIterable { case activity, commandLog }
+
+    /// Hold real git just after refs/stash is published, before it clears the index and worktree.
+    /// The test releases the hook once the chosen Stop has been requested.
+    static func run(stoppingInStashPushOf repository: GitRepository, via source: StopSource,
+                    _ work: @escaping @Sendable (GitRepository) async throws -> Void) async throws -> (any Error)? {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "kaern-stash-hook-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let git = Self.runner.executableURL.path(percentEncoded: false)
-        let file = folder.appending(path: "git.sh")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "reference-transaction")
         try Data("""
             #!/bin/sh
-            case " $* " in
-            *" stash push "*)
-                "\(git)" "$@"
-                status=$?
-                touch "\(folder.appending(path: "made").path(percentEncoded: false))"
-                sleep 2
-                exit $status ;;
-            esac
-            exec "\(git)" "$@"
+            [ "$1" = committed ] || exit 0
+            dir="$(dirname "$0")"
+            while read -r old new ref; do
+                [ "$ref" = refs/stash ] || continue
+                touch "$dir/made"
+                while [ -d "$dir" ] && [ ! -f "$dir/resume" ]; do sleep 0.05; done
+            done
 
             """.utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path(percentEncoded: false))
-        var runner = Self.runner
-        runner.executableURL = file
-        return runner
-    }
+        try await repository.git(["config", "--local", "core.hooksPath", folder.path(percentEncoded: false)])
 
-    /// Runs `work` on `repository` with that runner and stops it while `git stash push` is still running, the
-    /// entry made. Returns the error the work ended with (`nil`: none).
-    static func run(stoppingInStashPushOf repository: GitRepository,
-                    _ work: @escaping @Sendable (GitRepository) async throws -> Void) async throws -> (any Error)? {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "kaern-tests-git-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let slow = try await GitRepository.open(repository.root, runner: runner(stayingInStashPush: folder))
+        let handle = Mutex<GitCommandHandle?>(nil)
+        var runner = Self.runner
+        runner.onCommand = { event in
+            if case .started(let record, let stop) = event, !record.isBackground, record.arguments.starts(with: ["stash", "push"]) {
+                handle.withLock { $0 = stop }
+            }
+        }
+        let watched = try await GitRepository.open(repository.root, runner: runner)
         let made = folder.appending(path: "made").path(percentEncoded: false)
-        let task = Task { try await work(slow) }
+        let task = Task {
+            try await GitCommandTrigger.$current.withValue(GitCommandTrigger("Test")) { try await work(watched) }
+        }
+        defer { task.cancel() }
         try await waitUntil { FileManager.default.fileExists(atPath: made) }
         try #require(FileManager.default.fileExists(atPath: made), "git stash push never got to its entry")
-        task.cancel()
+        switch source {
+        case .activity: task.cancel()
+        case .commandLog:
+            let stop = try #require(handle.withLock { $0 })
+            stop.stop()
+        }
+        try Data().write(to: folder.appending(path: "resume"))
         do {
             try await task.value
             return nil
@@ -198,31 +207,36 @@ struct StopAndResetTests {
     /// A stop can also reach `git stash push` itself. git writes the entry first and takes the changes out of the
     /// files after that; ended in between, it left them in the stash list, and whole or in part in the files, and
     /// nothing put them back. A stop waits for git there, and then they come back.
-    @Test func aStopWhileTheChangesGoAsideBringsThemBack() async throws {
+    @Test(arguments: StopSource.allCases) func aStopWhileTheChangesGoAsideBringsThemBack(_ source: StopSource) async throws {
         // Around an operation (Merge, Rebase, Cherry-pick, Revert, Pull).
         let repository = try await TestRepositories.make()
         defer { TestRepositories.remove(repository) }
         try repository.write("one\n", to: "a.txt")
         try await repository.commitAll("one")
-        try repository.write("one\nmine\n", to: "a.txt")
+        try repository.write("older change\n", to: "a.txt")
+        try await repository.stash(message: "Keep this stash", includeUntracked: false)
+        let originalStashes = try await repository.stashes().map(\.id)
+        try #require(originalStashes.count == 1)
+        try repository.write("one\nstaged\n", to: "a.txt")
         try await repository.stage(["a.txt"])
-        let error = try await Self.run(stoppingInStashPushOf: repository) { repository in
+        try repository.write("one\nstaged\nunstaged\n", to: "a.txt")
+        let error = try await Self.run(stoppingInStashPushOf: repository, via: source) { repository in
             _ = try await repository.withChangesStashed(message: "Before Test") {
-                _ = try await repository.git(["rev-parse", "HEAD"])
+                Issue.record("The operation started after it was stopped")
                 return .finished
             }
         }
         #expect(error is CancellationError, "\(String(describing: error))")
-        #expect(try await repository.stashes().isEmpty)
-        #expect(repository.read("a.txt") == "one\nmine\n")
-        #expect(try await repository.git(["diff", "--cached", "--name-only"]).text.contains("a.txt"))
+        #expect(try await repository.stashes().map(\.id) == originalStashes)
+        #expect(try await repository.git(["show", ":a.txt"]).text == "one\nstaged\n")
+        #expect(repository.read("a.txt") == "one\nstaged\nunstaged\n")
 
         // Remove… of a worktree.
         let (main, folder) = try await Phase6ReviewTests.repositoryWithWorktree()
         defer { TestRepositories.remove(main); try? FileManager.default.removeItem(at: folder) }
         let worktree = try await GitRepository.open(folder, runner: Self.runner)
         try worktree.write("one\nchanged\n", to: "a.txt")
-        let stopped = try await Self.run(stoppingInStashPushOf: main) { main in
+        let stopped = try await Self.run(stoppingInStashPushOf: main, via: source) { main in
             _ = try await main.removeWorktree(folder.path(percentEncoded: false), keepingChangesAs: "Worktree test")
         }
         #expect(stopped is CancellationError, "\(String(describing: stopped))")
@@ -231,11 +245,11 @@ struct StopAndResetTests {
     }
 
     /// The same for Reset Hard, whose entry also takes the untracked files in the way.
-    @Test func aResetStoppedWhileTheChangesGoAsidePutsThemBack() async throws {
+    @Test(arguments: StopSource.allCases) func aResetStoppedWhileTheChangesGoAsidePutsThemBack(_ source: StopSource) async throws {
         let (repository, target) = try await ResetHardTests.filesInTheWayOfTheCommitBefore()
         defer { TestRepositories.remove(repository) }
         let head = try #require(await repository.resolve("HEAD"))
-        let error = try await Self.run(stoppingInStashPushOf: repository) { repository in
+        let error = try await Self.run(stoppingInStashPushOf: repository, via: source) { repository in
             _ = try await repository.resetHard(to: target, message: "Before reset")
         }
         #expect(error is CancellationError, "\(String(describing: error))")

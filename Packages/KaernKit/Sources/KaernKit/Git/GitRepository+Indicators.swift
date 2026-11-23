@@ -331,6 +331,7 @@ extension GitRepository {
         let folder = worktree.root
         var trashed: [RemovedWorktree.TrashedItem] = []
         do {
+            try Task.checkCancellation()
             for item in ignored {
                 var result: NSURL?
                 try FileManager.default.trashItem(at: folder.appending(path: item), resultingItemURL: &result)

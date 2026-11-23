@@ -12,10 +12,10 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ### Fixed
 
-- Stop always ends the command. A hook or tool that git had only just started goes with it, and a command that
+- When Stop ends a Git command, it also ends a hook or tool Git has just started. A command that
   doesn't end when asked is ended by force after 10 seconds.
-- A stop that comes just as your uncommitted changes are put aside (before a merge, rebase, pull or Reset Hard, or
-  when a worktree is removed) brings them back. It could leave them in Stashes, and partly in your files too.
+- Stopping an operation from Activity or the Command Log while Kaern puts uncommitted changes aside brings them
+  back with their staging intact. This applies to merge, rebase, pull, Reset Hard and removing a worktree.
 
 ## [1.0.1] - 2026-11-19
 
