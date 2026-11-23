@@ -56,6 +56,8 @@ struct SidebarView: View {
         .frame(maxWidth: .infinity)
         .background(K.sidebar)
         .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
+        // Outside the scroll view, which would cut it off at the sidebar's edge.
+        .overlayPreferenceValue(WholeNameKey.self) { SidebarWholeName(shown: $0) }
     }
 
     private var filter: String { repository.sidebar.filter.trimmingCharacters(in: .whitespaces) }
@@ -638,8 +640,20 @@ private struct SidebarRow: View {
     var trailingIcon: SVGIcon?
     /// `.si.on`: the row whose page the right panel shows.
     var isOn = false
+    /// The row drawn again as wide as its whole name (`SidebarWholeName`): a picture, the pointer never reaches it.
+    var isWholeName = false
 
     @State private var hovering = false
+    /// The name is cut short ("…") and the whole row is in view, both looked at only while the pointer is on the row.
+    @State private var nameIsCut = false
+    @State private var isInView = false
+    /// The pointer has rested on the row.
+    @State private var hasRested = false
+    @State private var restTimer: Task<Void, Never>?
+
+    /// How long the pointer rests on a row before a cut name unfolds: longer than it takes to pass over the row
+    /// on the way down the list.
+    private static let rest = Duration.milliseconds(400)
 
     var body: some View {
         HStack(spacing: 0) {
@@ -699,7 +713,68 @@ private struct SidebarRow: View {
                 .fill(isCurrent ? K.accentSoft : (isOn || (hovering && !isPlaceholder) ? K.hover : .clear))
         )
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            rest(inside)
+        }
+        .background {
+            if measuresName {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onChange(of: Self.isInView(proxy), initial: true) { _, inView in isInView = inView }
+                        // Scrolled under the pointer: the name folds, and unfolds after another rest.
+                        .onChange(of: proxy.frame(in: .global).minY) { if hovering { rest(true) } }
+                }
+            }
+        }
+        .background {
+            if showsWholeName {
+                Color.clear.anchorPreference(key: WholeNameKey.self, value: .bounds) {
+                    WholeNameRow(row: whole, bounds: $0)
+                }
+            }
+        }
+    }
+
+    /// The driver unfolded this row's name (debug builds: `wholeName <row title>`).
+    private var driverOpened: Bool {
+        #if DEBUG
+        DebugWholeName.shared.open == title
+        #else
+        false
+        #endif
+    }
+
+    private var measuresName: Bool { !isWholeName && (hovering || driverOpened) }
+    private var showsWholeName: Bool { !isWholeName && nameIsCut && isInView && (hasRested || driverOpened) }
+
+    private var whole: SidebarRow {
+        var row = self
+        row.isWholeName = true
+        return row
+    }
+
+    /// The name unfolds once the pointer has rested on the row and folds when it leaves.
+    private func rest(_ inside: Bool) {
+        restTimer?.cancel()
+        if hasRested { hasRested = false }
+        guard inside, !isWholeName else { return }
+        #if DEBUG
+        // A test instance's window lies wherever the real pointer happens to be: there only the driver
+        // unfolds a name (`wholeName`).
+        if TestSession.stem != nil { return }
+        #endif
+        restTimer = Task {
+            try? await Task.sleep(for: Self.rest)
+            guard !Task.isCancelled else { return }
+            hasRested = true
+        }
+    }
+
+    /// All of the row is inside what its scroll view shows.
+    private static func isInView(_ proxy: GeometryProxy) -> Bool {
+        guard let visible = proxy.bounds(of: .scrollView) else { return true }
+        return visible.minY <= 0.5 && visible.maxY >= proxy.size.height - 0.5
     }
 
     private var indent: CGFloat {
@@ -716,6 +791,9 @@ private struct SidebarRow: View {
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.tail)
+            .background {
+                if measuresName { CutReader(whole: Text(title).font(font)) { nameIsCut = $0 } }
+            }
     }
 
     private var font: Font {
@@ -731,6 +809,81 @@ private struct SidebarRow: View {
         return K.label
     }
 }
+
+/// The row whose name is shown whole, and where it is.
+private struct WholeNameRow {
+    let row: SidebarRow
+    let bounds: Anchor<CGRect>
+}
+
+/// Set by the one row the pointer rests on, while its name is cut short (`SidebarRow.showsWholeName`).
+private struct WholeNameKey: PreferenceKey {
+    static var defaultValue: WholeNameRow? { nil }
+
+    static func reduce(value: inout WholeNameRow?, nextValue: () -> WholeNameRow?) {
+        value = nextValue() ?? value
+    }
+}
+
+/// A name the sidebar cuts short, whole: the row again, as wide as it needs, lying on the row and on over
+/// what is right of the sidebar, on the plate the history's list of labels has. The way Finder shows a cut
+/// name. It's a picture: the pointer and clicks go to what is under it, so the row stays the row.
+private struct SidebarWholeName: View {
+    let shown: WholeNameRow?
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let shown {
+                let frame = proxy[shown.bounds]
+                shown.row
+                    // As wide as the whole name needs, and never narrower than the row it lies on. (The other
+                    // way round, the frame would take only the sidebar's width and the plate with it.)
+                    .frame(minWidth: frame.width, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                    // Solid: what is under it doesn't show through.
+                    .background {
+                        RoundedRectangle(cornerRadius: z(6), style: .continuous)
+                            .fill(K.popSolid)
+                            .shadow(color: K.shadowPop, radius: z(8), y: 6)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: z(6), style: .continuous)
+                            .strokeBorder(K.popRing, lineWidth: 0.5)
+                    }
+                    .debugWholeNameFrame()
+                    .offset(x: frame.minX, y: frame.minY)
+                    .transition(.opacity)
+            }
+        }
+        .allowsHitTesting(false)
+        // The row itself is what VoiceOver reads.
+        .accessibilityHidden(true)
+        .animation(.easeOut(duration: 0.12), value: shown != nil)
+    }
+}
+
+#if DEBUG
+/// Debug builds: the title of the row whose name the driver unfolded (`wholeName <row title>|off`; a test window
+/// in the background gets no hover), and where the unfolded row is, in window points (top-left origin), for the
+/// driver's `targetFrame wholeName row`.
+@Observable
+final class DebugWholeName {
+    static let shared = DebugWholeName()
+    var open: String?
+    @ObservationIgnored var frame: CGRect?
+}
+
+extension View {
+    /// Debug builds: tells the driver where the unfolded row is (`DebugWholeName.frame`).
+    func debugWholeNameFrame() -> some View {
+        modifier(DebugFrameReport(key: "wholeName") { DebugWholeName.shared.frame = $0 })
+    }
+}
+#else
+extension View {
+    func debugWholeNameFrame() -> some View { self }
+}
+#endif
 
 /// A remote branch prefix folder (`.si.ind.rdir`): chevron, folder icon, name and how many
 /// branches it holds ("41", or "1 of 812" while filtering).

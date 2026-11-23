@@ -204,6 +204,8 @@ struct RefLabel: View {
     let label: RefLabelItem
     let lane: Int
     let selected: Bool
+    /// Told whether the name is cut short ("…") where the label is shown, and again when that changes.
+    var onCut: ((Bool) -> Void)?
 
     var body: some View {
         HStack(spacing: z(4)) {
@@ -213,6 +215,9 @@ struct RefLabel: View {
             Text(label.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .background {
+                    if let onCut { CutReader(whole: Text(label.title), action: onCut) }
+                }
             switch label.kind {
             case .branch:
                 Icon(Icons.labelLocal, size: 12).foregroundStyle(iconColor)

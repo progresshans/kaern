@@ -82,13 +82,18 @@ extension DebugDriver {
             // worktree <folder name> —
             // writes where its row (the smallest view showing it) is, in window points, into the dump's
             // `targetFrame`. targetFrame labels list|row: the list of labels the driver opened (`labels`),
-            // and where its row shows the first label and "+N".
+            // and where its row shows the first label and "+N". targetFrame wholeName row: the sidebar row
+            // whose name the driver unfolded (`wholeName`), as wide as it is drawn.
             guard let controller, args.count >= 2, let tab = controller.model.activeTab else { return }
             let repository = app.repository(for: tab.path)
             let rest = args.dropFirst().joined(separator: " ")
             if args[0] == "labels" {
                 let labels = DebugRefLabels.shared
                 lastTargetFrame = rest == "list" ? labels.frames["list"] : labels.open.flatMap { labels.frames["row \($0)"] }
+                return
+            }
+            if args[0] == "wholeName" {
+                lastTargetFrame = DebugWholeName.shared.frame
                 return
             }
             let target: ContextTarget? = switch args[0] {
