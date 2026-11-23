@@ -47,6 +47,8 @@ struct HistoryView: View {
         var anchorIndex = -1
         /// Where the pointer is over the scroll view, from its top left (`nil`: not over it).
         var pointer: CGPoint?
+        /// How wide the label column is shown: a row hears where the pointer is only while it's over that.
+        var labelColumn: CGFloat = 0
         /// Where the list was scrolled to at the last update, and the step the window moves in.
         var top: CGFloat = 0
         var step = 4
@@ -68,6 +70,7 @@ struct HistoryView: View {
 
     var body: some View {
         let columns = columns
+        scrollState.labelColumn = columns.ref
         // As this pass has them (the latest `onPick`).
         actions.click = click
         actions.switchTo = switchTo
@@ -179,7 +182,8 @@ struct HistoryView: View {
         }
     }
 
-    /// The commit row under the pointer, as the list is scrolled now, and where in the row it is.
+    /// The commit row under the pointer, as the list is scrolled now, and where in the row it is while
+    /// it's over the label column.
     private func updateHover() {
         var row: Int?
         var inRow: CGPoint?
@@ -188,7 +192,9 @@ struct HistoryView: View {
             let index = Int((inList / KMetric.graphRow).rounded(.down))
             if inList >= 0, index < repository.displayCommits.count {
                 row = index
-                inRow = CGPoint(x: pointer.x, y: inList - CGFloat(index) * KMetric.graphRow)
+                if pointer.x < scrollState.labelColumn {
+                    inRow = CGPoint(x: pointer.x, y: inList - CGFloat(index) * KMetric.graphRow)
+                }
             }
         }
         if window.hovered != row { window.hovered = row }
@@ -322,8 +328,8 @@ fileprivate final class HistoryWindow {
 
     /// The commit row the pointer is on (its number), for the hover tint.
     var hovered: Int?
-    /// Where the pointer is in that row. Only a row with several labels reads it (they open as a
-    /// list under the pointer), so the pointer moving over the others redraws nothing.
+    /// Where the pointer is in that row, while it's over the label column. Only a row with labels reads
+    /// it (they open as a list under the pointer), so the pointer moving anywhere else redraws nothing.
     var pointerInRow: CGPoint?
     /// The commit whose list of labels the pointer is on: the list lies over the rows below its own,
     /// and the pointer on it is on its row, not on those.
@@ -369,18 +375,19 @@ private struct HistoryList: View {
                               isHovered: hovered == index, isDimmed: repository.search.isFiltering, columns: columns)
                         .layoutValue(key: HistorySlot.self, value: .row(index))
                 } else {
+                    let labels = RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch,
+                                                     worktrees: worktreeBranches)
                     CommitRow(
                         commit: commit,
                         graph: row,
-                        labels: RefLabelItem.labels(for: repository.refs.refs(at: commit.id), headBranch: headBranch,
-                                                    worktrees: worktreeBranches),
+                        labels: labels,
                         signature: repository.signatureMark(of: commit.id),
                         isAlternate: index % 2 == 1,
                         isSelected: picked.isEmpty
                             ? repository.branchCompare == nil && repository.selection == .commit(commit.id)
                             : picked.contains(commit.id),
                         isHovered: hovered == index || window.labelListOwner == commit.id,
-                        pointerInRow: window.hovered == index && repository.refs.refs(at: commit.id).count > 1 ? window.pointerInRow : nil,
+                        pointerInRow: window.hovered == index && !labels.isEmpty ? window.pointerInRow : nil,
                         isDimmed: repository.search.isDimmed(commit.id),
                         tint: CommitRow.Tint(comparison: comparison, id: commit.id),
                         columns: columns,
@@ -1049,9 +1056,13 @@ private struct CommitRow: View {
         }
     }
 
-    /// Several refs here and the pointer on their label: every label shows, in a list that unfolds
-    /// from it (`RefLabelList`).
+    /// The pointer on a label that doesn't show everything: every label shows, whole, in a list that
+    /// unfolds from it (`RefLabelList`). That's a commit with several refs (the row shows the first and
+    /// "+N"), or one whose only label is cut short by the column.
     @State private var showsAllLabels = false
+    /// The row's only label is cut short ("…").
+    @State private var loneLabelIsCut = false
+    private var opensList: Bool { labels.count > 1 || (labels.count == 1 && loneLabelIsCut) }
     @State private var pointerOnLabels = false
     @State private var pointerOnList = false
     @State private var labelsTimer: Task<Void, Never>?
@@ -1060,9 +1071,10 @@ private struct CommitRow: View {
     @State private var shownLabelsSize = CGSize.zero
     private var shownLabelsWidth: CGFloat { shownLabelsSize.width }
 
-    /// The pointer is on the first label or "+N" (they sit 10 pt in, centered in the row).
+    /// The pointer is on the first label or "+N" (they sit 10 pt in, centered in the row), and there is
+    /// more to show than they do.
     private var pointerIsOnLabels: Bool {
-        guard labels.count > 1, let pointerInRow else { return false }
+        guard opensList, let pointerInRow else { return false }
         return CGRect(x: 10, y: (KMetric.graphRow - shownLabelsSize.height) / 2, width: shownLabelsSize.width, height: shownLabelsSize.height)
             .contains(pointerInRow)
     }
@@ -1139,7 +1151,8 @@ private struct CommitRow: View {
         if let first = labels.first {
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    RefLabel(label: first, lane: lane, selected: isSelected)
+                    RefLabel(label: first, lane: lane, selected: isSelected,
+                             onCut: labels.count == 1 ? { loneLabelIsCut = $0 } : nil)
                         .onTapGesture(count: 2) { switchTo(first) }
                         .contextTarget(first.contextTarget, ring: ContextRing(radius: z(6), inset: -2))
                         .layoutPriority(1)
@@ -1154,9 +1167,7 @@ private struct CommitRow: View {
                     }
                 }
                 .layoutPriority(1)
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                    if labels.count > 1 { shownLabelsSize = size }
-                }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { shownLabelsSize = $0 }
                 .debugLabelsFrame("row \(commit.id)")
                 Rectangle()
                     .fill(isSelected ? Color.white.opacity(0.75) : K.lane(lane))
@@ -1170,9 +1181,9 @@ private struct CommitRow: View {
     /// The list of every label is open (debug builds: or the driver opened it, `labels <index or hash>`).
     private var listShown: Bool {
         #if DEBUG
-        if labels.count > 1, DebugRefLabels.shared.open == commit.id { return true }
+        if opensList, DebugRefLabels.shared.open == commit.id { return true }
         #endif
-        return showsAllLabels
+        return showsAllLabels && opensList
     }
 
     /// The list opens after a moment on the label and closes a moment after the pointer has left
@@ -1223,10 +1234,10 @@ extension View {
 }
 #endif
 
-/// Every label of a commit with several refs, unfolding from its first one and "+N" (which it
-/// covers): down over the rows below, or up, the other way round, when the history shows more room
-/// above. It lies over the row's own node and lanes too. The labels are whole, and each keeps its
-/// right-click menu.
+/// Every label of a commit, unfolding from its first one and "+N" (which it covers): down over the
+/// rows below, or up, the other way round, when the history shows more room above. It lies over the
+/// row's own node and lanes too. The labels are whole, and each keeps its right-click menu. For a
+/// commit with one label that the column cuts short, it's that label, whole.
 private struct RefLabelList: View {
     let labels: [RefLabelItem]
     let lane: Int

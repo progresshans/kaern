@@ -316,7 +316,7 @@ final class DebugDriver {
             if args.count == 2, let key = keys[args[0]], let value = Double(args[1]) { UserDefaults.kaern.set(value, forKey: key) }
         case "labels":
             // labels <commit index or hash> | labels off — opens that commit's list of labels, as the
-            // pointer would.
+            // pointer would: several labels, or one that the column cuts short.
             let spec = args.first ?? "off"
             DebugRefLabels.shared.open = Int(spec).flatMap { repository.commits.indices.contains($0) ? repository.commits[$0].id : nil }
                 ?? (spec == "off" ? nil : repository.commits.first { $0.id.hasPrefix(spec) }?.id)

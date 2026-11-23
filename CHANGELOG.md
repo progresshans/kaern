@@ -4,6 +4,11 @@ What changed in each version of Kaern. A version's section is what its update wi
 
 ## [Unreleased]
 
+### Improved
+
+- A branch or tag name that doesn't fit can be read whole: rest the pointer on it. In the history, a label that
+  its column cuts short unfolds over the graph, the way the "+2" list does.
+
 ### Fixed
 
 - Stop always ends the command. A hook or tool that git had only just started goes with it, and a command that
