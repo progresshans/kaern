@@ -329,6 +329,9 @@ public struct GitRunner: Sendable {
         private func send(_ signal: Int32) {
             guard process.isRunning else { return }
             let pid = process.processIdentifier
+            // A git that runs has an ID above 1. Checked all the same, since the signals below go by it: as a
+            // process ID, 0 stands for this app's own group, and what's under 0 or 1 is everything on the Mac.
+            guard pid > 1 else { return }
             // One signal for git's group reaches everything in it at once. Listing what git started and
             // signalling each misses what git starts in between.
             if getpgid(pid) == pid {
