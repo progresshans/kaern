@@ -138,6 +138,19 @@ def answers(seconds=0.3):
     return _await('ping', 'ping', seconds, lambda p: True) is not None
 
 
+def send_drag(x1, y1, x2, y2):
+    """Wait for receipt. A missed notification can be resent without performing a second drag."""
+    sequence = time.monotonic_ns()
+    command = 'drag %g %g %g %g %d' % (x1, y1, x2, y2, sequence)
+    if _await(command, 'drag', 5, lambda p: True) is None:
+        try:
+            state = full_dump(seconds=2)
+        except SystemExit:
+            state = None
+        _give_up('acknowledgement of ' + command, '', 5, state)
+    return sequence
+
+
 def full_dump(seconds=30):
     def read(path):
         with open(path) as f: return json.load(f)
@@ -178,6 +191,10 @@ def _give_up(what, label, seconds, d):
         a = d.get('active', {})
         lines.append('  shown: %s' % {key: a.get(key) for key in ('name', 'head', 'branch', 'activity', 'operation', 'alert', 'toast', 'selection')})
         lines.append('  driver: %s' % json.dumps(d.get('driver'), ensure_ascii=False)[:600])
+        drag = d.get('driver', {}).get('drag', {})
+        if drag.get('sequence'):
+            lines.append('  drag: %s' % drag)
+            lines.append('  panes: %s' % d.get('phase5', {}).get('layout', {}).get('panes'))
         lines.append('  tabs: %s' % ['%s:%s%s' % (t['name'], t['phase'], '*' if t.get('busy') else '') for w in d.get('windows', []) for t in w['tabs']])
         for part in ('phase4', 'phase5', 'phase6'):
             source = a if part == 'phase4' else d
@@ -185,10 +202,16 @@ def _give_up(what, label, seconds, d):
         try:
             os.makedirs(RUN_DIR, exist_ok=True)
             with open(os.path.join(RUN_DIR, 'failed-dump.json'), 'w') as f: json.dump(d, f, indent=1, ensure_ascii=False)
-            post('snapshotAll ' + os.path.join(RUN_DIR, 'failed.png'))
-            lines.append('  the whole dump and a picture: %s/failed-dump.json, failed.png' % RUN_DIR)
-        except OSError:
-            pass
+            lines.append('  dump: %s/failed-dump.json' % RUN_DIR)
+            def keep_picture(path):
+                os.replace(path, os.path.join(RUN_DIR, 'failed.png'))
+                return True
+            if _await('snapshotAll', 'failure-picture', 5, keep_picture):
+                lines.append('  picture: %s/failed.png' % RUN_DIR)
+            else:
+                lines.append('  the app did not return the failure picture')
+        except OSError as error:
+            lines.append('  could not save failure evidence: %s' % error)
     raise SystemExit('\n'.join(lines))
 
 

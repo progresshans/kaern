@@ -119,7 +119,11 @@ struct PaneResizeHandle: View {
                         case .leading: -drag.translation.width
                         case .top: -drag.translation.height
                         }
-                        resize(clamped(((start?.size ?? size) + moved).rounded()))
+                        let value = clamped(((start?.size ?? size) + moved).rounded())
+                        resize(value)
+                        #if DEBUG
+                        DebugDriver.shared.didDragPane(label, to: value)
+                        #endif
                     }
                     .onEnded { _ in start = nil }
             )
