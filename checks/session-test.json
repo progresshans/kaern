@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "windows": [
+    {
+      "id": "CD18C302-46E6-4229-8B1C-EB7C106E2AB4",
+      "isFullScreen": false,
+      "showsSidebar": true,
+      "showsDetails": true,
+      "frame": [
+        [
+          80,
+          60
+        ],
+        [
+          1440,
+          900
+        ]
+      ],
+      "activeTab": "AB76BE11-D329-4431-8C5E-220ACACEFB3F",
+      "tabs": [
+        {
+          "id": "DB1B2D77-2A3E-4DAE-A441-5BFEA3738A6F",
+          "path": "{SAMPLES}/cluster-config"
+        },
+        {
+          "id": "AB76BE11-D329-4431-8C5E-220ACACEFB3F",
+          "path": "{SAMPLES}/powerlens"
+        },
+        {
+          "id": "44CA6754-64F6-4430-81BF-59C95731FB32",
+          "path": "{SAMPLES}/recipe-box",
+          "group": "1B9ECF82-A8ED-4C97-8A5D-266BAB9176D6"
+        },
+        {
+          "id": "EB2167D7-2A74-42CF-82F7-C94A8C00D346",
+          "path": "{SAMPLES}/recipe-app",
+          "group": "1B9ECF82-A8ED-4C97-8A5D-266BAB9176D6"
+        },
+        {
+          "id": "9403565C-09B6-4C28-8665-02E6C3D52308",
+          "path": "{SAMPLES}/orders-api"
+        },
+        {
+          "id": "333F8970-78CD-4077-833D-18DF57A7D2E8",
+          "path": "{SAMPLES}/travel-notes",
+          "group": "2D0F45E4-3FED-4F7A-9AF5-B93B3E58FC38"
+        },
+        {
+          "id": "8B51B1F6-4A04-4615-8930-BBC0F38119DA",
+          "path": "{SAMPLES}/travel-blog",
+          "group": "2D0F45E4-3FED-4F7A-9AF5-B93B3E58FC38"
+        },
+        {
+          "id": "482CBC4C-29A0-445D-B511-C87D887B191B",
+          "path": "{SAMPLES}/CRM"
+        },
+        {
+          "id": "9833997D-00C3-434A-8EF5-DFA5D4CDFB8B",
+          "path": "{SAMPLES}/quiz-app"
+        },
+        {
+          "id": "D48D61DA-02D5-4D5F-9015-B94CB42A5E82",
+          "path": "{SAMPLES}/weather-dashboard-app",
+          "group": "8FC74D6B-54BB-4CE7-9377-A27AB6173BE3"
+        },
+        {
+          "id": "5C39D36C-E572-41AA-9AA0-FFC3971BB4C5",
+          "path": "{SAMPLES}/weather-mobile-app",
+          "group": "8FC74D6B-54BB-4CE7-9377-A27AB6173BE3"
+        }
+      ],
+      "groups": [
+        {
+          "id": "1B9ECF82-A8ED-4C97-8A5D-266BAB9176D6",
+          "name": "recipes",
+          "color": "green",
+          "collapsed": false
+        },
+        {
+          "id": "2D0F45E4-3FED-4F7A-9AF5-B93B3E58FC38",
+          "name": "Personal",
+          "color": "gray",
+          "collapsed": true
+        },
+        {
+          "id": "8FC74D6B-54BB-4CE7-9377-A27AB6173BE3",
+          "name": "weather",
+          "color": "brown",
+          "collapsed": true
+        }
+      ]
+    }
+  ],
+  "recent": []
+}
