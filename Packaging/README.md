@@ -140,8 +140,7 @@ If a run fails, fix the cause and re-run it in the Actions tab. When the tests f
 pass when that job is run again, the build already made is published; a fix in the code is a new commit, which takes
 a new tag (the next beta, or the release's tag moved to it). Publishing can run again: an existing GitHub release gets
 its files replaced, and an appcast that already offers the version isn't committed twice. If the appcast on `gh-pages`
-changed while the release was being built, publishing stops: run the whole workflow again. (The website's commits
-there don't count.)
+changed while the release was being built, publishing stops: run the whole workflow again.
 
 **To take a version back** from the appcast, revert the commit on `gh-pages` that offered it (or edit `appcast.xml`
 there in GitHub's editor). Pages serves the change in a few minutes, and copies stop being offered that version. Copies
