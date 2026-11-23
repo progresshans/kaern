@@ -12,6 +12,10 @@ from paths import APP
 GITCONFIG = os.path.join(RUN_DIR, 'test-gitconfig')
 # What the board comparisons were taken with.
 COLUMNS = ['-KaernColumnRef', '176', '-KaernColumnGraph', '0', '-KaernColumnDate', '104', '-KaernColumnSHA', '72', '-KaernFileTree', 'NO']
+# How far to the right of the screen a run's windows are (the app's -KaernDebugWindowsAside): they cover nothing of
+# yours while the checks run, and they are the same on every Mac, whatever its screen. KAERN_ON_SCREEN=1, or an
+# instance started by hand (KAERN_POINTER=1), keeps them on the screen to look at.
+ASIDE = 12000
 _state = {'session': None, 'mode': 'light', 'cleaned': False}
 _launches = itertools.count(1)
 
@@ -44,6 +48,7 @@ def start_app(appearance='light', extra=(), columns=True, drop=(), session_file=
     # The real mouse stays out of it (a hovered row changes pictures and what Return picks in Quick Open);
     # KAERN_POINTER=1 lets it in, to click around in an instance started by hand.
     if not os.environ.get('KAERN_POINTER'): args += ['-KaernDebugIgnorePointer', 'YES']
+    if not (os.environ.get('KAERN_POINTER') or os.environ.get('KAERN_ON_SCREEN')): args += ['-KaernDebugWindowsAside', str(ASIDE)]
     args += (COLUMNS if columns else []) + [str(a) for a in extra]
     # KAERN_ZOOM=1.25 starts the app zoomed (View › Zoom In): for pictures of every screen at that size.
     if os.environ.get('KAERN_ZOOM'): args += ['-KaernZoom', os.environ['KAERN_ZOOM']]

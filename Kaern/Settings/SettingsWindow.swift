@@ -36,7 +36,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: pane.rawValue)
             tabs.addTabViewItem(item)
         }
-        let window = NSWindow(contentViewController: tabs)
+        let window = AppWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         window.isRestorable = false

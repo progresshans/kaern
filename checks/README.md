@@ -38,8 +38,10 @@ and leaves `runs/<check>/failed-dump.json` and `failed.png`.
 The checks run three at a time, the long ones first. One that measures speed or memory (`alone` in `--list`) runs
 after them with nothing beside it. One suite at a time in a work folder; Ctrl-C stops it and its instances.
 
-The test windows open in the background and never take the keyboard, but they are windows: they show up on your
-screen while the checks run.
+The test windows are beside the screen, 12,000 points to the right of where they would be, and never take the
+keyboard: they cover nothing of yours while the checks run. They are drawn there as on the screen, and the pictures
+are the same. A menu a check opens can still show at the screen's edge for a moment. `KAERN_ON_SCREEN=1` keeps the
+windows on the screen, to watch a check.
 
 ## Where things are
 
@@ -53,8 +55,8 @@ the files the app answers into. Its instance takes only the commands of its own 
 the real mouse can't hover or click in it (`-KaernDebugIgnorePointer`).
 
 - A command to a run's instance: `python3 checks/k3.py --run t_stash dump /tmp/state.json`.
-- An instance to look at by hand: `checks/launch.sh light [scenario]` (the run "manual"; the mouse works in it), then
-  `python3 checks/k3.py snapshot /tmp/a.png`.
+- An instance to look at by hand: `checks/launch.sh light [scenario]` (the run "manual"; it is on the screen and
+  the mouse works in it), then `python3 checks/k3.py snapshot /tmp/a.png`.
 
 Samples are built once into `<work folder>/sample-cache/` (`python3 checks/samples.py list`), and a run gets APFS
 clones of what it needs. The suite builds them again at its start; a check run by hand builds what is missing or
@@ -70,6 +72,9 @@ without the dark pictures. GitHub's Mac is several times slower than a recent Ma
 every limit three times as long there. The checks wait for a state, never for a time, so only a check that fails
 takes longer. The job keeps each check's log, and for a check that gave up the app's state and a picture of its
 window (the `flow-checks` artifact of the run).
+
+Its screen is small, which doesn't matter: a test session's windows are as large as a check asks, whatever the
+screen (`AppWindow` in `Kaern/Window/MainWindowController.swift`), and beside it there as here.
 
 ## Writing or changing a check
 

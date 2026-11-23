@@ -13,6 +13,13 @@ enum TestSession {
         SessionStore.testSessionPath.map { (($0 as NSString).expandingTildeInPath as NSString).deletingPathExtension }
     }
 
+    /// `-KaernDebugWindowsAside <points>`: how far to the right of where they'd be this instance's windows are put,
+    /// far enough to be beside every screen (`AppWindow`). `nil`: they stay where they are put.
+    static var windowsAside: CGFloat? {
+        let points = UserDefaults.standard.double(forKey: "KaernDebugWindowsAside")
+        return stem != nil && points > 0 ? points : nil
+    }
+
     /// Environment for every git command a test instance runs.
     static func gitEnvironment() -> [String: String] {
         guard let stem else { return [:] }

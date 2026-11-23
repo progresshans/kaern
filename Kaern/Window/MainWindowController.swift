@@ -131,6 +131,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError() }
 
     private func placeWindow(_ window: NSWindow) {
+        #if DEBUG
+        // A test window is as large as its session says, whatever the screen, and beside the screen when the
+        // session's launcher asks for that (see `AppWindow`).
+        if TestSession.stem != nil, let saved = model.frame {
+            window.setFrame(window.constrainFrameRect(saved, to: nil), display: false)
+            return
+        }
+        #endif
         if let saved = model.frame, let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(saved) }) {
             // Keep it on a screen that's still attached, and no bigger than that screen.
             var frame = saved
@@ -244,9 +252,31 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
+/// A window of Kaern's. macOS keeps a window's top on the screen and makes it no taller than the screen. A test
+/// session's windows are left out of that:
+/// - They are as large as their check asks. On a small screen, such as GitHub's Mac has, a 900-point window came
+///   out 680 tall, and what a check measured or clicked was somewhere else.
+/// - With `-KaernDebugWindowsAside` they are beside the screen, all moved to the right by the same distance, so
+///   they keep their places among themselves and cover nothing of yours while checks run. They are drawn there
+///   as on the screen.
+/// Anywhere else, nothing changes.
+class AppWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        #if DEBUG
+        if TestSession.stem != nil {
+            var frame = frameRect
+            // Once: a window already over there has its left edge past half the distance.
+            if let aside = TestSession.windowsAside, frame.minX < aside / 2 { frame.origin.x += aside }
+            return frame
+        }
+        #endif
+        return super.constrainFrameRect(frameRect, to: screen)
+    }
+}
+
 /// The window. ⌘W ("Close") closes the selected tab first, like a browser; the close button
 /// and Close Window (⇧⌘W) always close the window.
-final class KaernWindow: NSWindow {
+final class KaernWindow: AppWindow {
     var closeTab: (() -> Bool)?
     /// Space that nothing else took: Quick Look of the file Review shows (ScreenMarks).
     var quickLook: (() -> Bool)?
