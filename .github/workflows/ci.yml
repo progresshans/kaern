@@ -1,12 +1,14 @@
 # Kaern's checks, on each pull request and each push to develop:
-# - the KaernKit tests, and a Debug build of the app (with the debug driver the flow checks use);
+# - the KaernKit tests;
+# - a Debug build of the app and the flow checks (checks/), which take a test instance of it through what a person
+#   does (stage, commit, rebase, resolve a conflict, drag a pane…) and read its state back;
 # - the release build as a version tag makes it (script/release.sh), but signed ad hoc and not notarized, so it needs
 #   no secrets.
 #
 # Not on a push to main. main only moves for a release, and the release workflow tests the commit it tags
 # (release.yml). Checked here too, a release's commit would be checked twice, since develop is pushed with it; and
-# with the release's own jobs that is six Mac jobs, one more than GitHub runs at once (five on a Free, Pro or Team
-# plan), so the release would wait.
+# with the release's own jobs that is eight Mac jobs, three more than GitHub runs at once (five on a Free, Pro or
+# Team plan), so the release would wait.
 name: CI
 
 on:
@@ -25,9 +27,9 @@ concurrency:
 
 jobs:
   test:
-    name: Test and build
+    name: KaernKit tests
     # GitHub's macOS 27 image with its default Xcode 27, as in release.yml. It's a public preview, named xcode-27 until
-    # GitHub releases a macos-27 label; then change runs-on in both.
+    # GitHub releases a macos-27 label; then change runs-on in both, and in the jobs below.
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
@@ -53,11 +55,56 @@ jobs:
           NSUnbufferedIO: "YES"
         run: swift test --package-path Packages/KaernKit
 
-      - name: Build the app (Debug)
+  flow:
+    name: App build and flow checks
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      # GitHub's Mac is several times slower than a recent MacBook: every limit of the checks is three times as long.
+      # They wait for a state, not for a time, so only a check that fails takes longer.
+      KAERN_PATIENCE: "3"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The checks keep everything they make in one folder, outside the checkout.
+      - name: Choose the work folder
+        run: echo "KAERN_CHECKS_WORK=$RUNNER_TEMP/kaern-checks" >> "$GITHUB_ENV"
+
+      # The cores, the memory and the screen too: three checks run side by side, in 1440 × 900 windows.
+      - name: Show the Mac and its tools
         run: |
-          xcodebuild build -project Kaern.xcodeproj -scheme Kaern -configuration Debug \
-            -destination "platform=macOS,arch=arm64" -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO -quiet
+          sw_vers
+          uname -m
+          sysctl -n hw.ncpu hw.memsize
+          system_profiler SPDisplaysDataType | grep -E "Resolution|Chipset|Displays" || true
+          xcodebuild -version
+          python3 --version
+          xcrun --find git
+          "$(xcrun --find git)" --version
+
+      # Signed to run locally (the project's own setting), which needs no certificate: the checks start this app.
+      - name: Build the app (Debug)
+        run: checks/build.sh
+
+      # Without the dark pictures: they are for looking at, and what a check decides on is the app's state.
+      - name: Run the flow checks
+        run: python3 checks/suite.py --no-dark
+
+      # Each check's log, and for one that gave up the app's state and a picture of its window.
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flow-checks
+          path: |
+            ${{ runner.temp }}/kaern-checks/suite/
+            ${{ runner.temp }}/kaern-checks/runs/*/failed-dump.json
+            ${{ runner.temp }}/kaern-checks/runs/*/failed.png
+          if-no-files-found: ignore
+          retention-days: 7
 
   release-build:
     name: Release build (signed ad hoc)

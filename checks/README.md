@@ -63,6 +63,14 @@ older than three hours. Nothing writes into the cache: the suite fails if a file
 Pictures go to `<work folder>/shots/`. A check takes each one in light, switches the instance to dark, takes it
 again and switches back. They are for looking at; what a check decides on is the app's state.
 
+## On GitHub
+
+CI runs the suite on each pull request and each push to develop (the `flow` job in `.github/workflows/ci.yml`),
+without the dark pictures. GitHub's Mac is several times slower than a recent MacBook, so `KAERN_PATIENCE=3` makes
+every limit three times as long there. The checks wait for a state, never for a time, so only a check that fails
+takes longer. The job keeps each check's log, and for a check that gave up the app's state and a picture of its
+window (the `flow-checks` artifact of the run).
+
 ## Writing or changing a check
 
 Nothing waits a fixed time. A command returns at once; what it should bring about is waited for.
