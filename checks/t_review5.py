@@ -77,8 +77,10 @@ print('   after ⌘Z:', head()[:7]); assert head() == local, '⌘Z brings the lo
 k('redo')
 settle(lambda d: head() == recorded, label='⇧⌘Z')
 print('   after ⇧⌘Z:', head()[:7]); assert head() == recorded
+# The sidebar still shows a moved gitlink when the parent's porcelain omits the submodule.
+run(REPO, 'config', 'submodule.Vendor/Sparkle.ignore', 'all')
 run(SUB, 'checkout', '-q', '2.7.0')
-# The app notices the submodule at 2.7.0.
+assert not run(REPO, 'status', '--porcelain', '--', 'Vendor/Sparkle').strip()
 settle(lambda d: any(line.startswith('Vendor/Sparkle | 2.6.4 → 2.7.0') for line in marks(d)['sidebarSubmodules']), label='the submodule moved to 2.7.0')
 k('updateRecorded', 'Vendor/Sparkle', '2.6.4')
 a = settle(lambda d: head() == recorded and d['active']['confirmation'] is None, label='Update to Recorded without a question')['active']
