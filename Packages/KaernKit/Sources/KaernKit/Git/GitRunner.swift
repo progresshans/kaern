@@ -239,6 +239,7 @@ public struct GitRunner: Sendable {
             progress = onProgress
         }
         let launched = record
+        let deferredStop = GitCommandHandle.deferredStop
         let result = try await GitRunner.execute(
             executableURL: executableURL,
             arguments: GitRunner.baseArguments + lfsArguments + arguments,
@@ -248,7 +249,9 @@ public struct GitRunner: Sendable {
             stopGrace: stopGrace,
             onProgress: progress,
             onLaunch: { stop in
-                if let onCommand, let launched { onCommand(.started(launched, stop: GitCommandHandle(stop))) }
+                if let onCommand, let launched {
+                    onCommand(.started(launched, stop: deferredStop ?? GitCommandHandle(stop)))
+                }
             }
         )
         let output = result.output

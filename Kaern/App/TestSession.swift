@@ -2,15 +2,22 @@
 import Foundation
 
 /// An instance on a test session: a Debug build launched with `-KaernSessionFile <path>`.
-/// What it would change outside its sample repositories stays next to that session file, so a
-/// test run never touches your session, settings, git config or Keychain:
-/// - `<session>.settings.plist`: Kaern's settings (`UserDefaults.kaern`)
+/// Each session has its own settings, git config and credentials:
+/// - `<session>.settings.plist`: settings used directly by a manual session, or archived
+///   from the flow launcher's private macOS preferences domain (`UserDefaults.kaern`)
 /// - `<session>.gitconfig`: git's global config, unless the launcher passes `GIT_CONFIG_GLOBAL`
 /// - `<session>.credentials`: what a sign-in hands to git's credential helper
 enum TestSession {
     /// The session file without its extension: `/tmp/run/session-test` for `session-test.json`.
     static var stem: String? {
         SessionStore.testSessionPath.map { (($0 as NSString).expandingTildeInPath as NSString).deletingPathExtension }
+    }
+
+    /// `-KaernDebugWindowsAside <points>`: how far to the right of where they'd be this instance's windows are put,
+    /// far enough to be beside every screen (`AppWindow`). `nil`: they stay where they are put.
+    static var windowsAside: CGFloat? {
+        let points = UserDefaults.standard.double(forKey: "KaernDebugWindowsAside")
+        return stem != nil && points > 0 ? points : nil
     }
 
     /// Environment for every git command a test instance runs.

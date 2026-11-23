@@ -227,10 +227,17 @@ final class DebugDriver {
                 click(at: CGPoint(x: x, y: y), count: args.count > 2 ? Int(args[2]) ?? 1 : 1)
             }
         case "drag":
-            // drag x1 y1 x2 y2
-            if args.count == 4, let values = Optional(args.compactMap(Double.init)), values.count == 4 {
-                drag(from: CGPoint(x: values[0], y: values[1]), to: CGPoint(x: values[2], y: values[3]))
+            // drag x1 y1 x2 y2 [sequence reply-file]. A retry only acknowledges the same drag.
+            guard args.count == 4 || args.count == 6 else { return }
+            let points = args.prefix(4).compactMap(Double.init)
+            guard points.count == 4 else { return }
+            if args.count == 6 {
+                guard let sequence = Int(args[4]) else { return }
+                try? Data("ok".utf8).write(to: URL(filePath: args[5]), options: .atomic)
+                guard sequence > lastDragSequence else { return }
+                lastDragSequence = sequence
             }
+            drag(from: CGPoint(x: points[0], y: points[1]), to: CGPoint(x: points[2], y: points[3]))
         case "zoom":
             // zoom <factor> — View › Zoom In / Zoom Out: text, rows and spacing that much larger or smaller.
             if let factor = args.first.flatMap(Double.init) { UIScale.keep(factor) }
@@ -636,7 +643,7 @@ final class DebugDriver {
     /// Draws the main window and every other visible Kaern window over it (menus, popovers,
     /// the Command Log) at their places, at the screen's scale.
     private func snapshotComposite(to path: String) {
-        try? compositeRep()?.representation(using: .png, properties: [:])?.write(to: URL(filePath: path))
+        try? compositeRep()?.representation(using: .png, properties: [:])?.write(to: URL(filePath: path), options: .atomic)
     }
 
     private func compositeRep() -> NSBitmapImageRep? {
@@ -858,6 +865,18 @@ final class DebugDriver {
     /// Clicks, drags and held keys still being sent (each takes a moment): a script waits for none
     /// (`driver.pointerBusy`) before the next one, or a press could land inside another's drag.
     private var pointerTasks = 0
+    private var lastDragSequence = 0
+    private var lastResizeHandle = ""
+    private var lastResizeValue: CGFloat = 0
+    private var sizesAfterDragChange: [String: Double] = [:]
+    private var sizesAfterMouseUp: [String: Double] = [:]
+
+    func didDragPane(_ label: String, to value: CGFloat) {
+        guard pointerTasks > 0 else { return }
+        lastResizeHandle = label
+        lastResizeValue = value
+        sizesAfterDragChange = PaneFrames.storedSizes
+    }
 
     private func click(at point: CGPoint, count: Int) {
         pointerTasks += 1
@@ -873,6 +892,10 @@ final class DebugDriver {
     }
 
     private func drag(from start: CGPoint, to end: CGPoint) {
+        lastResizeHandle = ""
+        lastResizeValue = 0
+        sizesAfterDragChange = [:]
+        sizesAfterMouseUp = [:]
         pointerTasks += 1
         Task {
             defer { pointerTasks -= 1 }
@@ -886,6 +909,7 @@ final class DebugDriver {
             }
             try? await Task.sleep(for: .milliseconds(80))
             mouse(.leftMouseUp, at: end)
+            sizesAfterMouseUp = PaneFrames.storedSizes
         }
     }
 
@@ -1090,6 +1114,8 @@ final class DebugDriver {
             "fieldPlaceholder": field?.placeholderString ?? field?.placeholderAttributedString?.string ?? "",
             "appearance": NSApp.effectiveAppearance.isDark ? "dark" : "light",
             "pointerBusy": pointerTasks > 0,
+            "drag": ["sequence": lastDragSequence, "handle": lastResizeHandle, "value": lastResizeValue,
+                     "storedAfterChange": sizesAfterDragChange, "storedAfterMouseUp": sizesAfterMouseUp] as [String: Any],
         ]
     }
 }

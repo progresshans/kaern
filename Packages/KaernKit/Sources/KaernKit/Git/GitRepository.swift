@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// What a batch of file-system events touched.
 public struct ChangeScope: OptionSet, Sendable, Hashable {
@@ -42,10 +43,19 @@ public struct GitRepository: Sendable, Hashable {
         return place(a) == place(b)
     }
 
-    /// Runs `work` where a stop can't reach it. Putting changes back after a stop must not be
-    /// stopped too: a git command in a cancelled task doesn't start (`GitRunner`).
+    /// Finish the protected commands in a fresh task. A Stop from the Command Log is delivered
+    /// to the caller along with the result, including the object ID needed to put a stash back.
     static func uncancelled<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await Task { try await work() }.value
+        let requested = Mutex(false)
+        let stop = GitCommandHandle.deferredStop ?? GitCommandHandle { requested.withLock { $0 = true } }
+        defer {
+            if requested.withLock({ $0 }) {
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+        return try await Task {
+            try await GitCommandHandle.$deferredStop.withValue(stop) { try await work() }
+        }.value
     }
 
     /// An error in a sentence ("It was stopped." for a stop).

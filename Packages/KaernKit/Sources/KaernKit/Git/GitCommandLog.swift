@@ -100,7 +100,8 @@ public struct GitCommandRecord: Sendable, Identifiable {
 
 /// What the runner reports to ``GitRunner/onCommand``.
 public enum GitCommandEvent: Sendable {
-    /// The process started. `stop` ends it (the command then throws `CancellationError`).
+    /// The process started. During an automatic stash or its recovery, Stop cancels the enclosing
+    /// operation once the protected commands have finished. Otherwise it stops this process.
     case started(GitCommandRecord, stop: GitCommandHandle)
     /// A progress line on standard error (only for commands run with `onProgress`).
     case progress(UUID, String)
@@ -109,6 +110,7 @@ public enum GitCommandEvent: Sendable {
 
 /// Stops a running command.
 public final class GitCommandHandle: Sendable {
+    @TaskLocal static var deferredStop: GitCommandHandle?
     private let stopAction: @Sendable () -> Void
     init(_ stop: @escaping @Sendable () -> Void) { stopAction = stop }
     public func stop() { stopAction() }

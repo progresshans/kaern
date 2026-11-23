@@ -207,10 +207,11 @@ extension RepositoryModel {
                 let change = await repository.submoduleChange(submodule.path, from: submodule.commit, to: submodule.commit, limit: 0)
                 detail = "\(change.newTag ?? String(submodule.commit.prefix(7))) · up to date"
             case .moved:
-                // `git submodule status` names the commit checked out; the one recorded is the index's.
-                let recorded = status.entries.first { $0.path == submodule.path }?.submodule?.indexCommit
+                // Porcelain can omit a submodule (including when submodule.<name>.ignore is all).
+                // Read its stage-zero gitlink from the same repository that reported the move.
+                guard let recorded = await repository.resolve(":0:\(submodule.path)") else { continue }
                 let change = await repository.submoduleChange(submodule.path, from: recorded, to: submodule.commit, limit: 0)
-                let from = change.oldTag ?? recorded.map { String($0.prefix(7)) } ?? "?"
+                let from = change.oldTag ?? String(recorded.prefix(7))
                 let to = change.newTag ?? String(submodule.commit.prefix(7))
                 let movement = change.isFastForward
                     ? Formatters.count(change.addedCount, "new commit", "new commits")

@@ -140,25 +140,27 @@ extension GitRepository {
         return (stash, title)
     }
 
-    /// Stashes all local changes with `message` and returns the new stash's object name.
+    /// Stashes all local changes with `message` and returns the new stash's object name (`nil`:
+    /// there was nothing to stash).
     public func stashAll(message: String, includeUntracked: Bool) async throws -> String? {
-        let before = await resolve("refs/stash")
-        try await stash(message: message, includeUntracked: includeUntracked)
-        guard let after = await resolve("refs/stash"), after != before else { return nil }
-        return after
+        try await stashWhole { try await self.stash(message: message, includeUntracked: includeUntracked) }
     }
 
-    /// The stash entry with `message` made since `previous` was the top of the list, or `nil`.
-    /// For putting things back after a stop: a stop that comes right after `git stash push` keeps
-    /// the read that finds the new entry from starting, so the entry looks like none was made.
-    /// This reads in a task of its own.
-    func stashMade(since previous: String?, message: String) async -> String? {
-        let found = try? await Self.uncancelled { () async -> String? in
-            guard let top = await self.resolve("refs/stash"), top != previous,
-                  let entry = await self.stash(withObject: top), entry.message.hasSuffix(message) else { return nil }
-            return top
+    /// Runs `push` (a `git stash push`) and returns the entry it made, where a stop can't reach it.
+    ///
+    /// git writes the entry first and takes the changes out of the files after that. Ended in
+    /// between, it leaves them in the stash list and, whole or in part, in the files too, and the
+    /// read that finds the entry doesn't start, so nothing knows there is one to put back. So a
+    /// stop that comes while the changes go aside waits for git, which takes moments, and whoever
+    /// asked for the entry then puts it back. A stop that came before leaves everything alone.
+    func stashWhole(_ push: @escaping @Sendable () async throws -> Void) async throws -> String? {
+        try Task.checkCancellation()
+        return try await Self.uncancelled {
+            let before = await self.resolve("refs/stash")
+            try await push()
+            guard let after = await self.resolve("refs/stash"), after != before else { return nil }
+            return after
         }
-        return found ?? nil
     }
 
     /// Reset Hard: what `git reset --hard <target>` would lose goes to Stashes first
@@ -167,17 +169,15 @@ extension GitRepository {
     /// left for a reset that didn't happen. Returns the stash's commit (`nil`: nothing was put aside).
     public func resetHard(to target: String, message: String) async throws -> String? {
         let head = await resolve("HEAD")
-        let stashBefore = await resolve("refs/stash")
+        let stash = try await stashBeforeHardReset(to: target, message: message)
         do {
-            let stash = try await stashBeforeHardReset(to: target, message: message)
             try await reset(to: target, mode: .hard)
             return stash
         } catch {
             let failure = error
-            // Looked up again, in a task of its own: after a stop, git commands in this one don't
-            // start, so a stash made just before can look like none was made.
-            guard let stash = await stashMade(since: stashBefore, message: message) else { throw failure }
+            guard let stash else { throw failure }
             // Back only while the branch and its files are as they were: a reset that got that far is done.
+            // In a task of its own: after a stop, git commands in this one don't start.
             let back = (try? await Self.uncancelled { () async throws -> Bool in
                 let untouched = (try? await self.git(["diff-index", "--quiet", "HEAD", "--"], accepted: [0, 1]))?.status == 0
                 guard await self.resolve("HEAD") == head, untouched else { return false }
@@ -211,11 +211,10 @@ extension GitRepository {
         let unstaged = Records.splitNUL(try await git(["diff", "--name-only", "--no-renames", "-z"]).stdout)
         let staged = Records.splitNUL(try await git(["diff", "--cached", "--name-only", "--no-renames", "-z"]).stdout)
         let paths = Set(unstaged + staged + inTheWay).sorted().map { ":(literal)" + $0 }
-        let before = await resolve("refs/stash")
-        try await git(["stash", "push", "--all", "-q", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
-                      input: Data(paths.joined(separator: "\0").utf8))
-        guard let after = await resolve("refs/stash"), after != before else { return nil }
-        return after
+        return try await stashWhole {
+            try await self.git(["stash", "push", "--all", "-q", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul"],
+                               input: Data(paths.joined(separator: "\0").utf8))
+        }
     }
 
     /// Untracked or ignored files (and folders holding some) that `git reset --hard <target>`

@@ -13,7 +13,7 @@ final class RepositoriesWindowController: NSWindowController, NSWindowDelegate {
     private var lights: TrafficLights?
 
     private init() {
-        let window = NSWindow(
+        let window = AppWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1260, height: 760),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,

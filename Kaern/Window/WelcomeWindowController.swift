@@ -17,7 +17,7 @@ final class WelcomeWindowController: NSWindowController, NSWindowDelegate {
     init(model: WindowModel, app: AppModel) {
         self.model = model
         self.app = app
-        let window = NSWindow(
+        let window = AppWindow(
             contentRect: NSRect(origin: .zero, size: Self.size),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,

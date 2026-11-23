@@ -119,7 +119,11 @@ struct PaneResizeHandle: View {
                         case .leading: -drag.translation.width
                         case .top: -drag.translation.height
                         }
-                        resize(clamped(((start?.size ?? size) + moved).rounded()))
+                        let value = clamped(((start?.size ?? size) + moved).rounded())
+                        resize(value)
+                        #if DEBUG
+                        DebugDriver.shared.didDragPane(label, to: value)
+                        #endif
                     }
                     .onEnded { _ in start = nil }
             )
@@ -163,6 +167,13 @@ struct PaneResizeHandle: View {
 @MainActor
 enum PaneFrames {
     static var frames: [UUID: [String: CGRect]] = [:]
+
+    static var storedSizes: [String: Double] {
+        ["sidebar": UserDefaults.kaern.double(forKey: PaneSizes.sidebarKey),
+         "panel": UserDefaults.kaern.double(forKey: PaneSizes.panelKey),
+         "drawer": UserDefaults.kaern.double(forKey: PaneSizes.drawerKey),
+         "list": UserDefaults.kaern.double(forKey: PaneSizes.listKey)]
+    }
 }
 
 extension View {

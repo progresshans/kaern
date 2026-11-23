@@ -123,18 +123,14 @@ extension GitRepository {
     public func withChangesStashed(message: String, _ work: @Sendable () async throws -> OperationOutcome) async throws
         -> (outcome: OperationOutcome, kept: String?) {
         let before = await resolve("HEAD")
-        let stashBefore = await resolve("refs/stash")
         let stash = try await stashAll(message: message, includeUntracked: false)
         let outcome: OperationOutcome
         do {
+            try Task.checkCancellation()
             outcome = try await work()
         } catch {
             let failure = error
-            // A stop right after `git stash push` keeps the read that finds the entry from
-            // starting: then it's looked up again.
-            var aside = stash
-            if aside == nil, failure is CancellationError { aside = await stashMade(since: stashBefore, message: message) }
-            guard let stash = aside else { throw failure }
+            guard let stash else { throw failure }
             if failure is CancellationError, operationState() != nil { return (.stopped, stash) }
             // After a stop no git command starts in this task: they come back from a task of
             // their own.

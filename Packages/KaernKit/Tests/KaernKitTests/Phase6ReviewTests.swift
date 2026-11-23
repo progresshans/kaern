@@ -100,15 +100,19 @@ struct Phase6ReviewTests {
         try await repository.stage(["a.txt"])
 
         // The work is stopped (Cancel): the changes come back staged, though the task is cancelled.
+        let (enteredWork, entry) = AsyncStream<Void>.makeStream()
         let task = Task {
-            try await repository.withChangesStashed(message: "Before Test") {
-                // Long work: left alone it takes five minutes, so the stop below always comes first.
+            defer { entry.finish() }
+            return try await repository.withChangesStashed(message: "Before Test") {
+                entry.yield(())
                 try await Task.sleep(for: .seconds(300))
                 return .finished
             }
         }
-        // Wait until the changes are in the stash list (the work is sleeping), then stop it.
-        try await waitUntil { (try? await repository.stashes())?.isEmpty == false }
+        defer { task.cancel() }
+        var iterator = enteredWork.makeAsyncIterator()
+        let entered: Void? = await iterator.next()
+        try #require(entered != nil, "work never started")
         #expect(try await repository.stashes().count == 1)
         task.cancel()
         await #expect(throws: CancellationError.self) { _ = try await task.value }
