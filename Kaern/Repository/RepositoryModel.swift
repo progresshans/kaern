@@ -81,6 +81,9 @@ struct SidebarState: Equatable {
     var remoteFolderExtra: [String: Int] = [:]
     var showsAllTags = false
     var filter = ""
+    /// How tall each section's rows were, all of them, when the sidebar last measured them: a sidebar made again
+    /// (back on the tab, the rail's) lays its sections out at once.
+    var contentHeights: [SidebarSection: CGFloat] = [:]
 }
 
 /// One open repository. It lives as long as a tab shows it, so switching tabs never reloads.

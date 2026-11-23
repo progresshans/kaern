@@ -4,15 +4,28 @@ import SwiftUI
 /// The repository sidebar (WindowBase): Local, Remote, Tags, Stashes and Worktrees, each with a
 /// colored tile, a bold title, a count pill and a collapse chevron. Only branch rows carry
 /// icons; a row's icon sits in the tile column and its name lines up with the section title.
+///
+/// The headers stay where they are and each open section scrolls on its own, as GitKraken's left
+/// panel does: with hundreds of branches, Remote and Tags are still a glance away. While all the
+/// rows fit, each section is as tall as its rows. The line between two sections can be dragged
+/// (`StackedLists`); Kaern keeps their heights for every window.
 struct SidebarView: View {
     @Bindable var repository: RepositoryModel
     /// Sidebar and Toolbar switching: the repository's name and folder on top (no tab names it).
     var showsHeader = false
-    /// Opened from the narrow window's rail: this section, unfolded and scrolled to.
+    /// Opened from the narrow window's rail: this section, unfolded.
     var focus: SidebarSection?
 
+    /// How tall the column of sections is. It starts at the last one's, so a sidebar made again lays its sections
+    /// out at once.
+    @State private var columnHeight = Self.lastColumnHeight
+    private static var lastColumnHeight: CGFloat = 0
+    @State private var drag = StackedDrag()
+    @AppStorage(StackedWeights.sidebarKey, store: .kaern) private var weights = StackedWeights()
+
     var body: some View {
-        VStack(spacing: 0) {
+        let column = column
+        return VStack(spacing: 0) {
             if showsHeader {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(repository.name).font(.system(size: z(15), weight: .bold)).lineLimit(1)
@@ -25,39 +38,85 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(EdgeInsets(top: z(12), leading: z(16), bottom: z(8), trailing: z(16)))
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        localSection.id(SidebarSection.local)
-                        remoteSection.id(SidebarSection.remote)
-                        tagSection.id(SidebarSection.tags)
-                        stashSection.id(SidebarSection.stashes)
-                        worktreeSection.id(SidebarSection.worktrees)
-                        submoduleSection.id(SidebarSection.submodules)
-                    }
-                    .padding(EdgeInsets(top: z(6), leading: z(8), bottom: z(4), trailing: z(8)))
-                }
-                .onAppear {
-                    guard let focus else { return }
-                    repository.sidebar.collapsed.remove(focus)
-                    DispatchQueue.main.async { proxy.scrollTo(focus, anchor: .top) }
-                }
-                .onChange(of: focus) { _, section in
-                    guard let section else { return }
-                    repository.sidebar.collapsed.remove(section)
-                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(section, anchor: .top) }
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                localSection(column)
+                remoteSection(column)
+                tagSection(column)
+                stashSection(column)
+                worktreeSection(column)
+                submoduleSection(column)
             }
-            .scrollIndicators(.automatic)
-            .contextClip()
+            .padding(.top, SidebarMetric.columnTop)
+            .padding(.bottom, SidebarMetric.columnBottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                columnHeight = height
+                Self.lastColumnHeight = height
+            }
             filterField
                 .padding(z(8))
         }
         .frame(maxWidth: .infinity)
         .background(K.sidebar)
         .overlay(alignment: .trailing) { K.sep.frame(width: 1) }
-        // Outside the scroll view, which would cut it off at the sidebar's edge.
+        // Outside the scroll views, which would cut it off at the sidebar's edge.
         .overlayPreferenceValue(WholeNameKey.self) { SidebarWholeName(shown: $0) }
+        .onAppear { unfold(focus) }
+        .onChange(of: focus) { _, section in
+            withAnimation(.easeOut(duration: 0.15)) { unfold(section) }
+        }
+    }
+
+    /// The rail's section: open (every header shows, so it's in view).
+    private func unfold(_ section: SidebarSection?) {
+        guard let section, repository.sidebar.collapsed.contains(section) else { return }
+        repository.sidebar.collapsed.remove(section)
+    }
+
+    // MARK: Heights
+
+    /// The sections shown (Submodules only in a repository that has some).
+    private var shownSections: [SidebarSection] {
+        SidebarSection.allCases.filter { $0 != .submodules || !repository.submoduleItems.isEmpty }
+    }
+
+    /// The open sections' heights, each scrolling on its own under its header.
+    private var column: StackedColumn {
+        let shown = shownSections
+        let open = shown.filter(isOpen)
+        let room = columnHeight - SidebarMetric.columnTop - SidebarMetric.columnBottom - CGFloat(shown.count) * SidebarMetric.sectionChrome
+        let column = StackedColumn(ids: open.map(\.rawValue), items: open.map { section in
+            StackedLists.Item(content: repository.sidebar.contentHeights[section] ?? 0, row: KMetric.sidebarRow,
+                              weight: weights.weight(section.rawValue))
+        }, room: room)
+        #if DEBUG
+        DebugStacks.record("sidebar \(repository.path)", column, shown: shown.map(\.rawValue))
+        #endif
+        return column
+    }
+
+    /// A section's place in the column: its rows' height, the edge above it, and where it says how tall its rows are.
+    private func place(_ section: SidebarSection, _ column: StackedColumn) -> SectionPlace {
+        SectionPlace(height: column.height(section.rawValue), edge: edge(above: section, in: column), scope: repository.path) { height in
+            if repository.sidebar.contentHeights[section] != height { repository.sidebar.contentHeights[section] = height }
+        }
+    }
+
+    /// The line above `section`, between the nearest open sections above and below it (it can be one of them).
+    private func edge(above section: SidebarSection, in column: StackedColumn) -> StackedEdge? {
+        let shown = shownSections
+        guard let at = shown.firstIndex(of: section), at > 0,
+              shown[..<at].contains(where: { column.ids.contains($0.rawValue) }),
+              let next = shown[at...].first(where: { column.ids.contains($0.rawValue) }),
+              let below = column.ids.firstIndex(of: next.rawValue) else { return nil }
+        return StackedEdge(ways: StackedLists.ways(column.heights, items: column.items, edgeAbove: below),
+                           label: "Height of \(section.title)", scope: repository.path) { change in
+            guard let change else { drag.start = nil; return }
+            let start = drag.heights(from: change.start, now: column.heights)
+            weights = weights.keeping(column.weights(dragging: below, from: start, by: change.translation), for: column.ids)
+        } reset: {
+            weights = StackedWeights()
+        }
     }
 
     private var filter: String { repository.sidebar.filter.trimmingCharacters(in: .whitespaces) }
@@ -84,14 +143,14 @@ struct SidebarView: View {
 
     /// The branches by name, loose ones first, then a folder per prefix. The checked-out branch stays
     /// where it sorts (a check and a tint), so checking out another one doesn't move the rows.
-    private var localSection: some View {
+    private func localSection(_ column: StackedColumn) -> some View {
         let locals = repository.refs.localBranches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let current = repository.currentBranch
         let loose = locals.filter { !$0.name.contains("/") }
         let folders = Dictionary(grouping: locals.filter { $0.name.contains("/") }) { String($0.name.split(separator: "/", maxSplits: 1)[0]) }
         return SidebarSectionView(
             title: "Local", tile: Icons.tileLocal, tileSize: 12, color: Color(nsColor: K.hex(0x2f74e8)),
-            count: locals.count, isOpen: isOpen(.local), isFirst: true, toggle: { toggle(.local) }
+            count: locals.count, isOpen: isOpen(.local), isFirst: true, place: place(.local, column), toggle: { toggle(.local) }
         ) {
             if let current, !locals.contains(where: { $0.name == current }), matches(current) {
                 // A branch with no commits yet has no ref to sort with: it goes first.
@@ -165,14 +224,14 @@ struct SidebarView: View {
     /// A remote's branches the way ScreenBigRepo lists 1,243 of them: names with a prefix
     /// ("release/2026.11") in a folder per prefix, folded, each showing its first six names and
     /// "N more"; the rest loose. While filtering, folders with matches open and say "1 of 812".
-    private var remoteSection: some View {
+    private func remoteSection(_ column: StackedColumn) -> some View {
         let branches = repository.refs.remoteBranches
         let names = Array(Set(repository.remotes.map(\.name) + repository.refs.remoteNames)).sorted { a, b in
             a == "origin" ? true : (b == "origin" ? false : a < b)
         }
         return SidebarSectionView(
             title: "Remote", tile: Icons.tileRemote, tileSize: 13, color: Color(nsColor: K.hex(0x0f8f84)),
-            count: branches.count, isOpen: isOpen(.remote), toggle: { toggle(.remote) }
+            count: branches.count, isOpen: isOpen(.remote), place: place(.remote, column), toggle: { toggle(.remote) }
         ) {
             ForEach(names, id: \.self) { remote in
                 let all = branches.filter { $0.remoteName == remote }
@@ -279,13 +338,13 @@ struct SidebarView: View {
 
     // MARK: Tags
 
-    private var tagSection: some View {
+    private func tagSection(_ column: StackedColumn) -> some View {
         let tags = repository.tags.filter { matches($0.name) }
         let limit = 5
         let shown = repository.sidebar.showsAllTags || !filter.isEmpty ? tags : Array(tags.prefix(limit))
         return SidebarSectionView(
             title: "Tags", tile: Icons.tileTag, tileSize: 12, color: Color(nsColor: K.hex(0xc8620a)),
-            count: repository.tags.count, isOpen: isOpen(.tags), toggle: { toggle(.tags) }
+            count: repository.tags.count, isOpen: isOpen(.tags), place: place(.tags, column), toggle: { toggle(.tags) }
         ) {
             ForEach(shown) { tag in
                 SidebarRow(title: tag.name, flat: true, meta: tag.date.map { Formatters.shortDate($0) })
@@ -303,11 +362,11 @@ struct SidebarView: View {
 
     // MARK: Stashes
 
-    private var stashSection: some View {
+    private func stashSection(_ column: StackedColumn) -> some View {
         let stashes = repository.stashes.filter { matches($0.message) }
         return SidebarSectionView(
             title: "Stashes", tile: Icons.tileStash, tileSize: 13, color: Color(nsColor: K.hex(0x8a4fd6)),
-            count: repository.stashes.count, isOpen: isOpen(.stashes), toggle: { toggle(.stashes) }
+            count: repository.stashes.count, isOpen: isOpen(.stashes), place: place(.stashes, column), toggle: { toggle(.stashes) }
         ) {
             ForEach(stashes) { stash in
                 // Kaern's own copies (before Discard, Reset Hard, a pick over local changes) go by what
@@ -335,11 +394,12 @@ struct SidebarView: View {
 
     /// ScreenMarks › 워크트리: this window's working tree ("This window · ~/Developer/powerlens"),
     /// the others with their branch and changes (a dot when there are some), then Add Worktree….
-    private var worktreeSection: some View {
+    private func worktreeSection(_ column: StackedColumn) -> some View {
         let trees = repository.worktrees.filter { !$0.isBare && (matches($0.name) || matches($0.branch ?? "")) }
         return SidebarSectionView(
             title: "Worktrees", tile: Icons.tileWorktree, tileSize: 13, color: Color(nsColor: K.hex(0x2e8f4a)),
-            count: repository.worktrees.filter { !$0.isBare }.count, isOpen: isOpen(.worktrees), toggle: { toggle(.worktrees) }
+            count: repository.worktrees.filter { !$0.isBare }.count, isOpen: isOpen(.worktrees), place: place(.worktrees, column),
+            toggle: { toggle(.worktrees) }
         ) {
             ForEach(trees) { tree in
                 WorktreeSidebarRow(repository: repository, tree: tree)
@@ -355,12 +415,13 @@ struct SidebarView: View {
     // MARK: Submodules
 
     @ViewBuilder
-    private var submoduleSection: some View {
+    private func submoduleSection(_ column: StackedColumn) -> some View {
         if !repository.submoduleItems.isEmpty {
             let tile = SidebarSection.submodules.tile
             SidebarSectionView(
                 title: "Submodules", tile: tile.icon, tileSize: tile.size, color: tile.color,
-                count: repository.submoduleItems.count, isOpen: isOpen(.submodules), toggle: { toggle(.submodules) }
+                count: repository.submoduleItems.count, isOpen: isOpen(.submodules), place: place(.submodules, column),
+                toggle: { toggle(.submodules) }
             ) {
                 ForEach(repository.submoduleItems.filter { matches($0.path) }) { item in
                     SubmoduleSidebarRow(item: item, repository: repository)
@@ -554,9 +615,29 @@ private enum SidebarMetric {
     static let flatLeading: CGFloat = iconLeading
     /// One level in.
     static var step: CGFloat { z(10) }
+    /// Above the first section and below the last one.
+    static var columnTop: CGFloat { z(6) }
+    static var columnBottom: CGFloat { z(4) }
+    /// What a section takes besides its rows: its header and the space above and below.
+    static var sectionChrome: CGFloat { z(4) + z(32) + z(6) }
+    /// The sidebar's sides: the headers and rows sit this far in.
+    static var inset: CGFloat { z(8) }
 }
 
-/// A section (`.ssec`): hairline on top (not the first), header button, rows when open.
+/// Where a section is in the sidebar's column (`SidebarView.place`).
+private struct SectionPlace {
+    /// Its rows' height when it's open.
+    let height: CGFloat
+    /// The line above it, when it can be dragged.
+    let edge: StackedEdge?
+    /// Debug builds: whose section it is (the repository's folder), for `DebugStacks.frames`.
+    let scope: String
+    /// Told how tall all its rows are.
+    let content: (CGFloat) -> Void
+}
+
+/// A section (`.ssec`): hairline on top (not the first), header button, rows when open, in a scroll
+/// view of their own as tall as the column gives them (`SectionPlace`).
 private struct SidebarSectionView<Rows: View>: View {
     let title: String
     let tile: SVGIcon
@@ -565,6 +646,7 @@ private struct SidebarSectionView<Rows: View>: View {
     let count: Int
     let isOpen: Bool
     var isFirst = false
+    let place: SectionPlace
     let toggle: () -> Void
     @ViewBuilder var rows: Rows
 
@@ -603,15 +685,28 @@ private struct SidebarSectionView<Rows: View>: View {
             .onHover { hovering = $0 }
             .accessibilityLabel("\(title), \(count)")
             .accessibilityValue(isOpen ? "expanded" : "collapsed")
+            .padding(.horizontal, SidebarMetric.inset)
             if isOpen {
-                rows
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        rows
+                    }
+                    .padding(.horizontal, SidebarMetric.inset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { place.content($0) }
+                }
+                // Rows that all fit don't move under the wheel.
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: place.height)
+                .contextClip()
+                .debugStackFrame("\(place.scope) sidebar \(title)")
             }
         }
         .padding(.top, z(4))
         .padding(.bottom, z(6))
         .overlay(alignment: .top) {
-            if !isFirst { K.sep.frame(height: 1) }
+            if !isFirst { K.sep.frame(height: 1).padding(.horizontal, SidebarMetric.inset) }
         }
+        .overlay(alignment: .top) { place.edge }
     }
 }
 
