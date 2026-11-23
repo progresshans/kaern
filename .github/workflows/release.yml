@@ -141,6 +141,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # As in ci.yml: the tests run /usr/bin/git, and what a stopped or failing git does differs between its versions.
+      - name: Show the Mac and its tools
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
+          /usr/bin/git --version
+
       - name: Test KaernKit
         run: swift test --package-path Packages/KaernKit
 
