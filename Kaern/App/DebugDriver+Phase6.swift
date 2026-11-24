@@ -94,6 +94,17 @@ extension DebugDriver {
             "activity": repository.activity?.statusText ?? "",
             "sidebarRemote": sidebarRemoteLines(repository),
             "filter": repository.sidebar.filter,
+            // The stacked lists as last laid out: each one's height and its rows' (`StackedLists`), where each scroll
+            // view and edge is (window points), and the weights kept for them.
+            "stacks": [
+                "sidebar": DebugStacks.columns["sidebar \(repository.path)"] ?? [],
+                "changes": DebugStacks.columns["changes \(repository.path)"] ?? [],
+                "frames": DebugStacks.frames(of: repository.path),
+                "weights": [
+                    "sidebar": UserDefaults.kaern.string(forKey: StackedWeights.sidebarKey) ?? "",
+                    "changes": UserDefaults.kaern.string(forKey: StackedWeights.changesKey) ?? "",
+                ],
+            ] as [String: Any],
         ]
         result.merge(phase6MarksDump(repository)) { _, new in new }
         return result
