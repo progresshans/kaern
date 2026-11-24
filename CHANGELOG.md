@@ -20,6 +20,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   doesn't end when asked is ended by force after 10 seconds.
 - Stopping an operation from Activity or the Command Log while Kaern puts uncommitted changes aside brings them
   back with their staging intact. This applies to merge, rebase, pull, Reset Hard and removing a worktree.
+- The sidebar's Submodules show where a moved submodule came from (2.6.4 → 2.7.0) also when Git's status leaves
+  the submodule out, as it does with `ignore = all`. It read "?" before.
 
 ## [1.0.1] - 2026-11-19
 
