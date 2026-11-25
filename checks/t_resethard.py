@@ -33,7 +33,7 @@ def begin(prepare=None, unstaged=()):
 
 def unseen(change, what):
     """Makes `change` with the refresh that would show it held: the model keeps the status from before."""
-    k('hold', 'status')
+    hold_at('status')
     change()
     return until(lambda d: 'status' in holding(d), label='the refresh to wait with the status after ' + what)
 

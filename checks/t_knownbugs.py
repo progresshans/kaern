@@ -25,7 +25,7 @@ def step1():
     d = show_tab(name, lambda d: p6(d)['commits'] >= 400 and p6(d)['total'] >= 0, seconds=40)
     assert p6(d)['graphScope'] == 'local' and expo not in p6(d)['subjects']
     # A refresh that has read git (history with the scope from before the pick) and waits.
-    k('hold', 'status'); k('refresh')
+    hold_at('status'); k('refresh')
     until(lambda d: 'status' in holding(d), label='the refresh to wait with what it read')
     k('showRemote', 'origin/env/expo-preview')
     sync()
@@ -46,7 +46,7 @@ def step2():
         with open(path, 'a') as f: f.write(text + '\n')
     append(readme, 'one')
     settle(lambda d: stat(d) == '+1 −0', label='README.md +1')
-    k('hold', 'lineStats')
+    hold_at('lineStats')
     append(readme, 'two')
     until(lambda d: 'lineStats' in holding(d), label='a line-count read to wait (it has +2)')
     # Meanwhile: a third line, and a file staged (its status read asks for the counts again).

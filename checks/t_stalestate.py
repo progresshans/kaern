@@ -42,7 +42,7 @@ def begin(prepare=None):
 
 def unseen(change, what):
     """Does `change` (git, as in Terminal) with the refresh that would show it held."""
-    k('hold', 'status')
+    hold_at('status')
     change()
     return until(lambda d: 'status' in holding(d), label='the refresh to wait with what git has after ' + what)
 
