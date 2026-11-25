@@ -119,6 +119,10 @@ struct CommandRecordTests {
         var started: [GitCommandRecord] {
             list.withLock { events in events.compactMap { if case .started(let record, _) = $0 { record } else { nil } } }
         }
+        /// The handle that stops the first command that started.
+        var firstStop: GitCommandHandle? {
+            list.withLock { events in events.lazy.compactMap { if case .started(_, let stop) = $0 { stop } else { nil } }.first }
+        }
     }
 
     private func runner(_ events: Events) -> GitRunner {
@@ -192,13 +196,12 @@ struct CommandRecordTests {
         let task = Task {
             try await runner.run(Self.longCommand, in: base.root)
         }
-        // Once it runs, stop it from the record's handle.
+        // Once it runs, stop it from the record's handle. The runner reports the start after git is launched, and on
+        // a busy Mac the shell git starts can make its file before that: wait for the handle too.
         try await waitUntilItRuns(in: base)
-        let handle = events.list.withLock { events in
-            events.compactMap { if case .started(_, let stop) = $0 { stop } else { nil } }.first
-        }
-        try #require(handle != nil)
-        handle?.stop()
+        try await waitUntil { events.firstStop != nil }
+        let handle = try #require(events.firstStop)
+        handle.stop()
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
