@@ -40,7 +40,35 @@ final class DebugDriver {
             let command = note.object as? String ?? ""
             MainActor.assumeIsolated { DebugDriver.shared.run(command) }
         }
+        // Posted on the main thread when a menu opens and when it closes.
+        NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { DebugDriver.shared.menuOpened() }
+        }
+        NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { DebugDriver.shared.menuIsOpen = false }
+        }
         if UserDefaults.standard.bool(forKey: "KaernDebugIgnorePointer") { ignoreRealPointer() }
+    }
+
+    /// `rightClick`'s picture, taken once the menu the click opens has been open a moment. A fixed time after the
+    /// click came too early now and then: the first menu in a window can take a while to make.
+    private var pictureOfNextMenu: String?
+    private var menuIsOpen = false
+
+    private func menuOpened() {
+        menuIsOpen = true
+        guard let path = pictureOfNextMenu else { return }
+        pictureOfNextMenu = nil
+        let tracker = controller?.contextTracker
+        let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                // A menu that closed as soon as it opened (it happens now and then) leaves no picture: menu_snap
+                // opens it again, instead of keeping a picture without it.
+                if self.menuIsOpen { self.snapshotComposite(to: path) }
+                tracker?.openMenu?.cancelTracking()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// The mark on the pointer events the driver posts itself (`scrollWheel` goes through the
@@ -509,25 +537,20 @@ final class DebugDriver {
             openMenu?.cancelTracking()
         case "rightClick":
             // rightClick x y snap <png> — moves the pointer there (hover), then right-clicks through the
-            // window like a real click; the menu that opens is snapshotted and closed.
+            // window like a real click; the menu that opens is snapshotted a moment later and closed.
             guard args.count >= 4, let x = Double(args[0]), let y = Double(args[1]), let nsWindow = controller.window else { return }
             let point = CGPoint(x: x, y: y)
-            let snap = args[3]
-            let tracker = controller.contextTracker
+            pictureOfNextMenu = args[3]
             Task {
-                let timer = Timer(timeInterval: 0.8, repeats: false) { _ in
-                    MainActor.assumeIsolated {
-                        self.snapshotComposite(to: snap)
-                        tracker.openMenu?.cancelTracking()
-                    }
-                }
-                RunLoop.main.add(timer, forMode: .common)
                 let location = NSPoint(x: point.x, y: nsWindow.frame.height - point.y)
                 if let event = NSEvent.mouseEvent(with: .rightMouseDown, location: location, modifierFlags: [],
                                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: nsWindow.windowNumber,
                                                   context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                    // Returns once the menu the click opened has closed.
                     nsWindow.sendEvent(event)
                 }
+                // No menu opened: no picture (menu_snap asks again), and the next menu isn't taken for this one.
+                self.pictureOfNextMenu = nil
             }
         case "pick":
             // pick <index> [<index>…] — the picked commits (2: compare, 3+: the multi-select panel).
