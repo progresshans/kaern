@@ -1,5 +1,5 @@
 """t_small.py [light|dark] — phase-5 small items: ⇧↑/⇧↓ ranges in the graph (keyboard through the window, the
-list scrolling with the range's moving end), the file menu on Review's file chips and file headers, and
+list scrolling with the range's moving end), clicks that pick with their own ⌘ and ⇧, the file menu on Review's file chips and file headers, and
 right-click menus with two windows open (each menu is for its own window's repository)."""
 import os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
@@ -33,6 +33,22 @@ p, sel = picked(d), selection(d); print('⇧↑ ⇧↑ (past the anchor):', p, '
 k('press', 'down')
 d = until(lambda d: picked(d) == [] and selection(d).startswith('commit 4'), label='↓ without ⇧')
 p, sel = picked(d), selection(d); print('↓ without ⇧:', p, '|', sel[:40]); assert p == [] and sel.startswith('commit 4'), (p, sel)
+
+# Clicks pick with the ⌘ and ⇧ of their own events, not with the keyboard as it is then (a key held on the real
+# keyboard while a check runs would turn its plain click into a pick): plain selects, ⌘ adds, ⇧ picks a range.
+def click_row(index, *keys):
+    f = target_frame('commit', str(index))
+    k('click', '%g' % (f[0] + f[2] * 0.6), '%g' % (f[1] + f[3] / 2), '1', *keys)
+click_row(2)
+d = until(lambda d: not d['driver']['pointerBusy'] and selection(d).startswith('commit 2'), label='a click on commit 2')
+assert picked(d) == [], picked(d)
+click_row(4, 'cmd')
+d = until(lambda d: not d['driver']['pointerBusy'] and (picked(d) or selection(d).startswith('commit 4')), label='⌘-click on commit 4')
+p = picked(d); print('click 2, ⌘-click 4:', p); assert p == [2, 4], 'the ⌘ of the click picks: %s' % p
+click_row(6, 'shift')
+d = until(lambda d: not d['driver']['pointerBusy'] and picked(d) != [2, 4], label='⇧-click on commit 6')
+p = picked(d); print('⇧-click 6:', p); assert p == [4, 5, 6], 'the ⇧ of the click picks a range: %s' % p
+k('clearPicks')
 
 # A long range in a bigger history: the list follows the moving end.
 show_tab('cluster-config', lambda d: h(d)['commits'] >= 400)

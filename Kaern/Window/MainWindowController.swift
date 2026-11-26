@@ -288,6 +288,11 @@ final class KaernWindow: AppWindow {
     var chromeHeight: CGFloat = KMetric.tabRow + KMetric.toolbar
     private var closingWindow = false
 
+    /// The modifier keys of the last mouse press or release a Kaern window took: those of the click a
+    /// view is handling, which reads its ⌘ and ⇧ here. `NSEvent.modifierFlags` is the keyboard as it is
+    /// at that moment, for every app: in a test instance, a key held on the real keyboard for another app.
+    private(set) static var clickModifiers: NSEvent.ModifierFlags = []
+
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
         if event.keyCode == 49, modifiers.isEmpty, quickLook?() == true { return }
@@ -295,6 +300,12 @@ final class KaernWindow: AppWindow {
     }
 
     override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+            Self.clickModifiers = event.modifierFlags
+        default:
+            break
+        }
         let isContextClick = event.type == .rightMouseDown
             || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
         let point = CGPoint(x: event.locationInWindow.x, y: frame.height - event.locationInWindow.y)

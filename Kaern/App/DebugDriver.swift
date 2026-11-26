@@ -250,9 +250,15 @@ final class DebugDriver {
         case "stripFrames":
             stripFrames(to: args.first ?? "/tmp/kaern-strip.json")
         case "click":
-            // click x y [count] — window points, top-left origin; sent through the window like a real click.
+            // click x y [count] [cmd] [shift] [option] — window points, top-left origin; sent through the window like
+            // a real click, those keys held in its events. (A control-click is a right-click: `rightClick`.)
             if args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) {
-                click(at: CGPoint(x: x, y: y), count: args.count > 2 ? Int(args[2]) ?? 1 : 1)
+                let rest = args.dropFirst(2)
+                var flags: NSEvent.ModifierFlags = []
+                if rest.contains("cmd") { flags.insert(.command) }
+                if rest.contains("shift") { flags.insert(.shift) }
+                if rest.contains("option") { flags.insert(.option) }
+                click(at: CGPoint(x: x, y: y), count: rest.first.flatMap { Int($0) } ?? 1, flags: flags)
             }
         case "drag":
             // drag x1 y1 x2 y2 [sequence reply-file]. A retry only acknowledges the same drag.
@@ -872,11 +878,11 @@ final class DebugDriver {
         }
     }
 
-    private func mouse(_ type: NSEvent.EventType, at point: CGPoint, count: Int = 1) {
+    private func mouse(_ type: NSEvent.EventType, at point: CGPoint, count: Int = 1, flags: NSEvent.ModifierFlags = []) {
         guard let nsWindow = controller?.window else { return }
         let location = NSPoint(x: point.x, y: nsWindow.frame.height - point.y)
         guard let event = NSEvent.mouseEvent(
-            with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            with: type, location: location, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: nsWindow.windowNumber, context: nil, eventNumber: 0, clickCount: count,
             pressure: type == .leftMouseUp ? 0 : 1
         ) else { return }
@@ -901,14 +907,14 @@ final class DebugDriver {
         sizesAfterDragChange = PaneFrames.storedSizes
     }
 
-    private func click(at point: CGPoint, count: Int) {
+    private func click(at point: CGPoint, count: Int, flags: NSEvent.ModifierFlags = []) {
         pointerTasks += 1
         Task {
             defer { pointerTasks -= 1 }
             for index in 1...max(1, count) {
-                mouse(.leftMouseDown, at: point, count: index)
+                mouse(.leftMouseDown, at: point, count: index, flags: flags)
                 try? await Task.sleep(for: .milliseconds(40))
-                mouse(.leftMouseUp, at: point, count: index)
+                mouse(.leftMouseUp, at: point, count: index, flags: flags)
                 try? await Task.sleep(for: .milliseconds(60))
             }
         }

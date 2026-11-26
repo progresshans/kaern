@@ -54,7 +54,8 @@ another Kaern.app to start.
 
 Each check (a "run") has `<work folder>/runs/<check>/`: its samples, a session file per launch, its git config, and
 the files the app answers into. Its instance takes only the commands of its own channel (`-KaernDebugChannel`), and
-the real mouse can't hover or click in it (`-KaernDebugIgnorePointer`).
+the real mouse can't hover or click in it (`-KaernDebugIgnorePointer`). Keys held on the real keyboard don't reach
+its clicks either: a click's ⌘ and ⇧ are its own event's (`click x y 1 cmd`).
 
 - A command to a run's instance: `python3 checks/k3.py --run t_stash dump /tmp/state.json`.
 - An instance to look at by hand: `checks/launch.sh light [scenario]` (the run "manual"; it is on the screen and
