@@ -175,14 +175,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return true
     }
 
-    /// The menu for the row at `point` (a commit, label, sidebar row, file or stash), in window
-    /// coordinates with the origin at the top left.
     /// Space: Quick Look of the file Review shows; Space again closes it.
     func toggleQuickLook() -> Bool {
         guard let tab = model.activeTab, let app, window?.attachedSheet == nil else { return false }
         let repository = app.repository(for: tab.path)
-        if repository.quickLookURL != nil {
-            repository.quickLookURL = nil
+        if repository.showsQuickLook {
+            repository.closeQuickLook()
             return true
         }
         guard let file = repository.quickLookFile else { return false }
@@ -190,6 +188,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return true
     }
 
+    /// The menu for the row at `point` (a commit, label, sidebar row, file or stash), in window
+    /// coordinates with the origin at the top left.
     private func contextMenu(at point: CGPoint) -> (NSMenu, UUID)? {
         guard let tab = model.activeTab, let app, let hit = contextTracker.hit(at: point) else { return nil }
         contextTracker.lastTarget = hit.target
