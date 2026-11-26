@@ -135,6 +135,14 @@ def sync(seconds=20):
         raise SystemExit('the app did not answer in %d s (%s)' % (seconds, _alive_note()))
 
 
+def hold_at(point, *folder):
+    """`hold <point> [folder]`, in place once this returns (a ping after it). Without the wait, a check that then
+    changes a file itself races the app's watcher: on a busy Mac the read the hold was for can pass before the hold
+    arrives, and no read comes after it to wait."""
+    k('hold', point, *folder)
+    sync()
+
+
 def answers(seconds=0.3):
     return _await('ping', 'ping', seconds, lambda p: True) is not None
 

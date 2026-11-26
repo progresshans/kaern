@@ -50,7 +50,7 @@ def begin():
 #    stops on its conflict, and then the refresh shows what it read. Then the same with a full refresh.
 def read_before_shown_after(start):
     begin()
-    k('hold', 'status')
+    hold_at('status')
     start()
     until(lambda d: 'status' in holding(d), label='the refresh to wait with the status it read')
     k('popStash', 0)
@@ -81,10 +81,10 @@ def a_full_refresh():
 #    the one shown when the refresh decides.
 def shown_before_decided_after():
     begin()
-    k('hold', 'decide'); k('refresh')
+    hold_at('decide'); k('refresh')
     d = until(lambda d: 'decide' in holding(d), label='the refresh to wait before it decides')
     before = refreshes(d)
-    k('hold', 'statusNow')
+    hold_at('statusNow')
     k('popStash', 0)
     d = until(lambda d: p4(d)['stashConflict'] and not d['active']['activity'] and 'statusNow' in holding(d),
               label='the pop to stop, with its own status read waiting')
@@ -146,12 +146,12 @@ def stash_view_waits_for_the_action():
 #    The refresh after Undo Pop is held too, so that older status is still the one shown.
 def editor_stays_closed_after_undo_pop():
     begin()
-    k('hold', 'decideNow')
+    hold_at('decideNow')
     k('popStash', 0)
     d = until(lambda d: p4(d)['stashConflict'] and not d['active']['activity'] and p4(d)['conflicted'] == [ALPHA] and 'decideNow' in holding(d),
               label='the pop to stop with its status shown and the editor still to open')
     assert p4(d)['screen'] == '', 'the editor should not be open yet: %s' % state(d)
-    k('hold', 'status')
+    hold_at('status')
     k('undoPop')
     d = until(lambda d: not p4(d)['stashConflict'] and not d['active']['activity'] and 'Undid' in toast(d) and 'status' in holding(d),
               label='Undo Pop to end, with the refresh after it waiting')

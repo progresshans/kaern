@@ -24,7 +24,7 @@ def prepare():
 
 launch_prepared('light', prepare=prepare)
 first = g(REPO, 'rev-parse', 'HEAD')[:7]
-k('hold', 'status', os.path.realpath(REPO))
+hold_at('status', os.path.realpath(REPO))
 k('open', REPO)
 d = until(lambda d: active_name(d) == NAME and 'status' in d['driver']['holding'], label='the first load to wait with its status')
 print('first load held: phase %s, head %r' % (d['phase5']['phase'], d['active'].get('head')))

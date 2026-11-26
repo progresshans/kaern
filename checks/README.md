@@ -96,6 +96,9 @@ d = settle(lambda d: git('rev-parse', 'HEAD') == head0, label='the undo')
   run into the next command. Give it the state the step should reach, not just `settle()`.
 - `until(check)`: only the state, for something to catch while the app is still working.
 - `sync()`: every command sent so far has run (for a step whose effect is immediate, or "nothing happens").
+- `hold_at('status')`: a refresh waits at that point once git has answered, until `k('release', 'status')` (the
+  points are in `DebugDriver+Holds.swift`). The hold is in place when it returns, so a change made next is caught; a
+  plain `k('hold', …)` can reach the app after the read it was for.
 - git run in a sample from the check, or files written there: wait with `settle(...)` for the state the app should
   then show.
 - Text: `type_text('name', into='feature/name')` waits until the field with that placeholder has the keyboard.
@@ -113,6 +116,6 @@ d = settle(lambda d: git('rev-parse', 'HEAD') == head0, label='the undo')
 The samples' names are made up, apart from the open-source godj and PowerLens. Keep it that way: no name of a
 private project in a sample, a check or a commit message.
 
-Helpers: `k3.py` (the run, its channel, `k`, `until`, `settle`, `sync`, the app's process), `k4.py` (launching,
+Helpers: `k3.py` (the run, its channel, `k`, `until`, `settle`, `sync`, `hold_at`, the app's process), `k4.py` (launching,
 quitting, settings), `k5.py` (pictures, typing, tabs), `samples.py` (the cache), `scen5.py` / `scen6.py` (sample
 states), `paths.py` (the work folder and the app).
