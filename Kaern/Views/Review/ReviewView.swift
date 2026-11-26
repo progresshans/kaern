@@ -77,7 +77,7 @@ struct ReviewView: View {
         let order = file.pickOrder
         let repository = repository
         return LinePicking(file: file, picks: repository.linePicks) { pick in
-            let flags = NSEvent.modifierFlags
+            let flags = KaernWindow.clickModifiers
             repository.pickLine(pick, path: file.path, order: order,
                                 command: flags.contains(.command), shift: flags.contains(.shift))
         }

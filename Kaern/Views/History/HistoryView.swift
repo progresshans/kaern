@@ -277,7 +277,7 @@ struct HistoryView: View {
 
     /// A click on a commit: ⌘ adds it to the picked commits, ⇧ picks a range.
     private func click(_ id: String) {
-        let flags = NSEvent.modifierFlags
+        let flags = KaernWindow.clickModifiers
         let command = flags.contains(.command), shift = flags.contains(.shift)
         repository.click(commit: id, command: command, shift: shift)
         listFocused = true
