@@ -22,6 +22,8 @@ What changed in each version of Kaern. A version's section is what its update wi
   back with their staging intact. This applies to merge, rebase, pull, Reset Hard and removing a worktree.
 - The sidebar's Submodules show where a moved submodule came from (2.6.4 → 2.7.0) also when Git's status leaves
   the submodule out, as it does with `ignore = all`. It read "?" before.
+- Quick Look opened again right after closing it (Space twice in a row) stays open. Before, it closed again at
+  once.
 
 ## [1.0.1] - 2026-11-19
 

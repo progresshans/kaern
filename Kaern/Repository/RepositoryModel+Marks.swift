@@ -1,5 +1,6 @@
 import AppKit
 import KaernKit
+import Quartz
 
 /// Git LFS and submodule facts about the working copy's files (ScreenMarks): which are in LFS
 /// and their sizes, which are still pointers, and how far each moved submodule is from the
@@ -109,7 +110,7 @@ extension RepositoryModel {
         guard let version = deleted ? file.sides.old : file.sides.new else { return }
         // An LFS file on disk may still be its pointer: show the content Kaern has instead.
         if case .workTree = version, !file.isLFS {
-            quickLookURL = URL(filePath: self.path, directoryHint: .isDirectory).appending(path: path)
+            showInQuickLook(URL(filePath: self.path, directoryHint: .isDirectory).appending(path: path))
             return
         }
         Task {
@@ -119,12 +120,26 @@ extension RepositoryModel {
                 return
             }
             do {
-                quickLookURL = try QuickLookCopies.make(data, name: (path as NSString).lastPathComponent)
+                showInQuickLook(try QuickLookCopies.make(data, name: (path as NSString).lastPathComponent))
             } catch {
                 showToast("Couldn’t open Quick Look: \(error.localizedDescription)")
             }
         }
     }
+
+    /// Shows `url` in Quick Look: now, or once the panel has finished a close that's still underway.
+    func showInQuickLook(_ url: URL) {
+        QuickLookPanel.open(for: self) { [weak self] in self?.quickLookURL = url }
+    }
+
+    /// Closes Quick Look (Space again), or drops the file that waits to be shown.
+    func closeQuickLook() {
+        QuickLookPanel.close(for: self)
+        quickLookURL = nil
+    }
+
+    /// Quick Look is open, or its file waits for the last close to finish.
+    var showsQuickLook: Bool { quickLookURL != nil || QuickLookPanel.isWaiting(for: self) }
 
     /// The file Review shows on its own (one file, or the Focus drawer's), for Quick Look.
     var quickLookFile: ReviewFile? {
@@ -314,5 +329,52 @@ enum QuickLookCopies {
             let date = (try? item.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             if date < dayAgo { try? fileManager.removeItem(at: item) }
         }
+    }
+}
+
+/// Quick Look's panel, which every window shares, fades out when it closes, and SwiftUI's quickLookPreview clears
+/// its binding when that fade ends, also when a new file was put in it meanwhile: Quick Look opened again right
+/// after a close (Space twice) closed at once. So a file opened while a close is underway waits for it to finish.
+@MainActor
+enum QuickLookPanel {
+    private static var closing: (observer: any NSObjectProtocol, number: Int)?
+    private static var closes = 0
+    /// The file to show once the close has finished: the last one asked for.
+    private static var waiting: (owner: ObjectIdentifier, open: () -> Void)?
+
+    /// Runs `open` now, or once the close underway has finished.
+    static func open(for owner: AnyObject, _ open: @escaping () -> Void) {
+        guard closing != nil else { return open() }
+        waiting = (ObjectIdentifier(owner), open)
+    }
+
+    static func isWaiting(for owner: AnyObject) -> Bool { waiting?.owner == ObjectIdentifier(owner) }
+
+    /// Kaern closes Quick Look; a file opened from now on waits until the panel's willClose. SwiftUI clears its
+    /// binding in that notification too, so the file goes in after it. A close that never reports one (the panel
+    /// wasn't up yet) holds a file for 2 seconds at most.
+    static func close(for owner: AnyObject) {
+        if isWaiting(for: owner) { waiting = nil }
+        guard closing == nil else { return }
+        closes += 1
+        let number = closes
+        let observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
+            guard note.object is QLPreviewPanel else { return }
+            Task { @MainActor in closed(number) }
+        }
+        closing = (observer, number)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            closed(number)
+        }
+    }
+
+    private static func closed(_ number: Int) {
+        guard let current = closing, current.number == number else { return }
+        NotificationCenter.default.removeObserver(current.observer)
+        closing = nil
+        let open = waiting?.open
+        waiting = nil
+        open?()
     }
 }

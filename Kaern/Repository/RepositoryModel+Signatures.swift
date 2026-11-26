@@ -189,7 +189,7 @@ extension RepositoryModel {
         Task {
             guard let raw = try? await repository.commitObject(id) else { return }
             do {
-                quickLookURL = try QuickLookCopies.make(raw, name: "\(short(id)) signed commit.txt")
+                showInQuickLook(try QuickLookCopies.make(raw, name: "\(short(id)) signed commit.txt"))
             } catch {
                 showToast("Couldn’t open Quick Look: \(error.localizedDescription)")
             }

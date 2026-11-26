@@ -41,8 +41,9 @@ after them with nothing beside it. One suite at a time in a work folder; Ctrl-C 
 
 The test windows are beside the screen, 12,000 points to the right of where they would be, and never take the
 keyboard: they cover nothing of yours while the checks run. They are drawn there as on the screen, and the pictures
-are the same. A menu a check opens can still show at the screen's edge for a moment. `KAERN_ON_SCREEN=1` keeps the
-windows on the screen, to watch a check.
+are the same. The menus and popovers a check opens come up beside them, where they would be on the screen (the
+instance's screens answer from there as well, `TestSession.moveScreensAside`), so the pictures have them too.
+`KAERN_ON_SCREEN=1` keeps the windows on the screen, to watch a check.
 
 ## Where things are
 

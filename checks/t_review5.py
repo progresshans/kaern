@@ -1,7 +1,7 @@
 """t_review5.py — the fixes after the phase-5 review, in the app:
 1. Update to Recorded asks before leaving commits on no branch; ⌘Z / ⇧⌘Z; no question when a ref holds them.
 2. Locate… refuses a folder inside another repository and takes the repository's own folder.
-3. Quick Look keeps one copy at a time.
+3. Quick Look keeps one copy at a time, and stays open when it's opened again right after a close.
 4. Repositories window › Pull on a tab in the background uses the repository's pull.rebase.
 5. A first load cut short by switching tabs loads again when the tab comes back."""
 import json, os, shutil, subprocess, sys, time
@@ -110,7 +110,7 @@ found = settle(lambda d: d['phase5']['lastRelocate'].endswith('/moved/CRM'), lab
 print('   the repository\'s own folder:', found.replace(SAMPLES, '<samples>'))
 assert found.endswith('/moved/CRM')
 
-# 3. Quick Look keeps one copy at a time.
+# 3. Quick Look keeps one copy at a time, and stays open when it's opened again right after a close.
 show_tab('powerlens')
 k('select', '1')
 k('review', 'all')
@@ -135,6 +135,20 @@ for path in files[:1] * 2:
     until(lambda d: marks(d)['quickLook'] == '', label='Quick Look closed')
 # counts[0] >= 1: the folder is this instance's (a different TMPDIR would count nothing twice).
 assert len(counts) == 2 and counts[0] >= 1 and counts[1] == counts[0], 'the second copy replaced the first: %s' % counts
+# Opened again at once after a close (Space twice): the panel is still fading out then, and SwiftUI clears its file
+# when the fade ends, so the new file waits for the close and stays open after it. The close comes once the panel
+# has faded in (quickLookAlpha, as the window server draws it): a close during the fade-in is over at once.
+def alpha(d): return marks(d)['quickLookAlpha']
+k('quickLook')
+until(lambda d: marks(d)['quickLook'] != '' and alpha(d) >= 0.99, label='the Quick Look panel faded in')
+k('quickLook'); k('quickLook')
+m = marks(until(lambda d: marks(d)['quickLook'] != '', label='Quick Look open again'))
+lost = maybe(lambda d: marks(d)['quickLook'] == '', seconds=1.5)
+print('   opened again at once:', m['quickLook'], '| closed again after it:', lost is not None)
+assert lost is None, 'Quick Look opened again right after a close stays open'
+until(lambda d: alpha(d) >= 0.99, label='the Quick Look panel up again')
+k('quickLook')
+until(lambda d: marks(d)['quickLook'] == '', label='Quick Look closed')
 k('review', 'off')
 until(lambda d: d['active']['review'] is None, label='Review closed')
 
