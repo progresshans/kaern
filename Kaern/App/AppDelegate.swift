@@ -3,6 +3,9 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        TestSession.moveScreensAside()
+        #endif
         // Kaern restores its own session; never reopen windows through macOS state restoration.
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
         NSWindow.allowsAutomaticWindowTabbing = false

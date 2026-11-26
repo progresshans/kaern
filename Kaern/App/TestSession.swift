@@ -1,5 +1,6 @@
 #if DEBUG
-import Foundation
+import AppKit
+import ObjectiveC
 
 /// An instance on a test session: a Debug build launched with `-KaernSessionFile <path>`.
 /// Each session has its own settings, git config and credentials:
@@ -50,6 +51,39 @@ enum TestSession {
 
     private static func shellQuoted(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// With its windows aside, this instance's screens answer as if they stood that far to the right as well, where
+    /// its windows are. What AppKit places by the screen then opens by its window, beside every screen, instead of
+    /// at the edge of yours, and the composite pictures (`DebugDriver.compositeRep`) have it where it belongs:
+    /// - Popovers (and windows centered on the screen) go by the screen's `visibleFrame`: always moved.
+    /// - Menus go by its `frame`: moved while a menu tracks. Moved for a popover too, it would put the popover that
+    ///   distance further still.
+    /// Call once, before the first window.
+    static func moveScreensAside() {
+        guard let aside = windowsAside else { return }
+        ScreensAside.shift(#selector(getter: NSScreen.visibleFrame)) { aside }
+        ScreensAside.shift(#selector(getter: NSScreen.frame)) { ScreensAside.menus > 0 ? aside : 0 }
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { _ in ScreensAside.menus += 1 }
+        center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { _ in
+            ScreensAside.menus = max(ScreensAside.menus - 1, 0)
+        }
+    }
+}
+
+/// `TestSession.moveScreensAside()`: its state, and the change to NSScreen's getters.
+private enum ScreensAside {
+    /// Menus that track now.
+    nonisolated(unsafe) static var menus = 0
+
+    /// NSScreen's `selector`, a getter of a rect, answers that rect moved right by `offset()`.
+    static func shift(_ selector: Selector, by offset: @escaping () -> CGFloat) {
+        guard let method = class_getInstanceMethod(NSScreen.self, selector) else { return }
+        typealias Getter = @convention(c) (NSScreen, Selector) -> NSRect
+        let original = unsafeBitCast(method_getImplementation(method), to: Getter.self)
+        let moved: @convention(block) (NSScreen) -> NSRect = { screen in original(screen, selector).offsetBy(dx: offset(), dy: 0) }
+        method_setImplementation(method, imp_implementationWithBlock(moved))
     }
 }
 #endif

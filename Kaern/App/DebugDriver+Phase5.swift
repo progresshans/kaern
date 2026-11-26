@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import KaernKit
+import Quartz
 
 /// What the last `relocate` command got back ("refused" for `nil`).
 @MainActor var debugLastRelocate = ""
@@ -368,6 +369,8 @@ extension DebugDriver {
                     return "\(file.letter) \(file.path) \(kind)\(file.isLFS ? " lfs" : "")"
                 },
                 "quickLook": repository.quickLookURL?.lastPathComponent ?? "",
+                "quickLookWaiting": QuickLookPanel.isWaiting(for: repository),
+                "quickLookAlpha": quickLookPanelAlpha(),
                 "quickLookFile": repository.quickLookFile?.path ?? "",
                 "alwaysLFS": repository.alwaysDownloadsLFS,
                 "sidebarSubmodules": repository.submoduleItems.map { "\($0.path) | \($0.detail) | \($0.state)" },
@@ -407,6 +410,16 @@ extension DebugDriver {
         result["activity"] = ActivityCenter.shared.running.map { "\($0.title) \($0.detail ?? "") \($0.fraction.map { String(format: "%.2f", $0) } ?? "-")" }
         result["recentActivity"] = ActivityCenter.shared.recent.prefix(4).map { "\($0.title): \($0.result ?? "")" }
         return result
+    }
+
+    /// The Quick Look panel's opacity as the window server draws it, 0 while it isn't up. The panel fades in and
+    /// out there; its alphaValue stays 1. (Its window number is -1 while it has no window there.)
+    private func quickLookPanelAlpha() -> Double {
+        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.isVisible,
+              let number = CGWindowID(exactly: panel.windowNumber), number > 0,
+              let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, number) as? [[String: Any]])?.first
+        else { return 0 }
+        return info[kCGWindowAlpha as String] as? Double ?? 0
     }
 }
 #endif
