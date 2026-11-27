@@ -3,6 +3,37 @@
     <channel>
         <title>Kaern</title>
         <item>
+            <title>1.0.2-beta.2</title>
+            <pubDate>Fri, 27 Nov 2026 07:29:29 +0000</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>1000202</sparkle:version>
+            <sparkle:shortVersionString>1.0.2-beta.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[### Improved
+
+- A branch or tag name that doesn't fit can be read whole: rest the pointer on it. In the history, a label that
+  its column cuts short unfolds over the graph, the way the "+2" list does. In the sidebar, the row is drawn as wide
+  as its name needs, on over the history beside it.
+- With many branches or changes, every list is still a glance away. The sidebar's headers stay in view and each of
+  its sections scrolls on its own, and so do the panel's Unstaged Files and Staged Files. While everything fits,
+  nothing changes. When it doesn't, drag the line between two of them to give one more room; Kaern keeps the
+  heights for next time, and a double-click on the line shares the room out again.
+
+### Fixed
+
+- When Stop ends a Git command, it also ends a hook or tool Git has just started. A command that
+  doesn't end when asked is ended by force after 10 seconds.
+- Stopping an operation from Activity or the Command Log while Kaern puts uncommitted changes aside brings them
+  back with their staging intact. This applies to merge, rebase, pull, Reset Hard and removing a worktree.
+- The sidebar's Submodules show where a moved submodule came from (2.6.4 → 2.7.0) also when Git's status leaves
+  the submodule out, as it does with `ignore = all`. It read "?" before.
+- Quick Look opened again right after closing it (Space twice in a row) stays open. Before, it closed again at
+  once.
+]]></description>
+            <enclosure url="https://github.com/progresshans/kaern/releases/download/v1.0.2-beta.2/Kaern-1.0.2-beta.2.zip" length="4794888" type="application/octet-stream" sparkle:edSignature="we8RrBKZEUuuClFqPCvCNQEe7Ql4ZusIoaNYs0s+HhAllQRbdUbkddtHoregT+Am0i+bED98I6HSNBaYWnk/Ag=="/>
+        </item>
+        <item>
             <title>1.0.2-beta.1</title>
             <pubDate>Tue, 24 Nov 2026 02:30:31 +0000</pubDate>
             <sparkle:channel>beta</sparkle:channel>
