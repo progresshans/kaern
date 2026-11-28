@@ -107,6 +107,9 @@ final class DebugDriver {
         switch command {
         case "snapshot":
             snapshot(to: args.first ?? "/tmp/kaern.png", window: args.count > 1 ? Int(args[1]) : nil)
+        case "dockTile":
+            // dockTile <path> [dev|test]: the Dock tile's drawing; with a kind, that tag's instead of this instance's.
+            dockTilePicture(to: args.first ?? "/tmp/kaern-dock.png", kind: args.count > 1 ? DockTag(rawValue: args[1].uppercased()) : nil)
         case "appearance":
             NSApp.appearance = args.first == "dark" ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua)
         case "activate":
@@ -983,6 +986,20 @@ final class DebugDriver {
         try? data.write(to: URL(filePath: path))
     }
 
+    /// The Dock tile's drawing (`DockTag`) as a PNG at twice the tile's size, as a Retina Dock draws it.
+    private func dockTilePicture(to path: String, kind: DockTag?) {
+        let size = NSApp.dockTile.size
+        guard let view = kind.map({ DockTagView($0, size: size) }) ?? NSApp.dockTile.contentView,
+              let rep = NSBitmapImageRep(
+                  bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2), bitsPerSample: 8,
+                  samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return }
+        rep.size = size
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: URL(filePath: path))
+    }
+
     private func dump(to path: String) {
         var windows: [[String: Any]] = []
         for controller in app.windows {
@@ -1142,6 +1159,8 @@ final class DebugDriver {
             "fieldText": editor?.string ?? "",
             "fieldPlaceholder": field?.placeholderString ?? field?.placeholderAttributedString?.string ?? "",
             "appearance": NSApp.effectiveAppearance.isDark ? "dark" : "light",
+            // The tag on the Dock icon (DockTag): TEST on a test instance.
+            "dockTag": DockTag.shown?.rawValue ?? "",
             "pointerBusy": pointerTasks > 0,
             "drag": ["sequence": lastDragSequence, "handle": lastResizeHandle, "value": lastResizeValue,
                      "storedAfterChange": sizesAfterDragChange, "storedAfterMouseUp": sizesAfterMouseUp] as [String: Any],

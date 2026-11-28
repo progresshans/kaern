@@ -45,6 +45,10 @@ are the same. The menus and popovers a check opens come up beside them, where th
 instance's screens answer from there as well, `TestSession.moveScreensAside`), so the pictures have them too.
 `KAERN_ON_SCREEN=1` keeps the windows on the screen, to watch a check.
 
+A test instance's Dock icon has a purple TEST tag, and a Debug build you run yourself an orange DEV one
+(`Kaern/App/DockTag.swift`), so neither is taken for the Kaern you use. `t_isolation` checks it and keeps a picture
+of each tag in `shots/`.
+
 ## Where things are
 
 `python3 checks/paths.py` prints the work folder and the app. The work folder is in the temporary folder, one per

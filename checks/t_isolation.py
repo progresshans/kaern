@@ -13,6 +13,13 @@ def real_state():
 real_before = real_state()
 start_app('light', columns=False, git_config=False)
 d = wait_launched()
+# Its Dock icon has the TEST tag, so it isn't taken for your own Kaern, or for a Debug build you run yourself (DEV).
+tag = d['driver']['dockTag']; print('dock tag:', tag)
+assert tag == 'TEST', 'a test instance shows %r on its Dock icon' % tag
+for kind in ('test', 'dev'):
+    tile = shot_path('isolation-dock-tile-' + kind, 'light')
+    k('dockTile', tile, kind); sync()
+    assert os.path.getsize(tile) > 0, 'no picture of the %s Dock tile' % kind
 genv = d['gitConfigEnvironment']; print('git config environment:', genv)
 assert genv.get('GIT_CONFIG_GLOBAL') == STEM + '.gitconfig'
 assert '' in genv.values() and any(v.startswith('store --file=') for v in genv.values())
