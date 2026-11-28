@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        // DEV or TEST on the Dock icon, so a Debug build isn't taken for the installed Kaern (DockTag).
+        DockTag.install()
         // Debug commands (stage, commit, discard…) are broadcast to every running Kaern. Only an
         // instance on a test session listens, so a Debug build open on your own repositories never
         // acts on commands a test run sends to its sample repositories.
